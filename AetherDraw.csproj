@@ -50,27 +50,19 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Include="PluginImages\icons\P1\desert-bombs.webp" />
-      <None Include="PluginImages\icons\P1\desert-healers.webp" />
-      <None Include="PluginImages\icons\P1\double-lps.webp" />
-      <None Include="PluginImages\icons\P1\double-partners.webp" />
-      <None Include="PluginImages\icons\P1\sticky.webp" />
-      <None Include="PluginImages\icons\P2\cleave-wave1.webp" />
-      <None Include="PluginImages\icons\P2\cleave-wave2.webp" />
-      <None Include="PluginImages\icons\P2\cleave-wave3.webp" />
-      <None Include="PluginImages\icons\P2\cleave-wave4.webp" />
-      <None Include="PluginImages\icons\P3\pudding-422.webp" />
-      <None Include="PluginImages\icons\P3\pudding-800.webp" />
-      <None Include="PluginImages\icons\P3\pudding-towers.webp" />
-      <None Include="PluginImages\icons\P3\river-fire.webp" />
-      <None Include="PluginImages\icons\P3\river-lightning.webp" />
-      <None Include="PluginImages\icons\P3\storm.webp" />
-    </ItemGroup>
-
-    <ItemGroup>
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
         <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.1.5" />
         <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" PrivateAssets="All" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="PluginImages\svg\boss.svg" />
+      <None Include="PluginImages\svg\donut.svg" />
+      <None Include="PluginImages\svg\flare.svg" />
+      <None Include="PluginImages\svg\line_stack.svg" />
+      <None Include="PluginImages\svg\prox_aoe.svg" />
+      <None Include="PluginImages\svg\spread.svg" />
+      <None Include="PluginImages\svg\stack.svg" />
     </ItemGroup>
 
 </Project>
