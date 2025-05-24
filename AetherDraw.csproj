@@ -1,0 +1,76 @@
+﻿<Project Sdk="Dalamud.NET.Sdk/12.0.2">
+
+    <PropertyGroup>
+        <AssemblyName>AetherDraw</AssemblyName>
+        <RootNamespace>AetherDraw</RootNamespace>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <TargetFramework>net9.0-windows</TargetFramework>
+        <Platforms>x64</Platforms>
+        <PlatformTarget>x64</PlatformTarget>
+        <LangVersion>latest</LangVersion>
+        <Description>A plugin to draw encounter strategies.</Description>
+        <PackageProjectUrl></PackageProjectUrl>
+        <Authors>rail</Authors>
+        <Version>1.0.0.0</Version>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\aoes\boss.JPG" />
+      <EmbeddedResource Include="PluginImages\aoes\circle aoe.JPG" />
+      <EmbeddedResource Include="PluginImages\aoes\donut.JPG" />
+      <EmbeddedResource Include="PluginImages\aoes\flare.JPG" />
+      <EmbeddedResource Include="PluginImages\aoes\line_stack.JPG" />
+      <EmbeddedResource Include="PluginImages\aoes\spread.JPG" />
+      <EmbeddedResource Include="PluginImages\aoes\stack.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\1 chain marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\1 dont attack marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\1_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\1_waymark.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\2 chain marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\2 dont attack marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\2_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\2_waymark.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\3_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\3_waymark.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\4_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\4_waymark.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\A.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\B.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\C.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\circle_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\D.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\Healer.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\Melee.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\plus_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\Ranged.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\square_marker.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\Tank.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\toolbar.JPG" />
+      <EmbeddedResource Include="PluginImages\toolbar\triangle_marker.JPG" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="PluginImages\icons\P1\desert-bombs.webp" />
+      <None Include="PluginImages\icons\P1\desert-healers.webp" />
+      <None Include="PluginImages\icons\P1\double-lps.webp" />
+      <None Include="PluginImages\icons\P1\double-partners.webp" />
+      <None Include="PluginImages\icons\P1\sticky.webp" />
+      <None Include="PluginImages\icons\P2\cleave-wave1.webp" />
+      <None Include="PluginImages\icons\P2\cleave-wave2.webp" />
+      <None Include="PluginImages\icons\P2\cleave-wave3.webp" />
+      <None Include="PluginImages\icons\P2\cleave-wave4.webp" />
+      <None Include="PluginImages\icons\P3\pudding-422.webp" />
+      <None Include="PluginImages\icons\P3\pudding-800.webp" />
+      <None Include="PluginImages\icons\P3\pudding-towers.webp" />
+      <None Include="PluginImages\icons\P3\river-fire.webp" />
+      <None Include="PluginImages\icons\P3\river-lightning.webp" />
+      <None Include="PluginImages\icons\P3\storm.webp" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
+        <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.1.5" />
+        <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" PrivateAssets="All" />
+    </ItemGroup>
+
+</Project>
