@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/DrawableRectangle.cs
 using System;
 using System.Numerics;
 using ImGuiNET;
