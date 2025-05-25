@@ -1,5 +1,4 @@
-// In AetherDraw/DrawingLogic/DrawableArrow.cs
-using System; // For MathF
+using System;
 using System.Numerics;
 using ImGuiNET;
 
@@ -8,17 +7,25 @@ namespace AetherDraw.DrawingLogic
     public class DrawableArrow : BaseDrawable
     {
         public Vector2 StartPointRelative { get; set; }
-        public Vector2 EndPointRelative { get; set; }
+        public Vector2 EndPointRelative { get; set; } // Defines the end of the shaft, before rotation
+        public float RotationAngle { get; set; } = 0f; // Rotation in radians around StartPointRelative
+
+        // Made public static readonly so ShapeInteractionHandler can access them
+        public static readonly float ArrowheadLengthFactor = 2.5f;
+        public static readonly float ArrowheadWidthFactor = 1.5f;
+        public static readonly float MinArrowheadDim = 5f;
+
 
         public DrawableArrow(Vector2 startPointRelative, Vector4 color, float thickness)
         {
             this.ObjectDrawMode = DrawMode.Arrow;
             this.StartPointRelative = startPointRelative;
-            this.EndPointRelative = startPointRelative; // End point is same as start initially
+            this.EndPointRelative = startPointRelative;
             this.Color = color;
-            this.Thickness = thickness; // This is for the shaft of the arrow
-            this.IsFilled = true;       // The arrowhead is considered filled
+            this.Thickness = thickness;
+            this.IsFilled = true;
             this.IsPreview = true;
+            this.RotationAngle = 0f;
         }
 
         public override void UpdatePreview(Vector2 newPointRelative)
@@ -26,88 +33,115 @@ namespace AetherDraw.DrawingLogic
             this.EndPointRelative = newPointRelative;
         }
 
+        /// <summary>
+        /// Calculates the three vertices of the arrowhead triangle.
+        /// </summary>
+        /// <param name="arrowShaftEndPosition">The point where the arrow's shaft ends (this becomes the center of the arrowhead's base).</param>
+        /// <param name="directionFromStartToTip">Normalized direction vector of the arrow's shaft.</param>
+        /// <param name="effectiveThickness">Current thickness of the arrow, used to scale the arrowhead.</param>
+        /// <returns>A tuple containing the visual tip and the two base vertices of the arrowhead.</returns>
+        public (Vector2 visualTip, Vector2 base1, Vector2 base2) GetArrowheadGeometricPoints(Vector2 arrowShaftEndPosition, Vector2 directionFromStartToTip, float effectiveThickness)
+        {
+            float arrowheadVisualLength = MathF.Max(MinArrowheadDim, effectiveThickness * ArrowheadLengthFactor);
+            float arrowheadHalfWidth = MathF.Max(MinArrowheadDim / 2f, effectiveThickness * ArrowheadWidthFactor);
+
+            Vector2 visualTip = arrowShaftEndPosition + directionFromStartToTip * arrowheadVisualLength;
+            Vector2 basePoint1 = arrowShaftEndPosition + new Vector2(directionFromStartToTip.Y, -directionFromStartToTip.X) * arrowheadHalfWidth;
+            Vector2 basePoint2 = arrowShaftEndPosition + new Vector2(-directionFromStartToTip.Y, directionFromStartToTip.X) * arrowheadHalfWidth;
+
+            return (visualTip, basePoint1, basePoint2);
+        }
+
+
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
-            // 'lineThickness' applies to the shaft and influences arrowhead size
             var lineThickness = this.IsSelected || this.IsHovered ? this.Thickness + 2f : this.Thickness;
             uint displayColor = ImGui.GetColorU32(displayColorVec);
 
-            Vector2 screenStart = this.StartPointRelative + canvasOriginScreen;
-            Vector2 screenEnd = this.EndPointRelative + canvasOriginScreen;
+            Vector2 unrotatedShaftVector = this.EndPointRelative - this.StartPointRelative;
 
-            // If start and end points are too close, draw a dot as a preview
-            if (Vector2.DistanceSquared(screenStart, screenEnd) < 1.0f)
+            float cosA = MathF.Cos(this.RotationAngle);
+            float sinA = MathF.Sin(this.RotationAngle);
+            Vector2 rotatedShaftVector = HitDetection.ImRotate(unrotatedShaftVector, cosA, sinA);
+
+            Vector2 rotatedShaftEndRelative = this.StartPointRelative + rotatedShaftVector;
+
+            Vector2 screenStart = this.StartPointRelative + canvasOriginScreen;
+            Vector2 screenRotatedShaftEnd = rotatedShaftEndRelative + canvasOriginScreen;
+
+            if (Vector2.DistanceSquared(screenStart, screenRotatedShaftEnd) < 1.0f && this.IsPreview)
             {
-                if (this.IsPreview)
-                {
-                    // Draw a small circle if the arrow is too short to be meaningful during preview
-                    drawList.AddCircleFilled(screenStart, lineThickness / 2f + 1f, displayColor);
-                }
+                drawList.AddCircleFilled(screenStart, lineThickness / 2f + 1f, displayColor);
                 return;
             }
 
-            // Draw the line (shaft) of the arrow
-            drawList.AddLine(screenStart, screenEnd, displayColor, lineThickness);
+            drawList.AddLine(screenStart, screenRotatedShaftEnd, displayColor, lineThickness);
 
-            // Calculate arrowhead geometry
-            Vector2 direction = (screenEnd == screenStart) ? new Vector2(0, -1) : Vector2.Normalize(screenEnd - screenStart);
+            Vector2 rotatedDirection = Vector2.Zero;
+            if (rotatedShaftVector.LengthSquared() > 0.001f)
+            {
+                rotatedDirection = Vector2.Normalize(rotatedShaftVector);
+            }
+            else // Fallback for zero-length shaft (e.g., during preview at start point)
+            {
+                // Create a default direction based on rotation if shaft is zero length
+                Vector2 defaultUnrotatedDir = new Vector2(1, 0); // Or (0,-1) for upwards
+                rotatedDirection = HitDetection.ImRotate(defaultUnrotatedDir, cosA, sinA);
+            }
 
-            // Arrowhead size is based on the line's current display thickness
-            float arrowheadLength = MathF.Max(8f, lineThickness * 2.5f);
-            float arrowheadHalfWidth = MathF.Max(5f, lineThickness * 1.5f);
-
-            // Arrowhead points: The original code's geometry places screenEnd as the center of the arrowhead's base,
-            // and the tip (aT) extends forward from there.
-            Vector2 tip = screenEnd + direction * arrowheadLength;
-            Vector2 basePoint1 = screenEnd + new Vector2(direction.Y, -direction.X) * arrowheadHalfWidth; // Perpendicular to 'direction'
-            Vector2 basePoint2 = screenEnd + new Vector2(-direction.Y, direction.X) * arrowheadHalfWidth; // Other side
-
+            // Arrowhead geometry is based on the shaft's end point and its thickness
+            var (tip, basePoint1, basePoint2) = GetArrowheadGeometricPoints(screenRotatedShaftEnd, rotatedDirection, this.Thickness);
             drawList.AddTriangleFilled(tip, basePoint1, basePoint2, displayColor);
         }
 
         public override bool IsHit(Vector2 queryPointRelative, float hitThreshold = 5.0f)
         {
-            // 1. Check hit on the line segment (shaft)
-            if (HitDetection.DistancePointToLineSegment(queryPointRelative, this.StartPointRelative, this.EndPointRelative) <= hitThreshold + (this.Thickness / 2f))
+            Vector2 queryPointRelativeToStart = queryPointRelative - this.StartPointRelative;
+            float cosNegA = MathF.Cos(-this.RotationAngle);
+            float sinNegA = MathF.Sin(-this.RotationAngle);
+            Vector2 unrotatedQueryPointRelativeToStart = HitDetection.ImRotate(queryPointRelativeToStart, cosNegA, sinNegA);
+            Vector2 unrotatedQueryPoint = this.StartPointRelative + unrotatedQueryPointRelativeToStart;
+
+            // 1. Check hit on the unrotated line segment (shaft)
+            bool hitShaft = HitDetection.DistancePointToLineSegment(unrotatedQueryPoint, this.StartPointRelative, this.EndPointRelative) <= hitThreshold + (this.Thickness / 2f);
+            if (hitShaft) return true;
+
+            // 2. Check hit on the unrotated arrowhead triangle
+            Vector2 unrotatedShaft = this.EndPointRelative - this.StartPointRelative;
+            Vector2 unrotatedDirection = Vector2.Zero;
+
+            if (unrotatedShaft.LengthSquared() > 0.001f)
             {
-                return true;
+                unrotatedDirection = Vector2.Normalize(unrotatedShaft);
+            }
+            else // For zero-length arrow, arrowhead effectively originates from StartPointRelative
+            {
+                // A small circle hit test around the start point might be appropriate here
+                // Or consider the arrowhead based on a default minimal length/direction for hit testing
+                return Vector2.DistanceSquared(unrotatedQueryPoint, this.StartPointRelative) < (hitThreshold + this.Thickness) * (hitThreshold + this.Thickness);
             }
 
-            // 2. Check hit on the arrowhead triangle
-            // Calculate arrowhead geometry in relative coordinates using the base thickness
-            Vector2 direction = (this.EndPointRelative == this.StartPointRelative) ? Vector2.Zero : Vector2.Normalize(this.EndPointRelative - this.StartPointRelative);
-            if (direction == Vector2.Zero && this.StartPointRelative == this.EndPointRelative) // Handle case of zero-length arrow for hit test robustness
-            { 
-                return Vector2.DistanceSquared(queryPointRelative, this.StartPointRelative) < hitThreshold * hitThreshold;
-            }
+            // Calculate unrotated arrowhead points relative to canvas for hit test
+            // GetArrowheadGeometricPoints expects the shaft end and direction.
+            // For hit testing, we use the unrotated EndPointRelative as the shaft end.
+            var (localVisualTip, localBase1, localBase2) = GetArrowheadGeometricPoints(this.EndPointRelative, unrotatedDirection, this.Thickness);
 
-            // Arrowhead size for hit detection uses the base 'this.Thickness', not the potentially larger display thickness.
-            float arrowheadLength = MathF.Max(8f, this.Thickness * 2.5f);
-            float arrowheadHalfWidth = MathF.Max(5f, this.Thickness * 1.5f);
-
-            Vector2 endPointRelative = this.EndPointRelative; // Reference for arrowhead base
-            Vector2 tipRelative = endPointRelative + direction * arrowheadLength;
-            Vector2 basePoint1Relative = endPointRelative + new Vector2(direction.Y, -direction.X) * arrowheadHalfWidth;
-            Vector2 basePoint2Relative = endPointRelative + new Vector2(-direction.Y, direction.X) * arrowheadHalfWidth;
-
-            // If hitThreshold is large (like an eraser), use circle-triangle intersection
-            if (hitThreshold > (this.Thickness / 2f + 2.1f)) // Condition from original code
+            if (hitThreshold > (this.Thickness / 2f + 2.1f)) // Eraser-like larger threshold
             {
-                return HitDetection.IntersectCircleTriangle(queryPointRelative, hitThreshold, tipRelative, basePoint1Relative, basePoint2Relative);
+                return HitDetection.IntersectCircleTriangle(unrotatedQueryPoint, hitThreshold, localVisualTip, localBase1, localBase2);
             }
-            else // For point selection
+            else // Point selection
             {
-                // Check if the query point is inside the arrowhead triangle
-                if (HitDetection.PointInTriangle(queryPointRelative, tipRelative, basePoint1Relative, basePoint2Relative))
+                if (HitDetection.PointInTriangle(unrotatedQueryPoint, localVisualTip, localBase1, localBase2))
                 {
                     return true;
                 }
-                // Original code also checked proximity to the triangle's edges. This makes the outline of the arrowhead clickable.
-                float edgeHitProximity = hitThreshold + 1.0f; // As per original logic
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, tipRelative, basePoint1Relative) <= edgeHitProximity) return true;
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, tipRelative, basePoint2Relative) <= edgeHitProximity) return true;
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, basePoint1Relative, basePoint2Relative) <= edgeHitProximity) return true;
+                // Check proximity to arrowhead edges
+                float edgeHitProximity = hitThreshold + 1.0f;
+                if (HitDetection.DistancePointToLineSegment(unrotatedQueryPoint, localVisualTip, localBase1) <= edgeHitProximity) return true;
+                if (HitDetection.DistancePointToLineSegment(unrotatedQueryPoint, localVisualTip, localBase2) <= edgeHitProximity) return true;
+                if (HitDetection.DistancePointToLineSegment(unrotatedQueryPoint, localBase1, localBase2) <= edgeHitProximity) return true;
             }
             return false;
         }
@@ -116,7 +150,8 @@ namespace AetherDraw.DrawingLogic
         {
             var newArrow = new DrawableArrow(this.StartPointRelative, this.Color, this.Thickness)
             {
-                EndPointRelative = this.EndPointRelative
+                EndPointRelative = this.EndPointRelative,
+                RotationAngle = this.RotationAngle
             };
             CopyBasePropertiesTo(newArrow);
             return newArrow;
@@ -126,6 +161,23 @@ namespace AetherDraw.DrawingLogic
         {
             this.StartPointRelative += delta;
             this.EndPointRelative += delta;
+        }
+
+        public void RotateBy(float angleDeltaInRadians)
+        {
+            this.RotationAngle += angleDeltaInRadians;
+        }
+
+        public void SetStartPoint(Vector2 newStart)
+        {
+            Vector2 diff = newStart - this.StartPointRelative;
+            this.StartPointRelative = newStart;
+            this.EndPointRelative += diff;
+        }
+
+        public void SetEndPoint(Vector2 newEnd)
+        {
+            this.EndPointRelative = newEnd;
         }
     }
 }

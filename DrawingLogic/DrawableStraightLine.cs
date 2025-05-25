@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/DrawableStraightLine.cs
 using System.Numerics;
 using ImGuiNET;
 

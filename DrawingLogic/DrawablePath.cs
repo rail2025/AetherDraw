@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/DrawablePath.cs
 using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;

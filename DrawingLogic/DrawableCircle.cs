@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/DrawableCircle.cs
 using System; // For Math.Abs
 using System.Numerics;
 using ImGuiNET;

@@ -1,4 +1,4 @@
-// In AetherDraw/DrawingLogic/DrawableCone.cs
+using System; // For MathF
 using System.Numerics;
 using ImGuiNET;
 
@@ -7,8 +7,13 @@ namespace AetherDraw.DrawingLogic
     public class DrawableCone : BaseDrawable
     {
         public Vector2 ApexRelative { get; set; }
-        // BaseCenterRelative is the point the user drags to define the cone's direction and length from the apex.
+        // BaseCenterRelative defines the length and unrotated direction of the cone's axis from the Apex.
         public Vector2 BaseCenterRelative { get; set; }
+        public float RotationAngle { get; set; } = 0f; // Rotation in radians around ApexRelative
+
+        // Factor determining the cone's width relative to its height.
+        public static readonly float ConeWidthFactor = 0.3f;
+
 
         public DrawableCone(Vector2 apexRelative, Vector4 color, float thickness, bool isFilled)
         {
@@ -19,13 +24,37 @@ namespace AetherDraw.DrawingLogic
             this.Thickness = thickness;
             this.IsFilled = isFilled;
             this.IsPreview = true;
+            this.RotationAngle = 0f;
         }
 
-        public override void UpdatePreview(Vector2 newBaseCenterRelative)
+        public override void UpdatePreview(Vector2 newBaseCenterRelativeWhileDrawing)
         {
-            // This point is typically the current mouse position while drawing
-            this.BaseCenterRelative = newBaseCenterRelative;
+            // This point is typically the current mouse position while initially drawing the cone.
+            // It defines the unrotated length and direction of the cone.
+            this.BaseCenterRelative = newBaseCenterRelativeWhileDrawing;
         }
+
+        // Helper to get the cone's vertices in their local, unrotated space (Apex at 0,0)
+        private (Vector2 localApex, Vector2 localBaseVert1, Vector2 localBaseVert2, Vector2 localBaseCenter) GetLocalUnrotatedVertices()
+        {
+            Vector2 localApex = Vector2.Zero;
+            Vector2 localBaseCenter = this.BaseCenterRelative - this.ApexRelative; // Vector from apex to base-center in local space
+
+            float height = localBaseCenter.Length();
+            if (height < 0.1f) // If very small, treat as a point for geometry calculation
+            {
+                return (localApex, localApex, localApex, localApex);
+            }
+
+            Vector2 direction = Vector2.Normalize(localBaseCenter);
+            float baseHalfWidth = height * ConeWidthFactor;
+
+            Vector2 localBaseVert1 = localBaseCenter + new Vector2(direction.Y, -direction.X) * baseHalfWidth;
+            Vector2 localBaseVert2 = localBaseCenter + new Vector2(-direction.Y, direction.X) * baseHalfWidth;
+
+            return (localApex, localBaseVert1, localBaseVert2, localBaseCenter);
+        }
+
 
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
@@ -33,81 +62,72 @@ namespace AetherDraw.DrawingLogic
             var displayThickness = this.IsSelected || this.IsHovered ? this.Thickness + 2f : this.Thickness;
             uint displayColor = ImGui.GetColorU32(displayColorVec);
 
-            Vector2 screenApex = this.ApexRelative + canvasOriginScreen;
-            Vector2 screenBaseCenter = this.BaseCenterRelative + canvasOriginScreen;
+            var (localApex, localBaseVert1, localBaseVert2, localActualBaseCenter) = GetLocalUnrotatedVertices();
 
-            // If the cone is too small to draw during preview, just return
-            if (Vector2.DistanceSquared(screenApex, screenBaseCenter) < 1.0f && this.IsPreview)
+            // If the cone is too small (height essentially zero)
+            if (localActualBaseCenter == localApex && this.IsPreview && Vector2.DistanceSquared(this.ApexRelative, this.BaseCenterRelative) < 1.0f)
             {
-                // Optionally, draw a small dot at the apex for immediate feedback during preview
-                // drawList.AddCircleFilled(screenApex, displayThickness / 2f + 1f, displayColor);
+                // drawList.AddCircleFilled(this.ApexRelative + canvasOriginScreen, displayThickness / 2f + 1f, displayColor);
                 return;
             }
 
-            // Direction from apex towards the center of the base line
-            Vector2 direction = (screenBaseCenter == screenApex) ? new Vector2(0, 1) : Vector2.Normalize(screenBaseCenter - screenApex); // Default downwards
-            float height = Vector2.Distance(screenApex, screenBaseCenter); // Distance from apex to base center
+            float cosA = MathF.Cos(this.RotationAngle);
+            float sinA = MathF.Sin(this.RotationAngle);
 
-            // The half-width of the cone's base is proportional to its height (defines a fixed cone angle)
-            float baseHalfWidth = height * 0.3f; // Original ratio
+            // Rotate local vertices around localApex (0,0)
+            // Apex remains localApex (0,0) after rotation around itself
+            Vector2 rotatedLocalBaseVert1 = HitDetection.ImRotate(localBaseVert1, cosA, sinA);
+            Vector2 rotatedLocalBaseVert2 = HitDetection.ImRotate(localBaseVert2, cosA, sinA);
 
-            // Calculate the two points forming the base of the cone.
-            // These points are perpendicular to the 'direction' vector and centered around 'screenBaseCenter'.
-            Vector2 basePoint1 = screenBaseCenter + new Vector2(direction.Y, -direction.X) * baseHalfWidth;
-            Vector2 basePoint2 = screenBaseCenter + new Vector2(-direction.Y, direction.X) * baseHalfWidth;
+            // Translate rotated local vertices to world (canvas-relative) space by adding ApexRelative
+            Vector2 screenApex = this.ApexRelative + canvasOriginScreen;
+            Vector2 screenBaseVert1 = this.ApexRelative + rotatedLocalBaseVert1 + canvasOriginScreen;
+            Vector2 screenBaseVert2 = this.ApexRelative + rotatedLocalBaseVert2 + canvasOriginScreen;
 
             if (this.IsFilled)
             {
-                // The cone is drawn as a triangle: (Apex, BasePoint1, BasePoint2)
-                drawList.AddTriangleFilled(screenApex, basePoint1, basePoint2, displayColor);
+                drawList.AddTriangleFilled(screenApex, screenBaseVert1, screenBaseVert2, displayColor);
             }
             else
             {
-                drawList.AddLine(screenApex, basePoint1, displayColor, displayThickness);
-                drawList.AddLine(screenApex, basePoint2, displayColor, displayThickness);
-                drawList.AddLine(basePoint1, basePoint2, displayColor, displayThickness); // Draw the base line itself
+                drawList.AddLine(screenApex, screenBaseVert1, displayColor, displayThickness);
+                drawList.AddLine(screenApex, screenBaseVert2, displayColor, displayThickness);
+                drawList.AddLine(screenBaseVert1, screenBaseVert2, displayColor, displayThickness); // Draw the base line
             }
         }
 
         public override bool IsHit(Vector2 queryPointRelative, float hitThresholdOrEraserRadius = 5.0f)
         {
-            // Calculate cone geometry in relative coordinates for hit testing
-            Vector2 direction = (this.BaseCenterRelative == this.ApexRelative) ? new Vector2(0, 1) : Vector2.Normalize(this.BaseCenterRelative - this.ApexRelative);
-            float height = Vector2.Distance(this.ApexRelative, this.BaseCenterRelative);
+            // Transform queryPointRelative into the cone's local, unrotated space (where Apex is at origin)
+            Vector2 localQueryPoint = queryPointRelative - this.ApexRelative; // Translate query point so cone's apex is at origin
+            float cosNegA = MathF.Cos(-this.RotationAngle);
+            float sinNegA = MathF.Sin(-this.RotationAngle);
+            Vector2 unrotatedLocalQueryPoint = HitDetection.ImRotate(localQueryPoint, cosNegA, sinNegA); // Inverse rotate query point
 
-            // If the cone is essentially a point (very small height)
-            if (height < 0.1f)
+            var (localApex, localBaseVert1, localBaseVert2, localBaseCenter) = GetLocalUnrotatedVertices();
+
+            // If cone has no real area (e.g. height is near zero)
+            if (localBaseCenter == localApex)
             {
-                return Vector2.DistanceSquared(queryPointRelative, this.ApexRelative) < hitThresholdOrEraserRadius * hitThresholdOrEraserRadius;
+                return Vector2.DistanceSquared(unrotatedLocalQueryPoint, localApex) < hitThresholdOrEraserRadius * hitThresholdOrEraserRadius;
             }
 
-            float baseHalfWidth = height * 0.3f; // Using the same ratio as in Draw
-            Vector2 relativeApex = this.ApexRelative;
-            // Relative base points calculated from BaseCenterRelative
-            Vector2 relativeBasePoint1 = this.BaseCenterRelative + new Vector2(direction.Y, -direction.X) * baseHalfWidth;
-            Vector2 relativeBasePoint2 = this.BaseCenterRelative + new Vector2(-direction.Y, direction.X) * baseHalfWidth;
-
-            // If hitThreshold is large (e.g., eraser), use circle-triangle intersection against the cone's triangle
-            if (hitThresholdOrEraserRadius > (this.Thickness / 2f + 2.1f)) // Condition from original code
+            // Perform hit detection in local, unrotated space
+            if (hitThresholdOrEraserRadius > (this.Thickness / 2f + 2.1f))
             {
-                return HitDetection.IntersectCircleTriangle(queryPointRelative, hitThresholdOrEraserRadius, relativeApex, relativeBasePoint1, relativeBasePoint2);
+                return HitDetection.IntersectCircleTriangle(unrotatedLocalQueryPoint, hitThresholdOrEraserRadius, localApex, localBaseVert1, localBaseVert2);
             }
 
-            // For point selection or small eraser
             if (this.IsFilled)
             {
-                // Check if the point is inside the cone triangle
-                if (HitDetection.PointInTriangle(queryPointRelative, relativeApex, relativeBasePoint1, relativeBasePoint2))
-                {
-                    return true;
-                }
+                return HitDetection.PointInTriangle(unrotatedLocalQueryPoint, localApex, localBaseVert1, localBaseVert2);
             }
-            else // If not filled, check proximity to the outline segments
+            else
             {
                 float effectiveHitRange = hitThresholdOrEraserRadius + (this.Thickness / 2f);
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, relativeApex, relativeBasePoint1) <= effectiveHitRange) return true;
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, relativeApex, relativeBasePoint2) <= effectiveHitRange) return true;
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, relativeBasePoint1, relativeBasePoint2) <= effectiveHitRange) return true; // Hit on the base line
+                if (HitDetection.DistancePointToLineSegment(unrotatedLocalQueryPoint, localApex, localBaseVert1) <= effectiveHitRange) return true;
+                if (HitDetection.DistancePointToLineSegment(unrotatedLocalQueryPoint, localApex, localBaseVert2) <= effectiveHitRange) return true;
+                if (HitDetection.DistancePointToLineSegment(unrotatedLocalQueryPoint, localBaseVert1, localBaseVert2) <= effectiveHitRange) return true;
             }
             return false;
         }
@@ -116,16 +136,53 @@ namespace AetherDraw.DrawingLogic
         {
             var newCone = new DrawableCone(this.ApexRelative, this.Color, this.Thickness, this.IsFilled)
             {
-                BaseCenterRelative = this.BaseCenterRelative
+                BaseCenterRelative = this.BaseCenterRelative,
+                RotationAngle = this.RotationAngle // Clone rotation angle
             };
-            CopyBasePropertiesTo(newCone);
+            CopyBasePropertiesTo(newCone); // This sets IsPreview to false, IsSelected to false etc.
             return newCone;
         }
 
         public override void Translate(Vector2 delta)
         {
+            // Translating the cone means moving its defining points. Rotation is maintained relative to these.
             this.ApexRelative += delta;
             this.BaseCenterRelative += delta;
+        }
+
+        // --- New methods for direct manipulation (to be called from MainWindow interaction logic) ---
+
+        public void RotateBy(float angleDeltaInRadians)
+        {
+            this.RotationAngle += angleDeltaInRadians;
+            // Normalize angle if desired, e.g., to keep it within 0 to 2*PI
+            // this.RotationAngle = this.RotationAngle % (2 * MathF.PI);
+        }
+
+        public void SetApex(Vector2 newApex)
+        {
+            Vector2 diff = newApex - this.ApexRelative;
+            this.ApexRelative = newApex;
+            this.BaseCenterRelative += diff; // Keep BaseCenter relative to Apex unless explicitly moved otherwise
+        }
+
+        public void SetBaseCenter(Vector2 newBaseCenter)
+        {
+            this.BaseCenterRelative = newBaseCenter;
+        }
+
+        // For resizing, you'd typically manipulate ApexRelative or BaseCenterRelative directly,
+        // or define specific resize handles.
+        // Example: To change length while keeping apex fixed and direction fixed:
+        public void SetLength(float newLength)
+        {
+            if (newLength < 0) newLength = 0;
+            Vector2 axis = this.BaseCenterRelative - this.ApexRelative;
+            if (axis.LengthSquared() < 0.001f)
+            { // if zero length, define a default direction e.g. downwards
+                axis = new Vector2(0, 1);
+            }
+            this.BaseCenterRelative = this.ApexRelative + Vector2.Normalize(axis) * newLength;
         }
     }
 }

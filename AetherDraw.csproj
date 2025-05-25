@@ -53,16 +53,17 @@
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
         <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.1.5" />
         <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" PrivateAssets="All" />
+        <PackageReference Include="Svg.Skia" Version="3.0.2" />
     </ItemGroup>
 
     <ItemGroup>
-      <None Include="PluginImages\svg\boss.svg" />
-      <None Include="PluginImages\svg\donut.svg" />
-      <None Include="PluginImages\svg\flare.svg" />
-      <None Include="PluginImages\svg\line_stack.svg" />
-      <None Include="PluginImages\svg\prox_aoe.svg" />
-      <None Include="PluginImages\svg\spread.svg" />
-      <None Include="PluginImages\svg\stack.svg" />
+      <EmbeddedResource Include="PluginImages\svg\boss.svg" />
+      <EmbeddedResource Include="PluginImages\svg\donut.svg" />
+      <EmbeddedResource Include="PluginImages\svg\flare.svg" />
+      <EmbeddedResource Include="PluginImages\svg\line_stack.svg" />
+      <EmbeddedResource Include="PluginImages\svg\prox_aoe.svg" />
+      <EmbeddedResource Include="PluginImages\svg\spread.svg" />
+      <EmbeddedResource Include="PluginImages\svg\stack.svg" />
     </ItemGroup>
 
 </Project>

@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/HitDetection.cs
 using System;
 using System.Numerics;
 

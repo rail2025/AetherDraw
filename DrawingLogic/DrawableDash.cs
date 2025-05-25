@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/DrawableDash.cs
 using System; // For MathF
 using System.Numerics;
 using System.Collections.Generic;

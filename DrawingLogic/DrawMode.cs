@@ -1,4 +1,3 @@
-// In AetherDraw/DrawingLogic/DrawMode.cs
 namespace AetherDraw.DrawingLogic
 {
     public enum DrawMode

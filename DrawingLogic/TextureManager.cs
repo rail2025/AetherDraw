@@ -1,35 +1,35 @@
-// In AetherDraw/DrawingLogic/TextureManager.cs
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Dalamud.Interface.Textures.TextureWraps;
 using AetherDraw; // Required for accessing Plugin.TextureProvider and Plugin.Log
+using Svg.Skia;    // For SKSvg
+using SkiaSharp;   // For SKBitmap, SKCanvas, SKImage, SKEncodedImageFormat, SKColors
 
 namespace AetherDraw.DrawingLogic
 {
     public static class TextureManager
     {
         private static Dictionary<string, IDalamudTextureWrap?> LoadedTextures = new Dictionary<string, IDalamudTextureWrap?>();
+        private const int DefaultRenderWidth = 256; // Desired render width for SVGs
+        private const int DefaultRenderHeight = 256; // Desired render height for SVGs
 
         public static IDalamudTextureWrap? GetTexture(string resourcePathFromPluginRoot)
         {
-            // Ensure TextureProvider service is available (should be injected into Plugin.cs)
             if (Plugin.TextureProvider == null)
             {
                 Plugin.Log?.Error("TextureProvider service is not available. Textures cannot be loaded by TextureManager.");
                 return null;
             }
 
-            // Try to get from cache
             if (LoadedTextures.TryGetValue(resourcePathFromPluginRoot, out var tex))
             {
-                // Check if the cached texture is still valid (e.g., not disposed, ImGui handle is good)
-                if (tex != null && tex.ImGuiHandle == IntPtr.Zero) // IntPtr.Zero indicates an invalid/disposed texture
+                if (tex != null && tex.ImGuiHandle == IntPtr.Zero) // Check if the cached texture is still valid
                 {
                     Plugin.Log?.Warning($"Cached texture for '{resourcePathFromPluginRoot}' was disposed or invalid. Attempting reload.");
+                    tex.Dispose(); // Ensure it's fully disposed
                     LoadedTextures.Remove(resourcePathFromPluginRoot); // Remove from cache to force reload
-                    tex.Dispose(); // Ensure it's fully disposed if we're discarding it
                     tex = null;    // Set to null to fall through to loading logic
                 }
                 else if (tex != null) // Texture is valid and cached
@@ -39,43 +39,123 @@ namespace AetherDraw.DrawingLogic
                 // If 'tex' was initially null in the dictionary (previous load failure), it will also fall through.
             }
 
-            // If not in cache or was invalid, try to load it
             try
             {
-                var assembly = Assembly.GetExecutingAssembly(); // Gets the assembly of this code (AetherDraw.dll)
-
-                // Construct the full embedded resource path.
-                // Example: resourcePathFromPluginRoot = "PluginImages.toolbar.Tank.JPG"
-                // Assembly Name (e.g., "AetherDraw")
-                // Resulting path: "AetherDraw.PluginImages.toolbar.Tank.JPG"
+                var assembly = Assembly.GetExecutingAssembly();
                 string fullResourcePath = $"{assembly.GetName().Name}.{resourcePathFromPluginRoot.Replace("\\", ".").Replace("/", ".")}";
 
-                Plugin.Log?.Debug($"Attempting to load embedded resource texture: {fullResourcePath}");
+                Plugin.Log?.Debug($"Attempting to load embedded resource: {fullResourcePath}");
 
                 using (Stream? resourceStream = assembly.GetManifestResourceStream(fullResourcePath))
                 {
                     if (resourceStream == null)
                     {
-                        Plugin.Log?.Error($"Resource stream is null for '{fullResourcePath}'. Please check: " +
-                                          "1. The root namespace of your project (e.g., 'AetherDraw' should match your assembly name). " +
-                                          "2. The full path to the image ('PluginImages.toolbar.Tank.JPG'). " +
-                                          "3. The image file's 'Build Action' property is set to 'Embedded resource'. " +
-                                          "4. Case sensitivity of the path and filename. " +
-                                          "5. If the original filename had spaces, they might have been replaced with underscores (_) in the embedded resource name.");
+                        Plugin.Log?.Error($"Resource stream is null for '{fullResourcePath}'. Check path, build action, and case sensitivity.");
                         LoadedTextures[resourcePathFromPluginRoot] = null; // Cache as null to prevent repeated failed load attempts
                         return null;
                     }
 
-                    using (MemoryStream ms = new MemoryStream())
+                    byte[] imageBytes;
+                    bool isSvg = fullResourcePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
+
+                    if (isSvg)
                     {
-                        resourceStream.CopyTo(ms);
-                        // Plugin.TextureProvider is expected to be initialized by Dalamud.
-                        // CreateFromImageAsync(...).GetAwaiter().GetResult() is a way to synchronously await an async method.
-                        var newTex = Plugin.TextureProvider.CreateFromImageAsync(ms.ToArray()).GetAwaiter().GetResult();
-                        LoadedTextures[resourcePathFromPluginRoot] = newTex; // Add successfully loaded texture to cache
-                        Plugin.Log?.Information($"Successfully loaded texture: {fullResourcePath}");
-                        return newTex;
+                        Plugin.Log?.Debug($"Processing SVG resource: {fullResourcePath} for target render size {DefaultRenderWidth}x{DefaultRenderHeight}");
+                        try
+                        {
+                            using var svg = new SKSvg();
+                            if (svg.Load(resourceStream) == null || svg.Picture == null)
+                            {
+                                Plugin.Log?.Error($"Failed to load SVG picture from stream or SVG is empty: {fullResourcePath}");
+                                LoadedTextures[resourcePathFromPluginRoot] = null;
+                                return null;
+                            }
+
+                            // Get original SVG content dimensions
+                            float svgContentWidth = svg.Picture.CullRect.Width;
+                            float svgContentHeight = svg.Picture.CullRect.Height;
+                            SKPoint svgContentOrigin = svg.Picture.CullRect.Location;
+
+                            if (svgContentWidth <= 0 || svgContentHeight <= 0)
+                            {
+                                if (svgContentWidth <= 0 || svgContentHeight <= 0)
+                                {
+                                    Plugin.Log?.Warning($"SVG {fullResourcePath} has non-positive dimensions in CullRect ({svgContentWidth}x{svgContentHeight}). Defaulting content size to render target dimensions ({DefaultRenderWidth}x{DefaultRenderHeight}) for scaling purposes.");
+                                    svgContentWidth = DefaultRenderWidth; // Default to render target width
+                                    svgContentHeight = DefaultRenderHeight; // Default to render target height
+                                    svgContentOrigin = SKPoint.Empty; // Assume origin is 0,0 if CullRect was not useful
+                                }
+                                else
+                                {
+                                    Plugin.Log?.Warning($"SVG {fullResourcePath} has no usable dimensions (CullRect/IntrinsicSize). Rendering at {DefaultRenderWidth}x{DefaultRenderHeight} without proper scaling.");
+                                    svgContentWidth = DefaultRenderWidth;
+                                    svgContentHeight = DefaultRenderHeight;
+                                    svgContentOrigin = SKPoint.Empty;
+                                }
+                            }
+
+                            using var bitmap = new SKBitmap(DefaultRenderWidth, DefaultRenderHeight);
+                            using var canvas = new SKCanvas(bitmap);
+                            canvas.Clear(SKColors.Transparent); // Ensure transparent background
+
+                            // Calculate scaling factors to fit SVG content into DefaultRenderWidth/Height, maintaining aspect ratio
+                            float scaleX = DefaultRenderWidth / svgContentWidth;
+                            float scaleY = DefaultRenderHeight / svgContentHeight;
+                            float scale = Math.Min(scaleX, scaleY); // Use the smaller scale factor to fit entirely and maintain aspect ratio
+
+                            // Calculate translation to center the scaled SVG
+                            float translateX = (DefaultRenderWidth - (svgContentWidth * scale)) / 2f;
+                            float translateY = (DefaultRenderHeight - (svgContentHeight * scale)) / 2f;
+
+                            SKMatrix matrix = SKMatrix.CreateIdentity();
+                            // 1. Translate the SVG's native origin (CullRect.Location) to 0,0
+                            matrix = SKMatrix.Concat(matrix, SKMatrix.CreateTranslation(-svgContentOrigin.X, -svgContentOrigin.Y));
+                            // 2. Scale the SVG content
+                            matrix = SKMatrix.Concat(matrix, SKMatrix.CreateScale(scale, scale));
+                            // 3. Translate the scaled SVG to its centered position on the canvas
+                            matrix = SKMatrix.Concat(matrix, SKMatrix.CreateTranslation(translateX, translateY));
+
+                            canvas.DrawPicture(svg.Picture, in matrix);
+                            canvas.Flush();
+
+                            using var skImage = SKImage.FromBitmap(bitmap);
+                            using var data = skImage.Encode(SKEncodedImageFormat.Png, 100); // Encode to PNG, 100 quality
+                            if (data == null)
+                            {
+                                Plugin.Log?.Error($"Failed to encode SVG (rendered at {DefaultRenderWidth}x{DefaultRenderHeight}) to PNG: {fullResourcePath}");
+                                LoadedTextures[resourcePathFromPluginRoot] = null;
+                                return null;
+                            }
+                            imageBytes = data.ToArray();
+                        }
+                        catch (Exception exSvg)
+                        {
+                            Plugin.Log?.Error(exSvg, $"Failed to process SVG resource: {fullResourcePath}");
+                            LoadedTextures[resourcePathFromPluginRoot] = null;
+                            return null;
+                        }
                     }
+                    else // Existing logic for non-SVG (JPG, PNG, etc.)
+                    {
+                        Plugin.Log?.Debug($"Processing non-SVG resource: {fullResourcePath}");
+                        using (MemoryStream ms = new MemoryStream())
+                        {
+                            resourceStream.CopyTo(ms);
+                            imageBytes = ms.ToArray();
+                        }
+                    }
+
+                    if (imageBytes == null || imageBytes.Length == 0)
+                    {
+                        Plugin.Log?.Error($"Image byte array is null or empty for {fullResourcePath} after processing.");
+                        LoadedTextures[resourcePathFromPluginRoot] = null;
+                        return null;
+                    }
+
+                    var newTexture = Plugin.TextureProvider.CreateFromImageAsync(imageBytes).GetAwaiter().GetResult();
+                    LoadedTextures[resourcePathFromPluginRoot] = newTexture; // Add successfully loaded texture to cache
+                    Plugin.Log?.Information($"Successfully loaded texture: {fullResourcePath} (Type: {(isSvg ? $"SVG->PNG@{DefaultRenderWidth}x{DefaultRenderHeight}" : "Bitmap")}, Size: {newTexture?.Width}x{newTexture?.Height})");
+                    return newTexture;
                 }
             }
             catch (Exception ex)
@@ -86,15 +166,14 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
-        // Call this when the plugin is disposed to clean up textures
         public static void Dispose()
         {
             Plugin.Log?.Debug("Disposing all textures managed by TextureManager.");
             foreach (var texPair in LoadedTextures)
             {
-                texPair.Value?.Dispose(); // Dispose each loaded texture
+                texPair.Value?.Dispose();
             }
-            LoadedTextures.Clear(); // Clear the cache
+            LoadedTextures.Clear();
         }
     }
 }
