@@ -7,8 +7,8 @@ namespace AetherDraw.Windows
 {
     public class ConfigWindow : Window, IDisposable
     {
-        private readonly Plugin plugin; // Renamed for convention
-        private readonly Configuration configuration; // Renamed for convention
+        private readonly Plugin plugin; 
+        private readonly Configuration configuration; 
 
         public ConfigWindow(Plugin plugin) : base("AetherDraw Settings###AetherDrawConfigWindow")
         {
@@ -19,8 +19,8 @@ namespace AetherDraw.Windows
             };
             this.RespectCloseHotkey = true;
 
-            this.plugin = plugin; // Use lowercase field name
-            this.configuration = plugin.Configuration; // Use lowercase field name
+            this.plugin = plugin; 
+            this.configuration = plugin.Configuration; 
         }
 
         public void Dispose()
@@ -32,7 +32,7 @@ namespace AetherDraw.Windows
             ImGui.Text("AetherDraw Configuration");
             ImGui.Spacing();
 
-            // Corrected Checkbox for IsMainWindowMovable using the field 'configuration'
+            
             bool tempMovable = this.configuration.IsMainWindowMovable;
             if (ImGui.Checkbox("Main Window Movable", ref tempMovable))
             {
@@ -52,7 +52,7 @@ namespace AetherDraw.Windows
                 this.configuration.Save();
             }
 
-            // Corrected DragFloat for DefaultBrushThickness using the field 'configuration'
+            
             float tempThickness = this.configuration.DefaultBrushThickness;
             if (ImGui.DragFloat("Default Brush Thickness", ref tempThickness, 0.1f, 1.0f, 50.0f))
             {

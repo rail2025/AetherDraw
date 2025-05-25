@@ -1,9 +1,8 @@
-// Your existing Plugin.cs
 using Dalamud.Game.Command;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Interface.Windowing;
-using Dalamud.Plugin.Services; // Ensure this using statement is present
+using Dalamud.Plugin.Services;
 using AetherDraw.Windows;
 using AetherDraw.DrawingLogic;
 
