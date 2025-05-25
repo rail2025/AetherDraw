@@ -52,7 +52,7 @@
     <ItemGroup>
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
         <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.1.5" />
-        <PackageReference Include="DotNet.ReproducibleBuilds" Version="1.2.25" PrivateAssets="All" />
+       
         <PackageReference Include="Svg.Skia" Version="3.0.2" />
     </ItemGroup>
 
