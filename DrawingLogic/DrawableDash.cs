@@ -1,45 +1,47 @@
-using System; // For MathF
+using System;
 using System.Numerics;
 using System.Collections.Generic;
-using System.Linq; // For FirstOrDefault, Last
+using System.Linq;
 using ImGuiNET;
+using Dalamud.Interface.Utility; // Added for ImGuiHelpers
 
 namespace AetherDraw.DrawingLogic
 {
     public class DrawableDash : BaseDrawable
     {
         public List<Vector2> PointsRelative { get; set; } = new List<Vector2>();
+        // Store DashLength and GapLength as logical, unscaled values.
         public float DashLength { get; set; }
         public float GapLength { get; set; }
 
-        // Constructor: The original 'bool f' (isFilled) parameter was unused, so it's removed.
-        public DrawableDash(Vector2 startPointRelative, Vector4 color, float thickness)
+        // Constructor: Initializes a new dashed line.
+        public DrawableDash(Vector2 startPointRelative, Vector4 color, float unscaledThickness)
         {
             this.ObjectDrawMode = DrawMode.Dash;
-            if (startPointRelative != default || PointsRelative.Count == 0)
+            if (startPointRelative != default || !PointsRelative.Any())
             {
                 PointsRelative.Add(startPointRelative);
             }
             this.Color = color;
-            this.Thickness = thickness;
-            this.IsFilled = false; // Dashes are inherently not "filled" in the typical sense
+            this.Thickness = unscaledThickness; // Store unscaled thickness.
+            this.IsFilled = false; // Dashes are not "filled".
             this.IsPreview = true;
 
-            // Initialize DashLength and GapLength based on thickness
-            this.DashLength = MathF.Max(5f, thickness * 2.5f);
-            this.GapLength = MathF.Max(3f, thickness * 1.25f);
+            // Initialize logical DashLength and GapLength based on unscaled thickness.
+            // These factors determine the appearance relative to the thickness.
+            this.DashLength = MathF.Max(5f, unscaledThickness * 2.5f);
+            this.GapLength = MathF.Max(3f, unscaledThickness * 1.25f);
         }
 
+        // Adds a point to the dashed line path.
         public void AddPoint(Vector2 pointRelative)
         {
-            // Add if list is empty or if new point is sufficiently far from the last
-            // Original code used DistanceSquared with a threshold of 4.0f
-            if (PointsRelative.Count == 0 || Vector2.DistanceSquared(PointsRelative.Last(), pointRelative) > 4.0f)
+            // 4.0f is a logical squared distance threshold, likely doesn't need scaling.
+            if (!PointsRelative.Any() || Vector2.DistanceSquared(PointsRelative.Last(), pointRelative) > 4.0f)
             {
                 PointsRelative.Add(pointRelative);
             }
-            // If it's a preview and points exist, update the last point
-            else if (PointsRelative.Count > 0 && this.IsPreview)
+            else if (PointsRelative.Any() && this.IsPreview)
             {
                 PointsRelative[PointsRelative.Count - 1] = pointRelative;
             }
@@ -47,27 +49,38 @@ namespace AetherDraw.DrawingLogic
 
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            if (PointsRelative.Count == 0) return;
+            if (!PointsRelative.Any()) return;
 
-            // If only one point and in preview, draw a small circle for feedback
+            float baseScaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
+            float highlightThicknessAddition = this.IsSelected || this.IsHovered ? (2f * ImGuiHelpers.GlobalScale) : 0f;
+            float displayScaledThickness = baseScaledThickness + highlightThicknessAddition;
+            displayScaledThickness = MathF.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness);
+
+            // If only one point and in preview, draw a small circle for feedback.
             if (PointsRelative.Count == 1 && this.IsPreview)
             {
-                var previewColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
-                var previewThickness = this.IsSelected || this.IsHovered ? this.Thickness + 2f : this.Thickness;
+                var previewColorVec = this.IsSelected || this.IsHovered ? new Vector4(1, 1, 0, 1) : this.Color;
                 uint previewColor = ImGui.GetColorU32(previewColorVec);
-                drawList.AddCircleFilled(PointsRelative[0] + canvasOriginScreen, previewThickness / 2f + 1f, previewColor);
+                drawList.AddCircleFilled(PointsRelative[0] + canvasOriginScreen, displayScaledThickness / 2f + (1f * ImGuiHelpers.GlobalScale), previewColor);
                 return;
             }
 
-            if (PointsRelative.Count < 2) return; // Need at least two points to form segments
+            if (PointsRelative.Count < 2) return;
 
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
-            var displayThickness = this.IsSelected || this.IsHovered ? this.Thickness + 2f : this.Thickness;
             uint displayColor = ImGui.GetColorU32(displayColorVec);
 
-            // State for iterating through the dash-gap pattern along the polyline
-            float currentDistanceIntoPatternElement = 0f; // How far into the current dash or gap we are
-            bool isCurrentlyDrawingDash = true;      // Start by drawing a dash
+            // Scale dash and gap lengths for drawing.
+            float scaledDashLength = this.DashLength * ImGuiHelpers.GlobalScale;
+            float scaledGapLength = this.GapLength * ImGuiHelpers.GlobalScale;
+
+            // Ensure minimum positive lengths for scaled dashes/gaps to avoid issues.
+            if (scaledDashLength <= 0) scaledDashLength = 1f * ImGuiHelpers.GlobalScale;
+            if (scaledGapLength <= 0) scaledGapLength = 1f * ImGuiHelpers.GlobalScale;
+
+
+            float currentDistanceIntoPatternElement = 0f;
+            bool isCurrentlyDrawingDash = true;
 
             for (int i = 0; i < PointsRelative.Count - 1; i++)
             {
@@ -77,59 +90,62 @@ namespace AetherDraw.DrawingLogic
                 Vector2 segmentVector = screenP2 - screenP1;
                 float segmentLength = segmentVector.Length();
 
-                if (segmentLength < 0.01f) continue; // Skip zero-length segments
+                // 0.01f is a very small logical length, scaling it ensures it's not too small visually.
+                if (segmentLength < 0.01f * ImGuiHelpers.GlobalScale) continue;
 
                 Vector2 segmentDirection = segmentVector / segmentLength;
                 float distanceCoveredOnSegment = 0f;
 
-                // Iterate along the current segment, drawing dashes and gaps
                 while (distanceCoveredOnSegment < segmentLength)
                 {
                     if (isCurrentlyDrawingDash)
                     {
-                        float remainingLengthInCurrentDash = this.DashLength - currentDistanceIntoPatternElement;
+                        float remainingLengthInCurrentDash = scaledDashLength - currentDistanceIntoPatternElement;
                         float lengthToDrawForThisDashPart = MathF.Min(remainingLengthInCurrentDash, segmentLength - distanceCoveredOnSegment);
 
                         Vector2 dashPartStart = screenP1 + segmentDirection * distanceCoveredOnSegment;
                         Vector2 dashPartEnd = dashPartStart + segmentDirection * lengthToDrawForThisDashPart;
-                        drawList.AddLine(dashPartStart, dashPartEnd, displayColor, displayThickness);
+                        drawList.AddLine(dashPartStart, dashPartEnd, displayColor, displayScaledThickness);
 
                         currentDistanceIntoPatternElement += lengthToDrawForThisDashPart;
                         distanceCoveredOnSegment += lengthToDrawForThisDashPart;
 
-                        if (currentDistanceIntoPatternElement >= this.DashLength - 0.01f) // Tolerance for float comparison
+                        // Use a small epsilon for float comparison, scaled if needed.
+                        if (currentDistanceIntoPatternElement >= scaledDashLength - (0.01f * ImGuiHelpers.GlobalScale))
                         {
-                            isCurrentlyDrawingDash = false; // Switch to gap
-                            currentDistanceIntoPatternElement = 0; // Reset for gap
+                            isCurrentlyDrawingDash = false;
+                            currentDistanceIntoPatternElement = 0;
                         }
                     }
-                    else // Currently in a gap
+                    else // Currently in a gap.
                     {
-                        float remainingLengthInCurrentGap = this.GapLength - currentDistanceIntoPatternElement;
+                        float remainingLengthInCurrentGap = scaledGapLength - currentDistanceIntoPatternElement;
                         float lengthToAdvanceForThisGapPart = MathF.Min(remainingLengthInCurrentGap, segmentLength - distanceCoveredOnSegment);
 
                         currentDistanceIntoPatternElement += lengthToAdvanceForThisGapPart;
                         distanceCoveredOnSegment += lengthToAdvanceForThisGapPart;
 
-                        if (currentDistanceIntoPatternElement >= this.GapLength - 0.01f) // Tolerance
+                        if (currentDistanceIntoPatternElement >= scaledGapLength - (0.01f * ImGuiHelpers.GlobalScale))
                         {
-                            isCurrentlyDrawingDash = true; // Switch to dash
-                            currentDistanceIntoPatternElement = 0; // Reset for dash
+                            isCurrentlyDrawingDash = true;
+                            currentDistanceIntoPatternElement = 0;
                         }
                     }
                 }
             }
         }
 
-        public override bool IsHit(Vector2 queryPointRelative, float hitThreshold = 5.0f)
+        public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
         {
-            // For dashed lines, hit detection typically simplifies to checking against the underlying polyline path.
-            // Checking against individual dash segments would be more complex and might not be desired for user interaction.
             if (PointsRelative.Count < 2) return false;
+
+            float scaledHitThreshold = unscaledHitThreshold * ImGuiHelpers.GlobalScale;
+            float scaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
+            float effectiveHitRange = scaledHitThreshold + (scaledThickness / 2f);
 
             for (int i = 0; i < PointsRelative.Count - 1; i++)
             {
-                if (HitDetection.DistancePointToLineSegment(queryPointRelative, PointsRelative[i], PointsRelative[i + 1]) <= hitThreshold + (this.Thickness / 2f))
+                if (HitDetection.DistancePointToLineSegment(queryPointRelative, PointsRelative[i], PointsRelative[i + 1]) <= effectiveHitRange)
                 {
                     return true;
                 }
@@ -139,13 +155,11 @@ namespace AetherDraw.DrawingLogic
 
         public override BaseDrawable Clone()
         {
+            // Pass unscaled thickness. DashLength and GapLength are recalculated in constructor based on it.
             var newDash = new DrawableDash(PointsRelative.FirstOrDefault(), this.Color, this.Thickness)
             {
                 PointsRelative = new List<Vector2>(this.PointsRelative),
-                // Explicitly copy DashLength and GapLength in case they could be modified
-                // after construction (though the current class doesn't allow this, it's safer for cloning).
-                DashLength = this.DashLength,
-                GapLength = this.GapLength
+                // DashLength and GapLength are set in constructor based on unscaled thickness.
             };
             CopyBasePropertiesTo(newDash);
             return newDash;

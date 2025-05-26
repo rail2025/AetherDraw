@@ -1,6 +1,7 @@
-using System; // For Math.Abs
+using System;
 using System.Numerics;
 using ImGuiNET;
+using Dalamud.Interface.Utility; // Added for ImGuiHelpers
 
 namespace AetherDraw.DrawingLogic
 {
@@ -9,76 +10,91 @@ namespace AetherDraw.DrawingLogic
         public Vector2 CenterRelative { get; set; }
         public float Radius { get; set; }
 
-        public DrawableCircle(Vector2 centerRelative, Vector4 color, float thickness, bool isFilled)
+        // Constructor: Initializes a new circle.
+        public DrawableCircle(Vector2 centerRelative, Vector4 color, float unscaledThickness, bool isFilled)
         {
             this.ObjectDrawMode = DrawMode.Circle;
             this.CenterRelative = centerRelative;
-            this.Radius = 0f; // Radius will be determined during UpdatePreview
+            this.Radius = 0f; // Radius will be determined during UpdatePreview.
             this.Color = color;
-            this.Thickness = thickness;
+            this.Thickness = unscaledThickness; // Store unscaled thickness.
             this.IsFilled = isFilled;
             this.IsPreview = true;
         }
 
+        // Updates the radius of the circle during preview (e.g., while dragging).
         public override void UpdatePreview(Vector2 pointRelative)
         {
-            // Radius is the distance from the fixed center to the current mouse point
             this.Radius = Vector2.Distance(this.CenterRelative, pointRelative);
         }
 
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            // Avoid drawing a tiny dot if the radius is very small during preview,
-            // unless it's no longer a preview (meaning it was intentionally drawn small).
-            if (this.Radius < 0.5f && this.IsPreview) return;
+            // Avoid drawing if the radius is very small during preview unless intentionally drawn small.
+            // 0.5f is a small logical threshold, scaling it ensures it's visually consistent.
+            if (this.Radius < 0.5f * ImGuiHelpers.GlobalScale && this.IsPreview) return;
 
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
-            var displayThickness = this.IsSelected || this.IsHovered ? this.Thickness + 2f : this.Thickness;
             uint displayColor = ImGui.GetColorU32(displayColorVec);
 
+            // Scale base thickness and selection/hover highlight.
+            float baseScaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
+            float highlightThicknessAddition = this.IsSelected || this.IsHovered ? (2f * ImGuiHelpers.GlobalScale) : 0f;
+            float displayScaledThickness = baseScaledThickness + highlightThicknessAddition;
+            displayScaledThickness = MathF.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness); // Ensure minimum visible thickness.
+
             Vector2 screenCenter = this.CenterRelative + canvasOriginScreen;
-            int numSegments = 0; // Use 0 for ImGui to auto-determine the number of segments for smoothness
+            // ImGui determines segment count automatically if 0.
+            int numSegments = (int)(this.Radius * ImGuiHelpers.GlobalScale / 2f); // Proportional segments, clamped
+            numSegments = Math.Clamp(numSegments, 12, 128);
+
 
             if (this.IsFilled)
             {
-                drawList.AddCircleFilled(screenCenter, this.Radius, displayColor, numSegments);
+                drawList.AddCircleFilled(screenCenter, this.Radius * ImGuiHelpers.GlobalScale, displayColor, numSegments);
             }
             else
             {
-                drawList.AddCircle(screenCenter, this.Radius, displayColor, numSegments, displayThickness);
+                drawList.AddCircle(screenCenter, this.Radius * ImGuiHelpers.GlobalScale, displayColor, numSegments, displayScaledThickness);
             }
         }
 
-        public override bool IsHit(Vector2 queryPointRelative, float hitThreshold = 5.0f)
+        public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
         {
-            // If hitThreshold is large (like an eraser radius), perform a circle-circle intersection check
-            // This condition (2.1f) was in the original code.
-            if (hitThreshold > (this.Thickness / 2f + 2.1f))
+            float scaledRadius = this.Radius * ImGuiHelpers.GlobalScale;
+            float scaledHitThreshold = unscaledHitThreshold * ImGuiHelpers.GlobalScale;
+            float scaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
+            // The 2.1f constant, representing an additional proximity margin for eraser-like interactions, should also be scaled.
+            float scaledEraserProximityFactor = 2.1f * ImGuiHelpers.GlobalScale;
+
+            // For eraser or large hit thresholds, perform a circle-circle intersection check.
+            if (scaledHitThreshold > (scaledThickness / 2f + scaledEraserProximityFactor))
             {
-                return HitDetection.IntersectCircleCircle(this.CenterRelative, this.Radius, queryPointRelative, hitThreshold);
+                // HitDetection.IntersectCircleCircle expects world-space radii.
+                return HitDetection.IntersectCircleCircle(this.CenterRelative, this.Radius, queryPointRelative, unscaledHitThreshold);
             }
 
             float distanceToCenter = Vector2.Distance(queryPointRelative, this.CenterRelative);
 
             if (this.IsFilled)
             {
-                // For filled circles, check if the point is within the radius.
-                // The original code added 'hitThreshold' here, making filled circles easier to hit.
-                return distanceToCenter <= this.Radius + hitThreshold;
+                // For filled circles, check if the point is within the radius (plus hit threshold for easier selection).
+                return distanceToCenter <= this.Radius + unscaledHitThreshold;
             }
             else
             {
                 // For outlined circles, check if the point is close to the circumference.
-                // The distance from the point to the circumference must be within the hitThreshold + half thickness.
-                return Math.Abs(distanceToCenter - this.Radius) <= hitThreshold + (this.Thickness / 2f);
+                // Compare distance to the logical radius, and use scaled thresholds.
+                return MathF.Abs(distanceToCenter - this.Radius) <= unscaledHitThreshold + (this.Thickness / 2f);
             }
         }
 
+
         public override BaseDrawable Clone()
         {
-            var newCircle = new DrawableCircle(this.CenterRelative, this.Color, this.Thickness, this.IsFilled)
+            var newCircle = new DrawableCircle(this.CenterRelative, this.Color, this.Thickness, this.IsFilled) // Pass unscaled thickness.
             {
-                Radius = this.Radius // Ensure the radius is also cloned
+                Radius = this.Radius // Radius is a logical value, scaling applied at draw time.
             };
             CopyBasePropertiesTo(newCircle);
             return newCircle;
