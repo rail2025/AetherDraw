@@ -32,7 +32,7 @@ namespace AetherDraw.DrawingLogic
         {
             // Avoid drawing if the radius is very small during preview unless intentionally drawn small.
             // 0.5f is a small logical threshold, scaling it ensures it's visually consistent.
-            if (this.Radius < 0.5f * ImGuiHelpers.GlobalScale && this.IsPreview) return;
+            if (this.Radius < 0.5f && this.IsPreview) return;
 
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
             uint displayColor = ImGui.GetColorU32(displayColorVec);

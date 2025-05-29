@@ -5,77 +5,74 @@ using Dalamud.Interface.Windowing;
 using ImGuiNET;
 using System.Linq;
 using AetherDraw.DrawingLogic;
-using Dalamud.Interface.Utility; // For ImGuiHelpers
-using Dalamud.Interface.Utility.Raii; // For ImRaii
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
 
 namespace AetherDraw.Windows
 {
     public class MainWindow : Window, IDisposable
     {
-        // Represents a single drawable page with its elements.
         private class PageData
         {
-            public string Name { get; set; } = "1"; // Default name for a new page.
+            public string Name { get; set; } = "1";
             public List<BaseDrawable> Drawables { get; set; } = new List<BaseDrawable>();
         }
 
         private readonly Plugin plugin;
         private readonly Configuration configuration;
         private readonly ShapeInteractionHandler shapeInteractionHandler;
+        private readonly InPlaceTextEditor inPlaceTextEditor;
 
         private List<PageData> pages = new List<PageData>();
         private int currentPageIndex = 0;
 
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
-        // Provides safe access to the drawables of the currently selected page.
         private List<BaseDrawable> DrawablesListOfCurrentPage =>
             (pages.Count > 0 && currentPageIndex >= 0 && currentPageIndex < pages.Count)
             ? pages[currentPageIndex].Drawables
             : EmptyDrawablesFallback;
 
-        private BaseDrawable? currentDrawingObject = null; // The object currently being drawn by the user.
-        private BaseDrawable? hoveredDrawable = null; // The drawable object currently under the mouse cursor.
-        private List<BaseDrawable> selectedDrawables = new List<BaseDrawable>(); // List of currently selected drawable objects.
-        private List<BaseDrawable> clipboard = new List<BaseDrawable>(); // For copy-paste functionality.
+        private BaseDrawable? currentDrawingObject = null;
+        private BaseDrawable? hoveredDrawable = null;
+        private List<BaseDrawable> selectedDrawables = new List<BaseDrawable>();
+        private List<BaseDrawable> clipboard = new List<BaseDrawable>();
 
-        private bool isDrawingOnCanvas = false; // Flag to indicate if a drawing action is in progress on the canvas.
+        private bool isDrawingOnCanvas = false;
 
-        // Scaled radii for eraser visuals and logic.
         private float ScaledEraserVisualRadius => 5f * ImGuiHelpers.GlobalScale;
-        private float ScaledEraserLogicRadius => 10f * ImGuiHelpers.GlobalScale;
+        private float ScaledEraserLogicRadius => 10f * ImGuiHelpers.GlobalScale; // This is a SCALED value, convert to logical for use
 
-        private Vector2 lastMouseDragPosRelative = Vector2.Zero; // Stores the last mouse position during a drag operation.
+        private Vector2 lastMouseDragPosLogical = Vector2.Zero; // Stores LOGICAL mouse position for general drag
 
-        private float ScaledImageDefaultSize => 32f * ImGuiHelpers.GlobalScale; // Default scaled size for placed images.
+        private float DefaultUnscaledFontSize => 16f;
+        private float DefaultUnscaledTextWrapWidth => 200f;
+        // ScaledImageDefaultSize from ab6ebef... was 32f * ImGuiHelpers.GlobalScale.
+        // It's better to define default image size as logical/unscaled.
+        private Vector2 DefaultUnscaledImageSize => new Vector2(30f, 30f);
 
-        private DrawMode currentDrawMode = DrawMode.Pen; // Active drawing mode.
-        private Vector4 currentBrushColor; // Current color selected for drawing.
-        private float currentBrushThickness; // Unscaled thickness preset value.
-        private bool currentShapeFilled = false; // Whether shapes like rectangles/circles should be filled.
 
-        // Predefined thickness values for brush/pen.
-        private static readonly float[] ThicknessPresets = new float[] { 1.5f, 4f, 7f, 10f };
-        // Predefined color palette for quick color selection.
+        private DrawMode currentDrawMode = DrawMode.Pen;
+        private Vector4 currentBrushColor;
+        private float currentBrushThickness; // This is unscaled
+        private bool currentShapeFilled = false;
+
+        private static readonly float[] ThicknessPresets = new float[] { 1.5f, 4f, 7f, 10f }; // Unscaled
         private static readonly Vector4[] ColorPalette = new Vector4[] {
-            new Vector4(1.0f,1.0f,1.0f,1.0f), // White
-            new Vector4(0.0f,0.0f,0.0f,1.0f), // Black
-            new Vector4(1.0f,0.0f,0.0f,1.0f), // Red
-            new Vector4(0.0f,1.0f,0.0f,1.0f), // Green
-            new Vector4(0.0f,0.0f,1.0f,1.0f), // Blue
-            new Vector4(1.0f,1.0f,0.0f,1.0f), // Yellow
-            new Vector4(1.0f,0.0f,1.0f,1.0f), // Magenta
-            new Vector4(0.0f,1.0f,1.0f,1.0f), // Cyan
-            new Vector4(0.5f,0.5f,0.5f,1.0f), // Medium Grey
-            new Vector4(0.8f,0.4f,0.0f,1.0f)  // Brown (Orange-Brown)
+            new Vector4(1.0f,1.0f,1.0f,1.0f), new Vector4(0.0f,0.0f,0.0f,1.0f),
+            new Vector4(1.0f,0.0f,0.0f,1.0f), new Vector4(0.0f,1.0f,0.0f,1.0f),
+            new Vector4(0.0f,0.0f,1.0f,1.0f), new Vector4(1.0f,1.0f,0.0f,1.0f),
+            new Vector4(1.0f,0.0f,1.0f,1.0f), new Vector4(0.0f,1.0f,1.0f,1.0f),
+            new Vector4(0.5f,0.5f,0.5f,1.0f), new Vector4(0.8f,0.4f,0.0f,1.0f)
         };
 
-        private float ScaledCanvasGridSize => 40f * ImGuiHelpers.GlobalScale; // Scaled size for canvas grid cells.
+        private float ScaledCanvasGridSize => 40f * ImGuiHelpers.GlobalScale;
 
         public MainWindow(Plugin plugin) : base("AetherDraw Whiteboard###AetherDrawMainWindow")
         {
             this.plugin = plugin;
             this.configuration = plugin.Configuration;
             this.shapeInteractionHandler = new ShapeInteractionHandler();
+            this.inPlaceTextEditor = new InPlaceTextEditor();
 
             float targetMinimumWidth = 850f * 0.75f * ImGuiHelpers.GlobalScale;
             float targetMinimumHeight = 600f * ImGuiHelpers.GlobalScale;
@@ -93,10 +90,7 @@ namespace AetherDraw.Windows
             currentPageIndex = 0;
         }
 
-        public void Dispose()
-        {
-            // Specific disposal logic for MainWindow, if any, would go here.
-        }
+        public void Dispose() { }
 
         public override void PreDraw()
         {
@@ -105,46 +99,88 @@ namespace AetherDraw.Windows
 
         public override void Draw()
         {
-            float scaledToolbarWidth = 125f * ImGuiHelpers.GlobalScale; // Toolbar width is now halved.
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] Frame {ImGui.GetFrameCount()}: Entry. Window Size: {ImGui.GetWindowSize()}, Window Pos: {ImGui.GetWindowPos()}, GlobalScale: {ImGuiHelpers.GlobalScale}");
 
-            using (var toolbarChild = ImRaii.Child("ToolbarRegion", new Vector2(scaledToolbarWidth, 0), true, ImGuiWindowFlags.None))
+            float scaledToolbarWidth = 125f * ImGuiHelpers.GlobalScale;
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] scaledToolbarWidth: {scaledToolbarWidth}");
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] ContentRegionAvail before ToolbarRegion: {ImGui.GetContentRegionAvail()}");
+
+            bool toolbarDrawnSuccessfully = false;
+            using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(scaledToolbarWidth, 0), true, ImGuiWindowFlags.None))
             {
-                if (toolbarChild) { DrawToolbarControls(); }
-            }
-
-            ImGui.SameLine();
-
-            using (var rightPaneChild = ImRaii.Child("RightPane", Vector2.Zero, false, ImGuiWindowFlags.None))
-            {
-                if (rightPaneChild)
+                if (toolbarRaii)
                 {
-                    // Approximate height for bottom bar, e.g., for two rows of controls.
-                    float bottomControlsBarHeight = ImGui.GetFrameHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y;
-
-                    float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsBarHeight - ImGui.GetStyle().ItemSpacing.Y;
-                    if (canvasAvailableHeight < 50f * ImGuiHelpers.GlobalScale) canvasAvailableHeight = 50f * ImGuiHelpers.GlobalScale;
-
-                    if (ImGui.BeginChild("CanvasDrawingArea", new Vector2(0, canvasAvailableHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
-                    {
-                        DrawCanvas();
-                    }
-                    ImGui.EndChild();
-
-                    DrawBottomControlsBar(bottomControlsBarHeight);
+                    toolbarDrawnSuccessfully = true;
+                    AetherDraw.Plugin.Log?.Debug("[MainWindow.Draw] ToolbarRegion BeginChild succeeded. Drawing toolbar controls.");
+                    DrawToolbarControls();
+                }
+                else
+                {
+                    toolbarDrawnSuccessfully = false;
+                    AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] ToolbarRegion BeginChild FAILED.");
                 }
             }
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] ToolbarRegion draw attempt was successful: {toolbarDrawnSuccessfully}");
+
+            ImGui.SameLine();
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] ContentRegionAvail after SameLine (before RightPane): {ImGui.GetContentRegionAvail()}");
+
+            bool rightPaneDrawnSuccessfully = false;
+            using (var rightPaneRaii = ImRaii.Child("RightPane", Vector2.Zero, false, ImGuiWindowFlags.None))
+            {
+                if (rightPaneRaii)
+                {
+                    rightPaneDrawnSuccessfully = true;
+                    AetherDraw.Plugin.Log?.Debug("[MainWindow.Draw] RightPane BeginChild succeeded.");
+
+                    float bottomControlsBarHeight = ImGui.GetFrameHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y;
+                    AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] bottomControlsBarHeight: {bottomControlsBarHeight}");
+
+                    float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsBarHeight - ImGui.GetStyle().ItemSpacing.Y;
+                    AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] canvasAvailableHeight (initial): {canvasAvailableHeight}, ContentRegionAvail.Y for canvas: {ImGui.GetContentRegionAvail().Y}");
+
+                    if (canvasAvailableHeight < 50f * ImGuiHelpers.GlobalScale)
+                    {
+                        AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] canvasAvailableHeight was < {50f * ImGuiHelpers.GlobalScale}, clamping to it.");
+                        canvasAvailableHeight = 50f * ImGuiHelpers.GlobalScale;
+                    }
+                    AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] canvasAvailableHeight (final): {canvasAvailableHeight}");
+
+                    AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] Attempting to BeginChild for CanvasDrawingArea with height {canvasAvailableHeight}");
+                    if (ImGui.BeginChild("CanvasDrawingArea", new Vector2(0, canvasAvailableHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+                    {
+                        AetherDraw.Plugin.Log?.Debug("[MainWindow.Draw] CanvasDrawingArea BeginChild succeeded. Drawing canvas.");
+                        DrawCanvas();
+                        ImGui.EndChild(); // Correctly conditional
+                    }
+                    else
+                    {
+                        AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] CanvasDrawingArea BeginChild FAILED.");
+                    }
+
+                    AetherDraw.Plugin.Log?.Debug("[MainWindow.Draw] Drawing bottom controls bar.");
+                    DrawBottomControlsBar(bottomControlsBarHeight);
+                }
+                else
+                {
+                    rightPaneDrawnSuccessfully = false;
+                    AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] RightPane BeginChild FAILED.");
+                }
+            }
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] RightPane draw attempt was successful: {rightPaneDrawnSuccessfully}");
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] Frame {ImGui.GetFrameCount()}: Exit.");
         }
 
         private void DrawToolbarControls()
         {
             Vector4 activeToolColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
             float availableWidth = ImGui.GetContentRegionAvail().X;
+            float itemSpacingX = ImGui.GetStyle().ItemSpacing.X;
 
-            // Width for buttons when 2 are in a row.
-            float btnWidthHalf = (availableWidth - ImGui.GetStyle().ItemSpacing.X * 1) / 2f;
+            float btnWidthHalf = (availableWidth - itemSpacingX) / 2f; // For two buttons in a row
             btnWidthHalf = Math.Max(btnWidthHalf, 30f * ImGuiHelpers.GlobalScale);
+            float btnWidthFull = availableWidth; // For one button in a row
 
-            // Helper local function to create a tool button.
             void ToolButton(string label, DrawMode mode, float buttonWidth)
             {
                 bool isSelected = currentDrawMode == mode;
@@ -154,12 +190,12 @@ namespace AetherDraw.Windows
                     {
                         currentDrawMode = mode;
                         FinalizeCurrentDrawing();
-                        if (mode != DrawMode.Select) shapeInteractionHandler.ResetDragState();
+                        if (mode != DrawMode.Select && mode != DrawMode.TextTool) shapeInteractionHandler.ResetDragState();
+                        if (inPlaceTextEditor.IsEditing && mode != DrawMode.TextTool && mode != DrawMode.Select) { inPlaceTextEditor.CommitAndEndEdit(); }
                     }
                 }
             }
 
-            // Helper local function to create a tool button for placing images.
             void PlacedImageToolButton(string label, DrawMode mode, string imageResourcePath, float buttonWidth)
             {
                 bool isSelected = currentDrawMode == mode;
@@ -177,7 +213,8 @@ namespace AetherDraw.Windows
                     {
                         currentDrawMode = mode;
                         FinalizeCurrentDrawing();
-                        if (mode != DrawMode.Select) shapeInteractionHandler.ResetDragState();
+                        if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CommitAndEndEdit();
+                        shapeInteractionHandler.ResetDragState();
                     }
                     if (ImGui.IsItemHovered()) ImGui.SetTooltip(label);
 
@@ -200,22 +237,18 @@ namespace AetherDraw.Windows
             ToolButton("Select", DrawMode.Select, btnWidthHalf); ImGui.SameLine();
             ToolButton("Eraser", DrawMode.Eraser, btnWidthHalf);
 
+            
             if (ImGui.Button("Copy", new Vector2(btnWidthHalf, 0))) CopySelected(); ImGui.SameLine();
             if (ImGui.Button("Paste", new Vector2(btnWidthHalf, 0))) PasteCopied();
-
             ImGui.Checkbox("Fill Shape", ref currentShapeFilled);
-            // "Clear All" button on a new line, taking btnWidthHalf width.
-            float clearAllButtonWidth = btnWidthHalf;
 
-            if (ImGui.Button("Clear All", new Vector2(clearAllButtonWidth, 0)))
+            if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0)))
             {
-                if (DrawablesListOfCurrentPage.Any())
-                {
-                    DrawablesListOfCurrentPage.Clear();
-                }
+                if (DrawablesListOfCurrentPage.Any()) DrawablesListOfCurrentPage.Clear();
                 currentDrawingObject = null; isDrawingOnCanvas = false; selectedDrawables.Clear(); hoveredDrawable = null;
                 shapeInteractionHandler.ResetDragState();
-                Plugin.Log.Information($"Page {(pages.Count > 0 && currentPageIndex < pages.Count ? pages[currentPageIndex].Name : "N/A")} cleared.");
+                if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CancelAndEndEdit();
+                AetherDraw.Plugin.Log.Information($"Page {(pages.Count > 0 && currentPageIndex < pages.Count ? pages[currentPageIndex].Name : "N/A")} cleared.");
             }
             ImGui.Separator();
 
@@ -225,8 +258,8 @@ namespace AetherDraw.Windows
             ToolButton("Rect", DrawMode.Rectangle, btnWidthHalf);
             ToolButton("Circle", DrawMode.Circle, btnWidthHalf); ImGui.SameLine();
             ToolButton("Arrow", DrawMode.Arrow, btnWidthHalf);
-            ToolButton("Cone", DrawMode.Cone, btnWidthHalf);
-            ImGui.NewLine();
+            ToolButton("Cone", DrawMode.Cone, btnWidthHalf); ImGui.SameLine();
+            ToolButton("A", DrawMode.TextTool, btnWidthHalf);
             ImGui.Separator();
 
             PlacedImageToolButton("Tank", DrawMode.RoleTankImage, "PluginImages.toolbar.Tank.JPG", btnWidthHalf); ImGui.SameLine();
@@ -251,17 +284,16 @@ namespace AetherDraw.Windows
             PlacedImageToolButton("Flare", DrawMode.FlareImage, "PluginImages.svg.flare.svg", btnWidthHalf);
             PlacedImageToolButton("L.Stack", DrawMode.LineStackImage, "PluginImages.svg.line_stack.svg", btnWidthHalf); ImGui.SameLine();
             PlacedImageToolButton("Spread", DrawMode.SpreadImage, "PluginImages.svg.spread.svg", btnWidthHalf);
-            PlacedImageToolButton("Stack", DrawMode.StackImage, "PluginImages.svg.stack.svg", btnWidthHalf);
+            PlacedImageToolButton("Stack", DrawMode.StackImage, "PluginImages.svg.stack.svg", btnWidthHalf); 
             ImGui.Separator();
 
             ImGui.Text("Thickness:");
-            // Calculate width for 4 thickness buttons to fit in the available toolbar width.
-            float thicknessButtonWidth = availableWidth / ThicknessPresets.Length;
-            thicknessButtonWidth = Math.Max(thicknessButtonWidth, 20f * ImGuiHelpers.GlobalScale); // Minimum scaled width for each button.
+            float thicknessButtonWidth = (availableWidth - itemSpacingX * (ThicknessPresets.Length - 1)) / ThicknessPresets.Length;
+            thicknessButtonWidth = Math.Max(thicknessButtonWidth, 20f * ImGuiHelpers.GlobalScale);
 
             for (int i = 0; i < ThicknessPresets.Length; i++)
             {
-                if (i > 0) ImGui.SameLine(0, 0.0f); // Place buttons on the same line.
+                if (i > 0) ImGui.SameLine();
                 float t = ThicknessPresets[i];
                 bool isSelectedThickness = Math.Abs(currentBrushThickness - t) < 0.01f;
 
@@ -272,15 +304,15 @@ namespace AetherDraw.Windows
             }
             ImGui.Separator();
 
-            int colorsPerRow = 5; 
-            float smallColorButtonBaseSize = (availableWidth - ImGui.GetStyle().ItemSpacing.X * (colorsPerRow - 1)) / colorsPerRow;
+            int colorsPerRow = 5;
+            float smallColorButtonBaseSize = (availableWidth - itemSpacingX * (colorsPerRow - 1)) / colorsPerRow;
             float smallColorButtonActualSize = Math.Max(smallColorButtonBaseSize, ImGui.GetTextLineHeight() * 0.8f);
             smallColorButtonActualSize = Math.Max(smallColorButtonActualSize, 16f * ImGuiHelpers.GlobalScale);
             Vector2 colorButtonDimensions = new Vector2(smallColorButtonActualSize, smallColorButtonActualSize);
 
             Vector4 selectedColorIndicatorColorVec = new Vector4(0.9f, 0.9f, 0.1f, 1.0f);
             uint selectedColorIndicatorU32 = ImGui.GetColorU32(selectedColorIndicatorColorVec);
-            float selectedColorIndicatorThickness = 3.0f * ImGuiHelpers.GlobalScale;
+            float selectedColorIndicatorThickness = 2.0f * ImGuiHelpers.GlobalScale; // Slightly thinner than original log version
 
             for (int i = 0; i < ColorPalette.Length; i++)
             {
@@ -289,27 +321,23 @@ namespace AetherDraw.Windows
                                         ColorPalette[i].Z == currentBrushColor.Z &&
                                         ColorPalette[i].W == currentBrushColor.W);
 
-                ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, Vector2.Zero);
-                try
+                if (ImGui.ColorButton($"##ColorPaletteButton{i}", ColorPalette[i], ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoAlpha, colorButtonDimensions))
                 {
-                    if (ImGui.ColorButton($"##ColorPaletteButton{i}", ColorPalette[i], ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoAlpha, colorButtonDimensions))
-                    {
-                        currentBrushColor = ColorPalette[i];
-                    }
-                }
-                finally
-                {
-                    ImGui.PopStyleVar();
+                    currentBrushColor = ColorPalette[i];
                 }
 
                 if (isSelectedColor)
                 {
                     ImDrawListPtr foregroundDrawList = ImGui.GetForegroundDrawList();
-                    Vector2 rectMin = ImGui.GetItemRectMin() - new Vector2(1, 1) * ImGuiHelpers.GlobalScale;
-                    Vector2 rectMax = ImGui.GetItemRectMax() + new Vector2(1, 1) * ImGuiHelpers.GlobalScale;
-                    foregroundDrawList.AddRect(rectMin, rectMax, selectedColorIndicatorU32, 2f * ImGuiHelpers.GlobalScale, ImDrawFlags.None, selectedColorIndicatorThickness);
+                    Vector2 rectMin = ImGui.GetItemRectMin(); // Use exact item rect
+                    Vector2 rectMax = ImGui.GetItemRectMax();
+                    foregroundDrawList.AddRect(rectMin, rectMax, selectedColorIndicatorU32, 1f * ImGuiHelpers.GlobalScale, ImDrawFlags.None, selectedColorIndicatorThickness);
                 }
-                if ((i + 1) % colorsPerRow != 0 && i < ColorPalette.Length - 1) ImGui.SameLine(0, ImGui.GetStyle().ItemSpacing.X / 2f);
+
+                if ((i + 1) % colorsPerRow != 0 && i < ColorPalette.Length - 1)
+                {
+                    ImGui.SameLine(0, itemSpacingX / 2f);
+                }
             }
         }
 
@@ -333,7 +361,7 @@ namespace AetherDraw.Windows
                     string pageName = pages[i].Name;
                     float buttonTextWidth = ImGui.CalcTextSize(pageName).X;
                     float pageButtonWidth = buttonTextWidth + ImGui.GetStyle().FramePadding.X * 2.0f + (10f * ImGuiHelpers.GlobalScale);
-                    pageButtonWidth = Math.Max(pageButtonWidth, buttonHeight * 0.8f);
+                    pageButtonWidth = Math.Max(pageButtonWidth, buttonHeight * 1.5f); // Ensure min width
 
                     using (isSelectedPage ? ImRaii.PushColor(ImGuiCol.Button, selectedTabColorVec) : null)
                     {
@@ -346,21 +374,16 @@ namespace AetherDraw.Windows
                 }
 
                 float plusButtonWidth = buttonHeight;
-                if (ImGui.Button("+", new Vector2(plusButtonWidth, buttonHeight))) AddNewPage();
+                if (ImGui.Button("+##AddPage", new Vector2(plusButtonWidth, buttonHeight))) AddNewPage();
 
                 if (pages.Count > 1)
                 {
                     ImGui.SameLine(0, ImGui.GetStyle().ItemSpacing.X);
-                    ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.6f, 0.2f, 0.2f, 1.0f));
-                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.7f, 0.3f, 0.3f, 1.0f));
-                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.8f, 0.2f, 0.2f, 1.0f));
-                    try
+                    using (ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.6f, 0.2f, 0.2f, 1.0f)))
+                    using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(0.7f, 0.3f, 0.3f, 1.0f)))
+                    using (ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)))
                     {
-                        if (ImGui.Button("X", new Vector2(plusButtonWidth, buttonHeight))) DeleteCurrentPage();
-                    }
-                    finally
-                    {
-                        ImGui.PopStyleColor(3);
+                        if (ImGui.Button("X##DeletePage", new Vector2(plusButtonWidth, buttonHeight))) DeleteCurrentPage();
                     }
                 }
             }
@@ -369,6 +392,7 @@ namespace AetherDraw.Windows
         private void AddNewPage(bool switchToPage = true)
         {
             FinalizeCurrentDrawing();
+
             int newPageNumber = 1;
             if (pages.Any())
             {
@@ -376,17 +400,14 @@ namespace AetherDraw.Windows
             }
             var newPage = new PageData { Name = newPageNumber.ToString() };
 
-            float baseMinWindowWidth = 850f * 0.75f;
-            float baseToolbarWidth = 125f; // Using the new halved toolbar width base.
-            float logicalRefCanvasWidth = baseMinWindowWidth - baseToolbarWidth;
-            float logicalRefCanvasHeight = 550f; // Retaining a fixed logical height for waymark placement.
+            // Corrected: Use logical (unscaled) sizes for DrawableImage constructor
+            float logicalRefCanvasWidth = (850f * 0.75f) - 125f;
+            float logicalRefCanvasHeight = 550f;
 
-            float refCanvasWidth = logicalRefCanvasWidth;
-            float refCanvasHeight = logicalRefCanvasHeight;
+            Vector2 canvasCenter = new Vector2(logicalRefCanvasWidth / 2f, logicalRefCanvasHeight / 2f);
+            float waymarkPlacementRadius = Math.Min(logicalRefCanvasWidth, logicalRefCanvasHeight) * 0.40f;
 
-            Vector2 canvasCenter = new Vector2(refCanvasWidth / 2f, refCanvasHeight / 2f);
-            float waymarkPlacementRadius = Math.Min(refCanvasWidth, refCanvasHeight) * 0.40f;
-            Vector2 waymarkImageSize = new Vector2(30f * ImGuiHelpers.GlobalScale, 30f * ImGuiHelpers.GlobalScale);
+            Vector2 waymarkImageUnscaledSize = new Vector2(30f, 30f); // LOGICAL size
             Vector4 waymarkTint = Vector4.One;
 
             var waymarksToPreload = new[]
@@ -407,7 +428,7 @@ namespace AetherDraw.Windows
                 float y = canvasCenter.Y + waymarkPlacementRadius * MathF.Sin(wmInfo.Angle);
                 Vector2 position = new Vector2(x, y);
 
-                var drawableImage = new DrawableImage(wmInfo.Mode, wmInfo.Path, position, waymarkImageSize, waymarkTint);
+                var drawableImage = new DrawableImage(wmInfo.Mode, wmInfo.Path, position, waymarkImageUnscaledSize, waymarkTint);
                 drawableImage.IsPreview = false;
                 newPage.Drawables.Add(drawableImage);
             }
@@ -422,8 +443,17 @@ namespace AetherDraw.Windows
         private void DeleteCurrentPage()
         {
             if (pages.Count <= 1) return;
+
             FinalizeCurrentDrawing();
+
             int pageIndexToRemove = currentPageIndex;
+            selectedDrawables.Clear();
+            hoveredDrawable = null;
+            currentDrawingObject = null;
+            isDrawingOnCanvas = false;
+            shapeInteractionHandler.ResetDragState();
+            if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CancelAndEndEdit();
+
             pages.RemoveAt(pageIndexToRemove);
             currentPageIndex = Math.Max(0, Math.Min(pageIndexToRemove, pages.Count - 1));
             SwitchToPage(currentPageIndex, true);
@@ -431,36 +461,51 @@ namespace AetherDraw.Windows
 
         private void SwitchToPage(int newPageIndex, bool forceSwitch = false)
         {
-            if (newPageIndex < 0 || newPageIndex >= pages.Count || (!forceSwitch && newPageIndex == currentPageIndex && pages.Count > 0)) return;
+            if (newPageIndex < 0 || newPageIndex >= pages.Count) return;
+            if (!forceSwitch && newPageIndex == currentPageIndex && pages.Count > 0) return;
+
             FinalizeCurrentDrawing();
             currentPageIndex = newPageIndex;
+
             currentDrawingObject = null;
             hoveredDrawable = null;
             selectedDrawables.Clear();
             shapeInteractionHandler.ResetDragState();
             isDrawingOnCanvas = false;
+            if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CancelAndEndEdit();
         }
 
         private void FinalizeCurrentDrawing()
         {
-            if (currentDrawingObject != null && pages.Count > 0 && currentPageIndex >= 0 && currentPageIndex < pages.Count)
+            if (currentDrawingObject == null || pages.Count == 0 || currentPageIndex < 0 || currentPageIndex >= pages.Count)
             {
-                if (isDrawingOnCanvas)
+                isDrawingOnCanvas = false;
+                return;
+            }
+
+            if (isDrawingOnCanvas)
+            {
+                currentDrawingObject.IsPreview = false;
+                bool isValidObject = true;
+                float minDistanceSqUnscaled = (2f * 2f);
+                float minRadiusUnscaled = 1.5f; // This is logical
+
+                if (currentDrawingObject is DrawablePath p && p.PointsRelative.Count < 2) isValidObject = false;
+                else if (currentDrawingObject is DrawableDash d && d.PointsRelative.Count < 2) isValidObject = false;
+                else if (currentDrawingObject is DrawableCircle ci && ci.Radius < minRadiusUnscaled) isValidObject = false; // ci.Radius is logical
+                else if (currentDrawingObject is DrawableStraightLine sl && Vector2.DistanceSquared(sl.StartPointRelative, sl.EndPointRelative) < minDistanceSqUnscaled) isValidObject = false;
+                else if (currentDrawingObject is DrawableRectangle r && (Math.Abs(r.StartPointRelative.X - r.EndPointRelative.X) < 2f || Math.Abs(r.StartPointRelative.Y - r.EndPointRelative.Y) < 2f)) isValidObject = false;
+                else if (currentDrawingObject is DrawableArrow arrow && Vector2.DistanceSquared(arrow.StartPointRelative, arrow.EndPointRelative) < minDistanceSqUnscaled && arrow.StartPointRelative != arrow.EndPointRelative) isValidObject = false;
+                else if (currentDrawingObject is DrawableCone co && Vector2.DistanceSquared(co.ApexRelative, co.BaseCenterRelative) < minDistanceSqUnscaled) isValidObject = false;
+                else if (currentDrawingObject is DrawableText txt && string.IsNullOrWhiteSpace(txt.RawText)) isValidObject = false;
+
+                if (isValidObject)
                 {
-                    currentDrawingObject.IsPreview = false;
-                    bool isValidObject = true;
-                    float minRadiusScaled = 2f * ImGuiHelpers.GlobalScale;
-                    float minDistanceSqScaled = (2f * ImGuiHelpers.GlobalScale) * (2f * ImGuiHelpers.GlobalScale);
-
-                    if (currentDrawingObject is DrawablePath p && p.PointsRelative.Count < 2) isValidObject = false;
-                    else if (currentDrawingObject is DrawableDash d && d.PointsRelative.Count < 2) isValidObject = false;
-                    else if (currentDrawingObject is DrawableCircle ci && ci.Radius < minRadiusScaled) isValidObject = false;
-                    else if (currentDrawingObject is DrawableStraightLine sl && Vector2.DistanceSquared(sl.StartPointRelative, sl.EndPointRelative) < minDistanceSqScaled) isValidObject = false;
-                    else if (currentDrawingObject is DrawableRectangle r && Vector2.DistanceSquared(r.StartPointRelative, r.EndPointRelative) < minDistanceSqScaled) isValidObject = false;
-                    else if (currentDrawingObject is DrawableArrow a && Vector2.DistanceSquared(a.StartPointRelative, a.EndPointRelative) < minDistanceSqScaled) isValidObject = false;
-                    else if (currentDrawingObject is DrawableCone co && Vector2.DistanceSquared(co.ApexRelative, co.BaseCenterRelative) < minDistanceSqScaled) isValidObject = false;
-
-                    if (isValidObject) DrawablesListOfCurrentPage.Add(currentDrawingObject);
+                    DrawablesListOfCurrentPage.Add(currentDrawingObject);
+                }
+                else
+                {
+                    AetherDraw.Plugin.Log?.Debug($"[MainWindow] Discarded invalid/too small drawing object: {currentDrawingObject.GetType().Name}.");
                 }
             }
             currentDrawingObject = null;
@@ -472,34 +517,77 @@ namespace AetherDraw.Windows
             if (selectedDrawables.Any())
             {
                 clipboard.Clear();
-                foreach (var sel in selectedDrawables) clipboard.Add(sel.Clone());
-                Plugin.Log.Information($"Copied {clipboard.Count} items.");
+                foreach (var sel in selectedDrawables)
+                {
+                    clipboard.Add(sel.Clone());
+                }
+                AetherDraw.Plugin.Log?.Information($"Copied {clipboard.Count} items.");
             }
         }
+
         private void PasteCopied()
         {
             if (clipboard.Any())
             {
-                Vector2 pasteOffset = new Vector2(15 * ImGuiHelpers.GlobalScale, 15 * ImGuiHelpers.GlobalScale);
                 foreach (var dsel in selectedDrawables) dsel.IsSelected = false;
                 selectedDrawables.Clear();
+
+                Vector2 pasteOffsetLogical = new Vector2(15f, 15f);
+
                 foreach (var item in clipboard)
                 {
                     var newItemClone = item.Clone();
-                    newItemClone.Translate(pasteOffset);
+                    newItemClone.Translate(pasteOffsetLogical);
                     newItemClone.IsSelected = true;
                     DrawablesListOfCurrentPage.Add(newItemClone);
                     selectedDrawables.Add(newItemClone);
                 }
-                Plugin.Log.Information($"Pasted {selectedDrawables.Count} items.");
+                AetherDraw.Plugin.Log?.Information($"Pasted {selectedDrawables.Count} items.");
             }
         }
+
         private int GetLayerPriority(DrawMode mode)
         {
-            if ((mode >= DrawMode.RoleTankImage && mode <= DrawMode.RoleRangedImage) || (mode >= DrawMode.Waymark1Image && mode <= DrawMode.WaymarkDImage)) return 4;
-            if (mode >= DrawMode.BossImage && mode <= DrawMode.StackImage) return 3;
-            if (mode == DrawMode.Pen || mode == DrawMode.StraightLine || mode == DrawMode.Rectangle || mode == DrawMode.Circle || mode == DrawMode.Arrow || mode == DrawMode.Cone || mode == DrawMode.Dash || mode == DrawMode.Donut) return 2;
-            return 1;
+            switch (mode)
+            {
+                case DrawMode.TextTool: return 10;
+                case DrawMode.Waymark1Image:
+                case DrawMode.Waymark2Image:
+                case DrawMode.Waymark3Image:
+                case DrawMode.Waymark4Image:
+                case DrawMode.WaymarkAImage:
+                case DrawMode.WaymarkBImage:
+                case DrawMode.WaymarkCImage:
+                case DrawMode.WaymarkDImage:
+                case DrawMode.RoleTankImage:
+                case DrawMode.RoleHealerImage:
+                case DrawMode.RoleMeleeImage:
+                case DrawMode.RoleRangedImage:
+                    return 4;
+                case DrawMode.BossImage:
+                case DrawMode.CircleAoEImage:
+                case DrawMode.DonutAoEImage:
+                case DrawMode.FlareImage:
+                case DrawMode.LineStackImage:
+                case DrawMode.SpreadImage:
+                case DrawMode.StackImage:
+                case DrawMode.StackIcon:
+                case DrawMode.SpreadIcon:
+                case DrawMode.TetherIcon:
+                case DrawMode.BossIconPlaceholder:
+                case DrawMode.AddMobIcon:
+                    return 3;
+                case DrawMode.Pen:
+                case DrawMode.StraightLine:
+                case DrawMode.Rectangle:
+                case DrawMode.Circle:
+                case DrawMode.Arrow:
+                case DrawMode.Cone:
+                case DrawMode.Dash:
+                case DrawMode.Donut:
+                    return 2;
+                default: return 1;
+            }
         }
 
         private void DrawCanvas()
@@ -517,139 +605,212 @@ namespace AetherDraw.Windows
 
             uint gridColor = ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f));
             float scaledGridCellSize = ScaledCanvasGridSize;
-            float scaledGridLineThickness = 1.0f * ImGuiHelpers.GlobalScale;
+            float scaledGridLineThickness = Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale); // Ensure at least 1px
             if (scaledGridCellSize > 0)
             {
-                for (float x = scaledGridCellSize; x < canvasSize.X; x += scaledGridCellSize) { drawList.AddLine(new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y), new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y + canvasSize.Y), gridColor, scaledGridLineThickness); }
-                for (float y = scaledGridCellSize; y < canvasSize.Y; y += scaledGridCellSize) { drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSize.X, canvasOriginScreen.Y + y), gridColor, scaledGridLineThickness); }
+                for (float x = scaledGridCellSize; x < canvasSize.X; x += scaledGridCellSize)
+                {
+                    drawList.AddLine(new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y), new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y + canvasSize.Y), gridColor, scaledGridLineThickness);
+                }
+                for (float y = scaledGridCellSize; y < canvasSize.Y; y += scaledGridCellSize)
+                {
+                    drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSize.X, canvasOriginScreen.Y + y), gridColor, scaledGridLineThickness);
+                }
             }
 
             uint canvasOutlineColorU32 = ImGui.GetColorU32(new Vector4(0.4f, 0.4f, 0.45f, 1f));
-            drawList.AddRect(canvasOriginScreen - new Vector2(1, 1) * ImGuiHelpers.GlobalScale, canvasOriginScreen + canvasSize, canvasOutlineColorU32, 0f, ImDrawFlags.None, 1.0f * ImGuiHelpers.GlobalScale);
+            drawList.AddRect(canvasOriginScreen - Vector2.One, canvasOriginScreen + canvasSize + Vector2.One, canvasOutlineColorU32, 0f, ImDrawFlags.None, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+
+            if (inPlaceTextEditor.IsEditing)
+            {
+                inPlaceTextEditor.RecalculateEditorBounds(canvasOriginScreen, ImGuiHelpers.GlobalScale);
+                inPlaceTextEditor.DrawEditorUI();
+            }
 
             ImGui.SetCursorScreenPos(canvasOriginScreen);
             ImGui.InvisibleButton("##AetherDrawCanvasInteractionLayer", canvasSize);
 
             Vector2 mousePosScreen = ImGui.GetMousePos();
-            Vector2 mousePosRelative = mousePosScreen - canvasOriginScreen;
+            Vector2 mousePosLogical = (mousePosScreen - canvasOriginScreen) / ImGuiHelpers.GlobalScale;
+
             bool canvasInteractLayerHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.None);
+            bool canInteractWithCanvas = !inPlaceTextEditor.IsEditing && canvasInteractLayerHovered;
+
             bool isLMBDown = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-            bool isLMBClickedOnCanvas = canvasInteractLayerHovered && ImGui.IsMouseClicked(ImGuiMouseButton.Left);
+            bool isLMBClickedOnCanvas = canInteractWithCanvas && ImGui.IsMouseClicked(ImGuiMouseButton.Left);
             bool isLMBReleased = ImGui.IsMouseReleased(ImGuiMouseButton.Left);
+            bool isLMBDoubleClickedOnCanvas = canInteractWithCanvas && ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left);
 
             var currentDrawables = DrawablesListOfCurrentPage;
             BaseDrawable? singleSelectedItem = selectedDrawables.Count == 1 ? selectedDrawables[0] : null;
 
-            if (currentDrawMode == DrawMode.Select)
+            if (canInteractWithCanvas)
             {
-                shapeInteractionHandler.ProcessInteractions(
-                    singleSelectedItem, selectedDrawables, currentDrawables, ref hoveredDrawable,
-                    mousePosRelative, mousePosScreen, canvasOriginScreen, canvasInteractLayerHovered,
-                    isLMBClickedOnCanvas, isLMBDown, isLMBReleased, drawList, ref lastMouseDragPosRelative
-                );
-            }
-            else if (currentDrawMode == DrawMode.Eraser)
-            {
-                if (canvasInteractLayerHovered) drawList.AddCircle(mousePosScreen, ScaledEraserVisualRadius, ImGui.GetColorU32(new Vector4(1, 0, 0, 0.7f)), 32, 1.0f * ImGuiHelpers.GlobalScale);
-                if (canvasInteractLayerHovered && isLMBDown)
+                if (isLMBDoubleClickedOnCanvas && currentDrawMode == DrawMode.Select && hoveredDrawable is DrawableText dt)
                 {
-                    for (int i = currentDrawables.Count - 1; i >= 0; i--)
+                    if (!inPlaceTextEditor.IsCurrentlyEditing(dt))
                     {
-                        var d = currentDrawables[i]; bool removedByPathEdit = false;
-                        if (d is DrawablePath path)
-                        {
-                            int originalCount = path.PointsRelative.Count;
-                            path.PointsRelative.RemoveAll(pt => Vector2.Distance(pt, mousePosRelative) < ScaledEraserLogicRadius);
-                            if (path.PointsRelative.Count < 2 && originalCount >= 2) { currentDrawables.RemoveAt(i); removedByPathEdit = true; }
-                        }
-                        else if (d is DrawableDash dashPath)
-                        {
-                            int originalCount = dashPath.PointsRelative.Count;
-                            dashPath.PointsRelative.RemoveAll(pt => Vector2.Distance(pt, mousePosRelative) < ScaledEraserLogicRadius);
-                            if (dashPath.PointsRelative.Count < 2 && originalCount >= 2) { currentDrawables.RemoveAt(i); removedByPathEdit = true; }
-                        }
+                        inPlaceTextEditor.BeginEdit(dt, canvasOriginScreen, ImGuiHelpers.GlobalScale);
+                    }
+                    goto EndInteractionProcessing;
+                }
 
-                        if (!removedByPathEdit && d.IsHit(mousePosRelative, ScaledEraserLogicRadius))
+                if (currentDrawMode == DrawMode.Select)
+                {
+                    shapeInteractionHandler.ProcessInteractions(
+                        singleSelectedItem, selectedDrawables, currentDrawables, GetLayerPriority, ref hoveredDrawable,
+                        mousePosLogical,
+                        mousePosScreen, canvasOriginScreen, canInteractWithCanvas, // Pass canInteractWithCanvas
+                        isLMBClickedOnCanvas, isLMBDown, isLMBReleased, drawList, ref lastMouseDragPosLogical // Use logical last drag pos 
+                    );
+                }
+                else if (currentDrawMode == DrawMode.Eraser)
+                {
+                    if (canvasInteractLayerHovered)
+                    {
+                        drawList.AddCircle(mousePosScreen, ScaledEraserVisualRadius, ImGui.GetColorU32(new Vector4(1, 0, 0, 0.7f)), 32, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+                    }
+                    if (isLMBDown)
+                    {
+                        float logicalEraserRadius = ScaledEraserLogicRadius / ImGuiHelpers.GlobalScale;
+
+                        for (int i = currentDrawables.Count - 1; i >= 0; i--)
                         {
-                            currentDrawables.RemoveAt(i);
-                            if (selectedDrawables.Contains(d)) selectedDrawables.Remove(d);
-                            if (hoveredDrawable != null && hoveredDrawable.Equals(d)) hoveredDrawable = null;
+                            var d = currentDrawables[i];
+                            bool removedByPathEdit = false;
+                            if (d is DrawablePath path)
+                            {
+                                int originalCount = path.PointsRelative.Count;
+                                path.PointsRelative.RemoveAll(pt => Vector2.Distance(pt, mousePosLogical) < logicalEraserRadius);
+                                if (path.PointsRelative.Count < 2 && originalCount >= 2) { currentDrawables.RemoveAt(i); removedByPathEdit = true; }
+                            }
+                            else if (d is DrawableDash dashPath)
+                            {
+                                int originalCount = dashPath.PointsRelative.Count;
+                                dashPath.PointsRelative.RemoveAll(pt => Vector2.Distance(pt, mousePosLogical) < logicalEraserRadius);
+                                if (dashPath.PointsRelative.Count < 2 && originalCount >= 2) { currentDrawables.RemoveAt(i); removedByPathEdit = true; }
+                            }
+
+                            if (!removedByPathEdit && d.IsHit(mousePosLogical, logicalEraserRadius))
+                            {
+                                currentDrawables.RemoveAt(i);
+                                if (selectedDrawables.Contains(d)) selectedDrawables.Remove(d);
+                                if (hoveredDrawable != null && hoveredDrawable.Equals(d)) hoveredDrawable = null;
+                            }
                         }
                     }
                 }
-            }
-            else if ((currentDrawMode >= DrawMode.BossImage && currentDrawMode <= DrawMode.RoleRangedImage))
-            {
-                if (canvasInteractLayerHovered) ImGui.SetTooltip($"Click to place {currentDrawMode}");
-                if (isLMBClickedOnCanvas)
+                else if (currentDrawMode == DrawMode.TextTool)
                 {
-                    string imagePath = "";
-                    Vector2 imageSize = new Vector2(ScaledImageDefaultSize, ScaledImageDefaultSize);
-                    Vector4 tint = Vector4.One;
-                    float scaledSize30 = 30f * ImGuiHelpers.GlobalScale;
-                    float scaledSize60 = 60f * ImGuiHelpers.GlobalScale;
-
-                    switch (currentDrawMode)
+                    if (isLMBClickedOnCanvas)
                     {
-                        case DrawMode.BossImage: imagePath = "PluginImages.svg.boss.svg"; imageSize = new Vector2(scaledSize60, scaledSize60); break;
-                        case DrawMode.CircleAoEImage: imagePath = "PluginImages.svg.prox_aoe.svg"; break;
-                        case DrawMode.DonutAoEImage: imagePath = "PluginImages.svg.donut.svg"; break;
-                        case DrawMode.FlareImage: imagePath = "PluginImages.svg.flare.svg"; break;
-                        case DrawMode.LineStackImage: imagePath = "PluginImages.svg.line_stack.svg"; break;
-                        case DrawMode.SpreadImage: imagePath = "PluginImages.svg.spread.svg"; break;
-                        case DrawMode.StackImage: imagePath = "PluginImages.svg.stack.svg"; break;
-                        case DrawMode.Waymark1Image: imagePath = "PluginImages.toolbar.1_waymark.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.Waymark2Image: imagePath = "PluginImages.toolbar.2_waymark.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.Waymark3Image: imagePath = "PluginImages.toolbar.3_waymark.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.Waymark4Image: imagePath = "PluginImages.toolbar.4_waymark.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.WaymarkAImage: imagePath = "PluginImages.toolbar.A.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.WaymarkBImage: imagePath = "PluginImages.toolbar.B.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.WaymarkCImage: imagePath = "PluginImages.toolbar.C.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.WaymarkDImage: imagePath = "PluginImages.toolbar.D.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.RoleTankImage: imagePath = "PluginImages.toolbar.Tank.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.RoleHealerImage: imagePath = "PluginImages.toolbar.Healer.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.RoleMeleeImage: imagePath = "PluginImages.toolbar.Melee.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                        case DrawMode.RoleRangedImage: imagePath = "PluginImages.toolbar.Ranged.JPG"; imageSize = new Vector2(scaledSize30, scaledSize30); break;
-                    }
-                    if (!string.IsNullOrEmpty(imagePath)) DrawablesListOfCurrentPage.Add(new DrawableImage(currentDrawMode, imagePath, mousePosRelative, imageSize, tint));
-                }
-            }
-            else
-            {
-                float scaledBrushThicknessForDrawing = currentBrushThickness * ImGuiHelpers.GlobalScale;
-                if (canvasInteractLayerHovered && isLMBDown)
-                {
-                    if (!isDrawingOnCanvas)
-                    {
-                        isDrawingOnCanvas = true;
+                        // Use DefaultUnscaledFontSize and DefaultUnscaledTextWrapWidth
+                        var newText = new DrawableText(mousePosLogical, "New Text", currentBrushColor, DefaultUnscaledFontSize, DefaultUnscaledTextWrapWidth);
+                        DrawablesListOfCurrentPage.Add(newText);
                         foreach (var sel in selectedDrawables) sel.IsSelected = false;
                         selectedDrawables.Clear();
-                        if (hoveredDrawable != null) hoveredDrawable.IsHovered = false;
-                        hoveredDrawable = null;
+                        newText.IsSelected = true;
+                        selectedDrawables.Add(newText);
+                        hoveredDrawable = newText;
+                        inPlaceTextEditor.BeginEdit(newText, canvasOriginScreen, ImGuiHelpers.GlobalScale);
+                        currentDrawMode = DrawMode.Select;
+                    }
+                }
+                else if ((currentDrawMode >= DrawMode.BossImage && currentDrawMode <= DrawMode.AddMobIcon) ||
+                         (currentDrawMode >= DrawMode.Waymark1Image && currentDrawMode <= DrawMode.WaymarkDImage))
+                {
+                    if (canvasInteractLayerHovered) ImGui.SetTooltip($"Click to place {currentDrawMode}");
+                    if (isLMBClickedOnCanvas)
+                    {
+                        string imagePath = "";
+                        Vector2 imageUnscaledSize = DefaultUnscaledImageSize; // Use logical default
+                        Vector4 tint = Vector4.One;
 
-                        switch (currentDrawMode)
+                        switch (currentDrawMode) // Assign path and specific unscaled sizes
                         {
-                            case DrawMode.Pen: currentDrawingObject = new DrawablePath(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing); break;
-                            case DrawMode.StraightLine: currentDrawingObject = new DrawableStraightLine(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing); break;
-                            case DrawMode.Dash: currentDrawingObject = new DrawableDash(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing); break;
-                            case DrawMode.Rectangle: currentDrawingObject = new DrawableRectangle(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing, currentShapeFilled); break;
-                            case DrawMode.Circle: currentDrawingObject = new DrawableCircle(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing, currentShapeFilled); break;
-                            case DrawMode.Arrow: currentDrawingObject = new DrawableArrow(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing); break;
-                            case DrawMode.Cone: currentDrawingObject = new DrawableCone(mousePosRelative, currentBrushColor, scaledBrushThicknessForDrawing, currentShapeFilled); break;
+                            case DrawMode.BossImage: imagePath = "PluginImages.svg.boss.svg"; imageUnscaledSize = new Vector2(60f, 60f); break;
+                            case DrawMode.CircleAoEImage: imagePath = "PluginImages.svg.prox_aoe.svg"; imageUnscaledSize = new Vector2(50f, 50f); break;
+                            case DrawMode.DonutAoEImage: imagePath = "PluginImages.svg.donut.svg"; imageUnscaledSize = new Vector2(50f, 50f); break;
+                            case DrawMode.FlareImage: imagePath = "PluginImages.svg.flare.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
+                            case DrawMode.LineStackImage: imagePath = "PluginImages.svg.line_stack.svg"; imageUnscaledSize = new Vector2(30f, 60f); break;
+                            case DrawMode.SpreadImage: imagePath = "PluginImages.svg.spread.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
+                            case DrawMode.StackImage: imagePath = "PluginImages.svg.stack.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
+
+                            case DrawMode.Waymark1Image: imagePath = "PluginImages.toolbar.1_waymark.JPG"; break; // Uses DefaultUnscaledImageSize
+                            case DrawMode.Waymark2Image: imagePath = "PluginImages.toolbar.2_waymark.JPG"; break;
+                            case DrawMode.Waymark3Image: imagePath = "PluginImages.toolbar.3_waymark.JPG"; break;
+                            case DrawMode.Waymark4Image: imagePath = "PluginImages.toolbar.4_waymark.JPG"; break;
+                            case DrawMode.WaymarkAImage: imagePath = "PluginImages.toolbar.A.JPG"; break;
+                            case DrawMode.WaymarkBImage: imagePath = "PluginImages.toolbar.B.JPG"; break;
+                            case DrawMode.WaymarkCImage: imagePath = "PluginImages.toolbar.C.JPG"; break;
+                            case DrawMode.WaymarkDImage: imagePath = "PluginImages.toolbar.D.JPG"; break;
+                            case DrawMode.RoleTankImage: imagePath = "PluginImages.toolbar.Tank.JPG"; break;
+                            case DrawMode.RoleHealerImage: imagePath = "PluginImages.toolbar.Healer.JPG"; break;
+                            case DrawMode.RoleMeleeImage: imagePath = "PluginImages.toolbar.Melee.JPG"; break;
+                            case DrawMode.RoleRangedImage: imagePath = "PluginImages.toolbar.Ranged.JPG"; break;
+
+                            case DrawMode.StackIcon: imagePath = "PluginImages.svg.stack.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                            case DrawMode.SpreadIcon: imagePath = "PluginImages.svg.spread.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                            case DrawMode.TetherIcon: imagePath = "PluginImages.svg.placeholder.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                            case DrawMode.BossIconPlaceholder: imagePath = "PluginImages.svg.boss.svg"; imageUnscaledSize = new Vector2(35f, 35f); break;
+                            case DrawMode.AddMobIcon: imagePath = "PluginImages.svg.placeholder.svg"; imageUnscaledSize = new Vector2(30f, 30f); break;
+                        }
+                        if (!string.IsNullOrEmpty(imagePath))
+                        {
+                            // Pass logical mouse position and unscaled size
+                            DrawablesListOfCurrentPage.Add(new DrawableImage(currentDrawMode, imagePath, mousePosLogical, imageUnscaledSize, tint));
+                            AetherDraw.Plugin.Log?.Debug($"[MainWindow] Placed image: {currentDrawMode} at logical {mousePosLogical}");
+                        }
+                        else
+                        {
+                            AetherDraw.Plugin.Log?.Warning($"[MainWindow] No imagePath defined for DrawMode: {currentDrawMode}");
                         }
                     }
-                    if (currentDrawingObject != null)
+                }
+                else
+                {
+                    float logicalBrushThickness = currentBrushThickness; // This is already unscaled
+                    if (isLMBDown)
                     {
-                        if (currentDrawingObject is DrawablePath p) p.AddPoint(mousePosRelative);
-                        else if (currentDrawingObject is DrawableDash d) d.AddPoint(mousePosRelative);
-                        else currentDrawingObject.UpdatePreview(mousePosRelative);
+                        if (!isDrawingOnCanvas && isLMBClickedOnCanvas)
+                        {
+                            isDrawingOnCanvas = true;
+                            foreach (var sel in selectedDrawables) sel.IsSelected = false;
+                            selectedDrawables.Clear();
+                            if (hoveredDrawable != null) hoveredDrawable.IsHovered = false;
+                            hoveredDrawable = null;
+
+                            switch (currentDrawMode)
+                            {
+                                case DrawMode.Pen: currentDrawingObject = new DrawablePath(mousePosLogical, currentBrushColor, logicalBrushThickness); break;
+                                case DrawMode.StraightLine: currentDrawingObject = new DrawableStraightLine(mousePosLogical, currentBrushColor, logicalBrushThickness); break;
+                                case DrawMode.Dash: currentDrawingObject = new DrawableDash(mousePosLogical, currentBrushColor, logicalBrushThickness); break;
+                                case DrawMode.Rectangle: currentDrawingObject = new DrawableRectangle(mousePosLogical, currentBrushColor, logicalBrushThickness, currentShapeFilled); break;
+                                case DrawMode.Circle: currentDrawingObject = new DrawableCircle(mousePosLogical, currentBrushColor, logicalBrushThickness, currentShapeFilled); break;
+                                case DrawMode.Arrow: currentDrawingObject = new DrawableArrow(mousePosLogical, currentBrushColor, logicalBrushThickness); break;
+                                case DrawMode.Cone: currentDrawingObject = new DrawableCone(mousePosLogical, currentBrushColor, logicalBrushThickness, currentShapeFilled); break;
+                            }
+                            AetherDraw.Plugin.Log?.Debug($"[MainWindow] Started drawing: {currentDrawMode} at logical {mousePosLogical}");
+                            // Call AddPoint for Path/Dash here for the first point AFTER constructor
+                            if (currentDrawingObject is DrawablePath p) p.AddPoint(mousePosLogical);
+                            else if (currentDrawingObject is DrawableDash d) d.AddPoint(mousePosLogical);
+                            else currentDrawingObject?.UpdatePreview(mousePosLogical);
+                        }
+                        if (isDrawingOnCanvas && currentDrawingObject != null)
+                        {
+                            if (currentDrawingObject is DrawablePath p) p.AddPoint(mousePosLogical);
+                            else if (currentDrawingObject is DrawableDash d) d.AddPoint(mousePosLogical);
+                            else currentDrawingObject.UpdatePreview(mousePosLogical);
+                        }
+                    }
+                    if (isDrawingOnCanvas && isLMBReleased)
+                    {
+                        FinalizeCurrentDrawing();
                     }
                 }
-                if (isDrawingOnCanvas && isLMBReleased)
-                {
-                    FinalizeCurrentDrawing();
-                }
             }
+
+        EndInteractionProcessing:;
 
             bool clippingPushed = false;
             try
@@ -657,11 +818,13 @@ namespace AetherDraw.Windows
                 ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSize, true);
                 clippingPushed = true;
 
-                if (currentDrawables != null && currentDrawables.Any())
+                var drawablesToRender = DrawablesListOfCurrentPage;
+                if (drawablesToRender != null && drawablesToRender.Any())
                 {
-                    var sortedDrawables = currentDrawables.OrderBy(d => GetLayerPriority(d.ObjectDrawMode)).ToList();
+                    var sortedDrawables = drawablesToRender.OrderBy(d => GetLayerPriority(d.ObjectDrawMode)).ToList();
                     foreach (var drawable in sortedDrawables)
                     {
+                        if (inPlaceTextEditor.IsEditing && inPlaceTextEditor.IsCurrentlyEditing(drawable)) continue;
                         drawable.Draw(drawList, canvasOriginScreen);
                     }
                 }

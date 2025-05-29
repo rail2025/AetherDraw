@@ -39,6 +39,8 @@ namespace AetherDraw.DrawingLogic
         RoleMeleeImage,
         RoleRangedImage,
 
+        TextTool,
+
         // Potentially other specific icons if they behave like placeable images
         StackIcon,        // If this is different from StackImage
         SpreadIcon,       // If this is different from SpreadImage

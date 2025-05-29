@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using ImGuiNET;
 using System.Linq;
-using Dalamud.Interface.Utility; // Added for ImGuiHelpers
+using Dalamud.Interface.Utility; // For ImGuiHelpers
 
 namespace AetherDraw.DrawingLogic
 {
@@ -17,325 +17,333 @@ namespace AetherDraw.DrawingLogic
             ConeApex, ConeBase, ConeRotate,
             RectResize, RectRotate,
             ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness
+            // Note: TextTool interactions like TextResizeFont were in a newer version's context.
+            // The ab6ebef... version of this enum is used here.
         }
         private ActiveDragType currentDragType = ActiveDragType.None;
+        public ActiveDragType GetCurrentDragType() => currentDragType;
 
-        // State for drag operations
-        private Vector2 dragStartMousePosRelative;
+        // State for drag operations - these store logical (unscaled) values
+        private Vector2 dragStartMousePosLogical;
+        private Vector2 dragStartObjectPivotLogical; // e.g., center of rotation
         private float dragStartRotationAngle;
-        private Vector2 dragStartPoint1;
-        private Vector2 dragStartPoint2;
-        private float dragStartValue;
+        private Vector2 dragStartPoint1Logical;     // e.g., rect start, arrow start
+        private Vector2 dragStartPoint2Logical;     // e.g., rect end, arrow end
+        private Vector2 dragStartSizeLogical;       // e.g., image logical size
+        private float dragStartValueLogical;        // e.g., arrow thickness (unscaled)
 
-        private int draggedImageResizeHandleIndex = -1;
-        private int draggedRectCornerIndex = -1;
+        private int draggedImageResizeHandleIndex = -1; // Which of the 4 corners
+        private int draggedRectCornerIndex = -1;      // Which of the 4 corners
+        private int draggedArrowHandleIndex = -1;     // Used to identify which arrow/cone handle
 
-        // Scaled handle visual properties
-        private float ScaledHandleInteractionRadius => 7f * ImGuiHelpers.GlobalScale;
+        // Define a LOGICAL radius for handle interaction (unscaled)
+        private const float LogicalHandleInteractionRadius = 7f;
+        // Visual draw radius for handles (scaled for screen)
         private float ScaledHandleDrawRadius => 5f * ImGuiHelpers.GlobalScale;
 
-        // Colors for handles
-        private static readonly uint HandleColorDefault = ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 0.9f));
-        private static readonly uint HandleColorHover = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.5f, 1.0f));
-        private static readonly uint HandleColorRotation = ImGui.GetColorU32(new Vector4(0.5f, 1.0f, 0.5f, 0.9f));
-        private static readonly uint HandleColorRotationHover = ImGui.GetColorU32(new Vector4(0.7f, 1.0f, 0.7f, 1.0f));
-        private static readonly uint HandleColorThickness = ImGui.GetColorU32(new Vector4(0.5f, 0.7f, 1.0f, 0.9f));
-        private static readonly uint HandleColorThicknessHover = ImGui.GetColorU32(new Vector4(0.7f, 0.9f, 1.0f, 1.0f));
+        // Colors for handles - Instance fields, initialized in constructor
+        private readonly uint handleColorDefault;
+        private readonly uint handleColorHover;
+        private readonly uint handleColorRotation;
+        private readonly uint handleColorRotationHover;
+        private readonly uint handleColorResize;
+        private readonly uint handleColorResizeHover;
+        private readonly uint handleColorSpecial;
+        private readonly uint handleColorSpecialHover;
 
-        // Processes user interactions for selecting, moving, and resizing shapes.
+        public ShapeInteractionHandler()
+        {
+            // Initialize ImGui-dependent colors safely
+            this.handleColorDefault = ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 0.9f));
+            this.handleColorHover = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.5f, 1.0f));
+            this.handleColorRotation = ImGui.GetColorU32(new Vector4(0.5f, 1.0f, 0.5f, 0.9f));
+            this.handleColorRotationHover = ImGui.GetColorU32(new Vector4(0.7f, 1.0f, 0.7f, 1.0f));
+            this.handleColorResize = ImGui.GetColorU32(new Vector4(0.5f, 0.7f, 1.0f, 0.9f));
+            this.handleColorResizeHover = ImGui.GetColorU32(new Vector4(0.7f, 0.9f, 1.0f, 1.0f));
+            this.handleColorSpecial = ImGui.GetColorU32(new Vector4(1.0f, 0.5f, 0.2f, 0.9f));
+            this.handleColorSpecialHover = ImGui.GetColorU32(new Vector4(1.0f, 0.7f, 0.4f, 1.0f));
+        }
+
+        private bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalHandlePos, Vector2 canvasOriginScreen, Vector2 mousePosLogical, ref bool mouseOverAnyHandleFlag, ImGuiMouseCursor cursor = ImGuiMouseCursor.Hand, uint color = 0, uint hoverColor = 0)
+        {
+            uint actualColor = color == 0 ? this.handleColorDefault : color;
+            uint actualHoverColor = hoverColor == 0 ? this.handleColorHover : hoverColor;
+
+            Vector2 screenHandlePos = logicalHandlePos * ImGuiHelpers.GlobalScale + canvasOriginScreen;
+            bool isHoveringThisHandle = Vector2.Distance(mousePosLogical, logicalHandlePos) < LogicalHandleInteractionRadius;
+
+            if (isHoveringThisHandle)
+            {
+                mouseOverAnyHandleFlag = true;
+                ImGui.SetMouseCursor(cursor);
+            }
+            drawList.AddCircleFilled(screenHandlePos, ScaledHandleDrawRadius, isHoveringThisHandle ? actualHoverColor : actualColor);
+            drawList.AddCircle(screenHandlePos, ScaledHandleDrawRadius + 1f * ImGuiHelpers.GlobalScale, ImGui.GetColorU32(new Vector4(0, 0, 0, 0.7f)), 12, 1.5f * ImGuiHelpers.GlobalScale);
+            return isHoveringThisHandle;
+        }
+
         public void ProcessInteractions(
             BaseDrawable? singleSelectedItem,
             List<BaseDrawable> selectedDrawables,
-            List<BaseDrawable> currentDrawables,
+            List<BaseDrawable> allDrawablesOnPage,
+            Func<DrawMode, int> getLayerPriorityFunc,
             ref BaseDrawable? hoveredDrawable,
-            Vector2 mousePosRelative,
+            Vector2 mousePosLogical, // LOGICAL (unscaled) mouse position relative to canvas origin
             Vector2 mousePosScreen,
             Vector2 canvasOriginScreen,
-            bool canvasInteractLayerHovered,
+            bool isCanvasInteractableAndHovered,
             bool isLMBClickedOnCanvas,
             bool isLMBDown,
             bool isLMBReleased,
             ImDrawListPtr drawList,
-            ref Vector2 lastMouseDragPosForGeneralDrag)
+            ref Vector2 lastMouseDragPosLogical)
         {
             BaseDrawable? newlyHoveredThisFrame = null;
 
             if (currentDragType == ActiveDragType.None)
             {
-                foreach (var d_item in currentDrawables) { d_item.IsHovered = false; }
+                foreach (var dItem in allDrawablesOnPage) dItem.IsHovered = false;
+                draggedImageResizeHandleIndex = -1;
+                draggedRectCornerIndex = -1;
+                draggedArrowHandleIndex = -1;
             }
 
             bool mouseOverAnyHandle = false;
-            float scaledInteractionRadius = ScaledHandleInteractionRadius;
-            float scaledDrawRadius = ScaledHandleDrawRadius;
 
-            // --- Draw Handles for single selected item AND determine if mouse is over any of its handles ---
-            if (canvasInteractLayerHovered && currentDragType == ActiveDragType.None && singleSelectedItem != null)
+            if (isCanvasInteractableAndHovered && currentDragType == ActiveDragType.None && singleSelectedItem != null)
             {
-                if (singleSelectedItem is DrawableImage selectedImage)
+                if (singleSelectedItem is DrawableImage dImg) // Use 'dImg' consistently
                 {
-                    Vector2[] imgCorners = HitDetection.GetRotatedQuadVertices(selectedImage.PositionRelative, selectedImage.DrawSize / 2f, selectedImage.RotationAngle);
+                    Vector2[] logicalCorners = HitDetection.GetRotatedQuadVertices(dImg.PositionRelative, dImg.DrawSize / 2f, dImg.RotationAngle);
                     for (int i = 0; i < 4; i++)
                     {
-                        bool isHoveringThisHandle = Vector2.Distance(mousePosRelative, imgCorners[i]) < scaledInteractionRadius;
-                        if (isHoveringThisHandle) { mouseOverAnyHandle = true; draggedImageResizeHandleIndex = i; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                        drawList.AddCircleFilled(imgCorners[i] + canvasOriginScreen, scaledDrawRadius, isHoveringThisHandle ? HandleColorHover : HandleColorDefault);
-                        if (isHoveringThisHandle) break;
+                        if (DrawAndCheckHandle(drawList, logicalCorners[i], canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorResize, this.handleColorResizeHover))
+                        {
+                            draggedImageResizeHandleIndex = i; break;
+                        }
                     }
-                    if (!mouseOverAnyHandle) { draggedImageResizeHandleIndex = -1; }
+                    if (!mouseOverAnyHandle) draggedImageResizeHandleIndex = -1;
 
-                    // DrawableImage.GetRotationHandleScreenPosition should use scaled constants internally
-                    Vector2 imgRotationHandleScreenPos = selectedImage.GetRotationHandleScreenPosition(canvasOriginScreen);
-                    bool isHoveringImgRotate = Vector2.Distance(mousePosScreen, imgRotationHandleScreenPos) < scaledInteractionRadius;
-                    if (isHoveringImgRotate) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(imgRotationHandleScreenPos, scaledDrawRadius, isHoveringImgRotate ? HandleColorRotationHover : HandleColorRotation);
+                    Vector2 logicalCenter = dImg.PositionRelative;
+                    Vector2 handleOffsetLocal = new Vector2(0, -(dImg.DrawSize.Y / 2f + DrawableImage.UnscaledRotationHandleDistance));
+                    Vector2 rotatedHandleOffset = HitDetection.ImRotate(handleOffsetLocal, MathF.Cos(dImg.RotationAngle), MathF.Sin(dImg.RotationAngle));
+                    Vector2 logicalRotationHandlePos = logicalCenter + rotatedHandleOffset;
+
+                    DrawAndCheckHandle(drawList, logicalRotationHandlePos, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
                 }
-                else if (singleSelectedItem is DrawableCone selectedCone)
+                else if (singleSelectedItem is DrawableRectangle dRect) // Use 'dRect'
                 {
-                    Vector2 screenApex = selectedCone.ApexRelative + canvasOriginScreen;
-                    Vector2 localBaseCenter = selectedCone.BaseCenterRelative - selectedCone.ApexRelative;
-                    Vector2 rotatedLocalBaseCenter = HitDetection.ImRotate(localBaseCenter, MathF.Cos(selectedCone.RotationAngle), MathF.Sin(selectedCone.RotationAngle));
-                    Vector2 worldRotatedBaseCenter = selectedCone.ApexRelative + rotatedLocalBaseCenter;
-                    Vector2 screenRotatedBaseCenter = worldRotatedBaseCenter + canvasOriginScreen;
-                    Vector2 axisDirection = (worldRotatedBaseCenter - selectedCone.ApexRelative).LengthSquared() > 0.001f ? Vector2.Normalize(worldRotatedBaseCenter - selectedCone.ApexRelative) : new Vector2(0, -1);
-                    // Scale the offset for the rotation handle
-                    Vector2 worldRotationHandlePos = worldRotatedBaseCenter + axisDirection * (scaledInteractionRadius + 15f * ImGuiHelpers.GlobalScale);
-                    Vector2 screenRotationHandlePos = worldRotationHandlePos + canvasOriginScreen;
-
-                    bool mouseOverApex = Vector2.Distance(mousePosScreen, screenApex) < scaledInteractionRadius;
-                    bool mouseOverBase = Vector2.Distance(mousePosScreen, screenRotatedBaseCenter) < scaledInteractionRadius;
-                    bool mouseOverRotateCone = Vector2.Distance(mousePosScreen, screenRotationHandlePos) < scaledInteractionRadius;
-
-                    if (mouseOverRotateCone) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenRotationHandlePos, scaledDrawRadius, mouseOverRotateCone ? HandleColorRotationHover : HandleColorRotation);
-                    if (mouseOverApex) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenApex, scaledDrawRadius, mouseOverApex ? HandleColorHover : HandleColorDefault);
-                    if (mouseOverBase) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenRotatedBaseCenter, scaledDrawRadius, mouseOverBase ? HandleColorHover : HandleColorDefault);
-                }
-                else if (singleSelectedItem is DrawableRectangle selectedRect)
-                {
-                    Vector2[] rotatedCorners = selectedRect.GetRotatedCorners();
+                    Vector2[] logicalRotatedCorners = dRect.GetRotatedCorners();
                     for (int i = 0; i < 4; i++)
                     {
-                        bool isHoveringThisHandle = Vector2.Distance(mousePosRelative, rotatedCorners[i]) < scaledInteractionRadius;
-                        if (isHoveringThisHandle) { mouseOverAnyHandle = true; draggedRectCornerIndex = i; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                        drawList.AddCircleFilled(rotatedCorners[i] + canvasOriginScreen, scaledDrawRadius, isHoveringThisHandle ? HandleColorHover : HandleColorDefault);
-                        if (isHoveringThisHandle) break;
+                        if (DrawAndCheckHandle(drawList, logicalRotatedCorners[i], canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorResize, this.handleColorResizeHover))
+                        {
+                            draggedRectCornerIndex = i; break;
+                        }
                     }
-                    if (!mouseOverAnyHandle) { draggedRectCornerIndex = -1; }
+                    if (!mouseOverAnyHandle) draggedRectCornerIndex = -1;
 
-                    var (_, rectCenter) = selectedRect.GetGeometry();
-                    Vector2 upishLocal = selectedRect.StartPointRelative.Y < selectedRect.EndPointRelative.Y ? new Vector2(0, -1) : new Vector2(0, 1);
-                    Vector2 rotatedUpish = HitDetection.ImRotate(upishLocal, MathF.Cos(selectedRect.RotationAngle), MathF.Sin(selectedRect.RotationAngle));
-                    float halfHeight = Math.Abs(selectedRect.StartPointRelative.Y - selectedRect.EndPointRelative.Y) / 2f;
-                    if (halfHeight < scaledInteractionRadius) halfHeight = scaledInteractionRadius;
-                    // Scale the offset for the rotation handle
-                    Vector2 rotationHandlePos = rectCenter + rotatedUpish * (halfHeight + scaledInteractionRadius + 10f * ImGuiHelpers.GlobalScale);
-
-                    bool isHoveringRectRotate = Vector2.Distance(mousePosRelative, rotationHandlePos) < scaledInteractionRadius;
-                    if (isHoveringRectRotate) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(rotationHandlePos + canvasOriginScreen, scaledDrawRadius, isHoveringRectRotate ? HandleColorRotationHover : HandleColorRotation);
+                    var (rectCenterLogical, rectHalfSize) = dRect.GetGeometry();
+                    float handleDistance = rectHalfSize.Y + DrawableRectangle.UnscaledRotationHandleExtraOffset;
+                    Vector2 rotationHandleLogicalPos = rectCenterLogical + Vector2.Transform(new Vector2(0, -handleDistance), Matrix3x2.CreateRotation(dRect.RotationAngle));
+                    DrawAndCheckHandle(drawList, rotationHandleLogicalPos, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
                 }
-                else if (singleSelectedItem is DrawableArrow selectedArrow)
+                else if (singleSelectedItem is DrawableCone dCone) // Use 'dCone'
                 {
-                    // Assume DrawableArrow constants like MinArrowheadDim, ArrowheadLengthFactor are scaled appropriately or used with scaled thickness
-                    Vector2 worldStartPoint = selectedArrow.StartPointRelative;
-                    Vector2 unrotatedShaftVector = selectedArrow.EndPointRelative - worldStartPoint;
-                    Vector2 rotatedShaftVector = HitDetection.ImRotate(unrotatedShaftVector, MathF.Cos(selectedArrow.RotationAngle), MathF.Sin(selectedArrow.RotationAngle));
-                    Vector2 worldRotatedShaftEnd = worldStartPoint + rotatedShaftVector;
+                    Vector2 logicalApex = dCone.ApexRelative;
+                    Vector2 logicalBaseEndUnrotated = dCone.BaseCenterRelative - dCone.ApexRelative;
+                    Vector2 logicalBaseEndRotated = Vector2.Transform(logicalBaseEndUnrotated, Matrix3x2.CreateRotation(dCone.RotationAngle));
+                    Vector2 logicalRotatedBaseCenter = dCone.ApexRelative + logicalBaseEndRotated;
 
-                    Vector2 shaftDirection = (rotatedShaftVector.LengthSquared() > 0.001f) ? Vector2.Normalize(rotatedShaftVector) : new Vector2(0, -1);
-                    float scaledThickness = selectedArrow.Thickness * ImGuiHelpers.GlobalScale; // Assuming selectedArrow.Thickness is unscaled
-                    float arrowheadVisualLength = MathF.Max(DrawableArrow.MinArrowheadDim * ImGuiHelpers.GlobalScale, scaledThickness * DrawableArrow.ArrowheadLengthFactor);
-                    Vector2 worldVisualTip = worldRotatedShaftEnd + shaftDirection * arrowheadVisualLength;
+                    bool apexH = DrawAndCheckHandle(drawList, logicalApex, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
+                    bool baseH = !apexH && DrawAndCheckHandle(drawList, logicalRotatedBaseCenter, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
 
-                    Vector2 screenStartPoint = worldStartPoint + canvasOriginScreen;
-                    Vector2 screenVisualTipPoint = worldVisualTip + canvasOriginScreen;
+                    Vector2 axisDir = logicalBaseEndRotated.LengthSquared() > 0.001f ? Vector2.Normalize(logicalBaseEndRotated) : new Vector2(0, 1);
+                    Vector2 rotHandleLogical = logicalRotatedBaseCenter + axisDir * (DrawableRectangle.UnscaledRotationHandleExtraOffset * 0.75f); // Use a defined unscaled offset
+                    bool rotH = !apexH && !baseH && DrawAndCheckHandle(drawList, rotHandleLogical, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
 
-                    // Scale offsets for handles
-                    Vector2 rotationHandleOffset = new Vector2(0, -(scaledInteractionRadius + 20f * ImGuiHelpers.GlobalScale));
-                    Vector2 rotatedRotationOffset = HitDetection.ImRotate(rotationHandleOffset, MathF.Cos(selectedArrow.RotationAngle), MathF.Sin(selectedArrow.RotationAngle));
-                    Vector2 worldRotationHandlePos = worldStartPoint + rotatedRotationOffset;
-                    Vector2 screenRotationHandlePos = worldRotationHandlePos + canvasOriginScreen;
+                    if (apexH) draggedArrowHandleIndex = 0;
+                    else if (baseH) draggedArrowHandleIndex = 1;
+                    else if (rotH) draggedArrowHandleIndex = 2;
+                    else draggedArrowHandleIndex = -1;
+                }
+                else if (singleSelectedItem is DrawableArrow dArrow) // Use 'dArrow'
+                {
+                    Vector2 logicalStart = dArrow.StartPointRelative;
+                    Vector2 localShaftEndUnrotated = dArrow.EndPointRelative - dArrow.StartPointRelative;
+                    Vector2 logicalRotatedShaftEnd = dArrow.StartPointRelative + Vector2.Transform(localShaftEndUnrotated, Matrix3x2.CreateRotation(dArrow.RotationAngle));
 
-                    Vector2 shaftMidPoint = worldStartPoint + rotatedShaftVector / 2f;
-                    Vector2 perpDir = shaftDirection.LengthSquared() > 0.001f ? new Vector2(-shaftDirection.Y, shaftDirection.X) : new Vector2(1, 0);
-                    Vector2 worldThicknessHandlePos = shaftMidPoint + perpDir * (scaledThickness / 2f + scaledInteractionRadius + 5f * ImGuiHelpers.GlobalScale);
-                    Vector2 screenThicknessHandlePos = worldThicknessHandlePos + canvasOriginScreen;
+                    bool startH = DrawAndCheckHandle(drawList, logicalStart, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
+                    bool endH = !startH && DrawAndCheckHandle(drawList, logicalRotatedShaftEnd, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
 
-                    bool mouseOverStart = Vector2.Distance(mousePosScreen, screenStartPoint) < scaledInteractionRadius;
-                    bool mouseOverEndTip = Vector2.Distance(mousePosScreen, screenVisualTipPoint) < scaledInteractionRadius;
-                    bool mouseOverRotateArrow = Vector2.Distance(mousePosScreen, screenRotationHandlePos) < scaledInteractionRadius;
-                    bool mouseOverThickness = Vector2.Distance(mousePosScreen, screenThicknessHandlePos) < scaledInteractionRadius;
+                    Vector2 rotHandleOffsetLocal = new Vector2(0, -DrawableRectangle.UnscaledRotationHandleExtraOffset);
+                    Vector2 rotHandleLogical = dArrow.StartPointRelative + Vector2.Transform(rotHandleOffsetLocal, Matrix3x2.CreateRotation(dArrow.RotationAngle));
+                    bool rotH = !startH && !endH && DrawAndCheckHandle(drawList, rotHandleLogical, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
 
-                    if (mouseOverRotateArrow) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenRotationHandlePos, scaledDrawRadius, mouseOverRotateArrow ? HandleColorRotationHover : HandleColorRotation);
-                    if (mouseOverStart) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenStartPoint, scaledDrawRadius, mouseOverStart ? HandleColorHover : HandleColorDefault);
-                    if (mouseOverEndTip) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenVisualTipPoint, scaledDrawRadius, mouseOverEndTip ? HandleColorHover : HandleColorDefault);
-                    if (mouseOverThickness) { mouseOverAnyHandle = true; ImGui.SetMouseCursor(ImGuiMouseCursor.Hand); }
-                    drawList.AddCircleFilled(screenThicknessHandlePos, scaledDrawRadius, mouseOverThickness ? HandleColorThicknessHover : HandleColorThickness);
+                    Vector2 shaftMidLogicalRotated = dArrow.StartPointRelative + Vector2.Transform(localShaftEndUnrotated / 2f, Matrix3x2.CreateRotation(dArrow.RotationAngle));
+                    Vector2 shaftDirRotated = localShaftEndUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(Vector2.Transform(localShaftEndUnrotated, Matrix3x2.CreateRotation(dArrow.RotationAngle))) : Vector2.Transform(new Vector2(0, 1), Matrix3x2.CreateRotation(dArrow.RotationAngle)); // Default up if zero length
+                    Vector2 perpOffsetThick = new Vector2(-shaftDirRotated.Y, shaftDirRotated.X) * (dArrow.Thickness / 2f + 10f); // 10f is a logical margin
+                    bool thickH = !startH && !endH && !rotH && DrawAndCheckHandle(drawList, shaftMidLogicalRotated + perpOffsetThick, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeNS, this.handleColorSpecial, this.handleColorSpecialHover);
+
+                    if (startH) draggedArrowHandleIndex = 0;
+                    else if (endH) draggedArrowHandleIndex = 1;
+                    else if (rotH) draggedArrowHandleIndex = 2;
+                    else if (thickH) draggedArrowHandleIndex = 3;
+                    else draggedArrowHandleIndex = -1;
                 }
             }
 
-            // --- General Shape Hover (only if not over a specific handle and not dragging) ---
-            if (canvasInteractLayerHovered && !mouseOverAnyHandle && currentDragType == ActiveDragType.None)
+            if (isCanvasInteractableAndHovered && !mouseOverAnyHandle && currentDragType == ActiveDragType.None)
             {
-                for (int i = currentDrawables.Count - 1; i >= 0; i--)
+                var sortedForHover = allDrawablesOnPage.OrderByDescending(d => getLayerPriorityFunc(d.ObjectDrawMode)).ToList();
+                newlyHoveredThisFrame = null;
+                foreach (var drawable in sortedForHover)
                 {
-                    // Ensure IsHit in BaseDrawable and its overrides uses/expects scaled thresholds
-                    if (currentDrawables[i].IsHit(mousePosRelative))
+                    if (drawable.IsHit(mousePosLogical, LogicalHandleInteractionRadius / 2f))
                     {
-                        newlyHoveredThisFrame = currentDrawables[i];
-                        if (newlyHoveredThisFrame != null && !selectedDrawables.Contains(newlyHoveredThisFrame))
-                        {
-                            newlyHoveredThisFrame.IsHovered = true;
-                        }
+                        newlyHoveredThisFrame = drawable;
+                        if (!selectedDrawables.Contains(newlyHoveredThisFrame)) newlyHoveredThisFrame.IsHovered = true;
                         break;
                     }
                 }
             }
-            hoveredDrawable = newlyHoveredThisFrame;
+            if (currentDragType == ActiveDragType.None) hoveredDrawable = newlyHoveredThisFrame;
 
-            // --- Mouse Click Logic ---
-            if (isLMBClickedOnCanvas)
+            if (isCanvasInteractableAndHovered && isLMBClickedOnCanvas)
             {
                 bool clickedOnAHandle = false;
                 if (singleSelectedItem != null && mouseOverAnyHandle)
                 {
                     clickedOnAHandle = true;
-                    if (singleSelectedItem is DrawableImage selectedImage)
-                    {
-                        // DrawableImage.GetRotationHandleScreenPosition should use scaled constants
-                        Vector2 imgRotationHandleScreenPos = selectedImage.GetRotationHandleScreenPosition(canvasOriginScreen);
-                        if (draggedImageResizeHandleIndex != -1) { currentDragType = ActiveDragType.ImageResize; }
-                        else if (Vector2.Distance(mousePosScreen, imgRotationHandleScreenPos) < scaledInteractionRadius) { currentDragType = ActiveDragType.ImageRotate; }
-                        else { clickedOnAHandle = false; }
-                    }
-                    else if (singleSelectedItem is DrawableCone selectedCone)
-                    {
-                        Vector2 screenApex = selectedCone.ApexRelative + canvasOriginScreen;
-                        Vector2 localBaseCenter = selectedCone.BaseCenterRelative - selectedCone.ApexRelative;
-                        Vector2 rotatedLocalBaseCenter = HitDetection.ImRotate(localBaseCenter, MathF.Cos(selectedCone.RotationAngle), MathF.Sin(selectedCone.RotationAngle));
-                        Vector2 worldRotatedBaseCenter = selectedCone.ApexRelative + rotatedLocalBaseCenter;
-                        Vector2 axisDirection = (worldRotatedBaseCenter - selectedCone.ApexRelative).LengthSquared() > 0.001f ? Vector2.Normalize(worldRotatedBaseCenter - selectedCone.ApexRelative) : new Vector2(0, -1);
-                        // Scale offset for rotation handle
-                        Vector2 worldRotationHandlePos = worldRotatedBaseCenter + axisDirection * (scaledInteractionRadius + 15f * ImGuiHelpers.GlobalScale);
-                        Vector2 screenRotationHandlePos = worldRotationHandlePos + canvasOriginScreen;
+                    dragStartMousePosLogical = mousePosLogical;
 
-                        if (Vector2.Distance(mousePosScreen, screenRotationHandlePos) < scaledInteractionRadius)
+                    if (singleSelectedItem is DrawableImage dImg) // Consistent variable name
+                    {
+                        Vector2 logicalCenter = dImg.PositionRelative;
+                        Vector2 handleOffsetLocal = new Vector2(0, -(dImg.DrawSize.Y / 2f + DrawableImage.UnscaledRotationHandleDistance));
+                        Vector2 rotatedHandleOffset = HitDetection.ImRotate(handleOffsetLocal, MathF.Cos(dImg.RotationAngle), MathF.Sin(dImg.RotationAngle));
+                        Vector2 logicalRotationHandlePos = logicalCenter + rotatedHandleOffset;
+
+                        if (Vector2.Distance(mousePosLogical, logicalRotationHandlePos) < LogicalHandleInteractionRadius)
                         {
-                            currentDragType = ActiveDragType.ConeRotate; dragStartMousePosRelative = mousePosRelative - selectedCone.ApexRelative; dragStartRotationAngle = selectedCone.RotationAngle;
+                            currentDragType = ActiveDragType.ImageRotate;
+                            dragStartObjectPivotLogical = dImg.PositionRelative;
+                            dragStartRotationAngle = dImg.RotationAngle;
                         }
-                        else if (Vector2.Distance(mousePosScreen, screenApex) < scaledInteractionRadius)
+                        else if (draggedImageResizeHandleIndex != -1)
                         {
-                            currentDragType = ActiveDragType.ConeApex; dragStartMousePosRelative = mousePosRelative; dragStartPoint1 = selectedCone.ApexRelative; dragStartPoint2 = selectedCone.BaseCenterRelative;
-                        }
-                        else if (Vector2.Distance(mousePosScreen, (worldRotatedBaseCenter + canvasOriginScreen)) < scaledInteractionRadius)
-                        {
-                            currentDragType = ActiveDragType.ConeBase; dragStartMousePosRelative = mousePosRelative; dragStartPoint1 = selectedCone.ApexRelative; dragStartPoint2 = selectedCone.BaseCenterRelative;
+                            currentDragType = ActiveDragType.ImageResize;
+                            dragStartObjectPivotLogical = dImg.PositionRelative;
+                            dragStartSizeLogical = dImg.DrawSize;
+                            dragStartRotationAngle = dImg.RotationAngle;
                         }
                         else { clickedOnAHandle = false; }
                     }
-                    else if (singleSelectedItem is DrawableRectangle selectedRect)
+                    else if (singleSelectedItem is DrawableRectangle dRect)
                     {
-                        var (_, rectCenter) = selectedRect.GetGeometry();
-                        Vector2[] rotatedCorners = selectedRect.GetRotatedCorners(); // Already relative coordinates
-                        Vector2 upishLocal = selectedRect.StartPointRelative.Y < selectedRect.EndPointRelative.Y ? new Vector2(0, -1) : new Vector2(0, 1);
-                        Vector2 rotatedUpish = HitDetection.ImRotate(upishLocal, MathF.Cos(selectedRect.RotationAngle), MathF.Sin(selectedRect.RotationAngle));
-                        float halfHeight = Math.Abs(selectedRect.StartPointRelative.Y - selectedRect.EndPointRelative.Y) / 2f;
-                        if (halfHeight < scaledInteractionRadius) halfHeight = scaledInteractionRadius;
-                        // Scale offset for rotation handle
-                        Vector2 rotationHandlePos = rectCenter + rotatedUpish * (halfHeight + scaledInteractionRadius + 10f * ImGuiHelpers.GlobalScale);
+                        var (rectCenterLogical, rectHalfSize) = dRect.GetGeometry();
+                        float handleDistance = rectHalfSize.Y + DrawableRectangle.UnscaledRotationHandleExtraOffset;
+                        Vector2 rotationHandleLogicalPos = rectCenterLogical + Vector2.Transform(new Vector2(0, -handleDistance), Matrix3x2.CreateRotation(dRect.RotationAngle));
 
-                        if (draggedRectCornerIndex != -1) // Hit one of the 4 corners
+                        if (Vector2.Distance(mousePosLogical, rotationHandleLogicalPos) < LogicalHandleInteractionRadius)
                         {
-                            currentDragType = ActiveDragType.RectResize; dragStartMousePosRelative = mousePosRelative; dragStartPoint1 = selectedRect.StartPointRelative; dragStartPoint2 = selectedRect.EndPointRelative; dragStartRotationAngle = selectedRect.RotationAngle;
+                            currentDragType = ActiveDragType.RectRotate;
+                            dragStartObjectPivotLogical = rectCenterLogical;
+                            dragStartRotationAngle = dRect.RotationAngle;
                         }
-                        else if (Vector2.Distance(mousePosRelative, rotationHandlePos) < scaledInteractionRadius) // Hit rotation handle
+                        else if (draggedRectCornerIndex != -1)
                         {
-                            currentDragType = ActiveDragType.RectRotate; dragStartMousePosRelative = mousePosRelative - rectCenter; dragStartRotationAngle = selectedRect.RotationAngle;
+                            currentDragType = ActiveDragType.RectResize;
+                            dragStartPoint1Logical = dRect.StartPointRelative;
+                            dragStartPoint2Logical = dRect.EndPointRelative;
+                            dragStartRotationAngle = dRect.RotationAngle;
+                            dragStartObjectPivotLogical = rectCenterLogical;
                         }
                         else { clickedOnAHandle = false; }
                     }
-                    else if (singleSelectedItem is DrawableArrow selectedArrow)
+                    else if (singleSelectedItem is DrawableCone dCone)
                     {
-                        Vector2 worldStartPoint = selectedArrow.StartPointRelative;
-                        Vector2 unrotatedShaftVector = selectedArrow.EndPointRelative - worldStartPoint;
-                        Vector2 rotatedShaftVector = HitDetection.ImRotate(unrotatedShaftVector, MathF.Cos(selectedArrow.RotationAngle), MathF.Sin(selectedArrow.RotationAngle));
-                        Vector2 worldRotatedShaftEnd = worldStartPoint + rotatedShaftVector;
-                        Vector2 shaftDirectionOnClick = (rotatedShaftVector.LengthSquared() > 0.001f) ? Vector2.Normalize(rotatedShaftVector) : new Vector2(0, -1);
-
-                        float scaledThickness = selectedArrow.Thickness * ImGuiHelpers.GlobalScale;
-                        float arrowheadVisualLengthOnClick = MathF.Max(DrawableArrow.MinArrowheadDim * ImGuiHelpers.GlobalScale, scaledThickness * DrawableArrow.ArrowheadLengthFactor);
-                        Vector2 worldVisualTipOnClick = worldRotatedShaftEnd + shaftDirectionOnClick * arrowheadVisualLengthOnClick;
-
-                        // Scale offset for rotation handle
-                        Vector2 rotationHandleOffset = new Vector2(0, -(scaledInteractionRadius + 20f * ImGuiHelpers.GlobalScale));
-                        Vector2 rotatedRotationOffset = HitDetection.ImRotate(rotationHandleOffset, MathF.Cos(selectedArrow.RotationAngle), MathF.Sin(selectedArrow.RotationAngle));
-                        Vector2 worldRotationHandlePos = worldStartPoint + rotatedRotationOffset;
-
-                        Vector2 shaftMidPoint = worldStartPoint + rotatedShaftVector / 2f;
-                        Vector2 perpDir = shaftDirectionOnClick.LengthSquared() > 0.001f ? new Vector2(-shaftDirectionOnClick.Y, shaftDirectionOnClick.X) : new Vector2(1, 0);
-                        // Scale offset for thickness handle
-                        Vector2 worldThicknessHandlePos = shaftMidPoint + perpDir * (scaledThickness / 2f + scaledInteractionRadius + 5f * ImGuiHelpers.GlobalScale);
-
-                        if (Vector2.Distance(mousePosScreen, worldRotationHandlePos + canvasOriginScreen) < scaledInteractionRadius)
+                        if (draggedArrowHandleIndex == 0)
                         {
-                            currentDragType = ActiveDragType.ArrowRotate; dragStartMousePosRelative = mousePosRelative - worldStartPoint; dragStartRotationAngle = selectedArrow.RotationAngle;
+                            currentDragType = ActiveDragType.ConeApex;
+                            dragStartPoint1Logical = dCone.ApexRelative;
+                            dragStartPoint2Logical = dCone.BaseCenterRelative;
                         }
-                        else if (Vector2.Distance(mousePosScreen, worldStartPoint + canvasOriginScreen) < scaledInteractionRadius)
+                        else if (draggedArrowHandleIndex == 1)
                         {
-                            currentDragType = ActiveDragType.ArrowStartPoint; dragStartMousePosRelative = mousePosRelative; dragStartPoint1 = selectedArrow.StartPointRelative; dragStartPoint2 = selectedArrow.EndPointRelative;
+                            currentDragType = ActiveDragType.ConeBase;
+                            dragStartPoint1Logical = dCone.ApexRelative;
+                            dragStartPoint2Logical = dCone.BaseCenterRelative;
                         }
-                        else if (Vector2.Distance(mousePosScreen, worldVisualTipOnClick + canvasOriginScreen) < scaledInteractionRadius)
+                        else if (draggedArrowHandleIndex == 2)
                         {
-                            currentDragType = ActiveDragType.ArrowEndPoint; dragStartPoint1 = selectedArrow.StartPointRelative; dragStartPoint2 = selectedArrow.EndPointRelative; dragStartRotationAngle = selectedArrow.RotationAngle;
-                        }
-                        else if (Vector2.Distance(mousePosScreen, worldThicknessHandlePos + canvasOriginScreen) < scaledInteractionRadius)
-                        {
-                            currentDragType = ActiveDragType.ArrowThickness; dragStartMousePosRelative = mousePosRelative; dragStartValue = selectedArrow.Thickness; /* Store unscaled thickness */ dragStartPoint1 = worldStartPoint; dragStartPoint2 = worldRotatedShaftEnd;
+                            currentDragType = ActiveDragType.ConeRotate;
+                            dragStartObjectPivotLogical = dCone.ApexRelative;
+                            dragStartRotationAngle = dCone.RotationAngle;
                         }
                         else { clickedOnAHandle = false; }
                     }
-                    else { clickedOnAHandle = false; } // Not a known draggable shape type or no handle matched.
-
-                    if (clickedOnAHandle && !singleSelectedItem.IsSelected)
+                    else if (singleSelectedItem is DrawableArrow dArrow)
                     {
-                        foreach (var d_sel_loop in selectedDrawables) d_sel_loop.IsSelected = false; selectedDrawables.Clear();
-                        singleSelectedItem.IsSelected = true; selectedDrawables.Add(singleSelectedItem);
+                        dragStartPoint1Logical = dArrow.StartPointRelative;
+                        dragStartPoint2Logical = dArrow.EndPointRelative;
+                        dragStartRotationAngle = dArrow.RotationAngle;
+
+                        if (draggedArrowHandleIndex == 0) { currentDragType = ActiveDragType.ArrowStartPoint; }
+                        else if (draggedArrowHandleIndex == 1) { currentDragType = ActiveDragType.ArrowEndPoint; }
+                        else if (draggedArrowHandleIndex == 2)
+                        {
+                            currentDragType = ActiveDragType.ArrowRotate;
+                            dragStartObjectPivotLogical = dArrow.StartPointRelative;
+                        }
+                        else if (draggedArrowHandleIndex == 3)
+                        {
+                            currentDragType = ActiveDragType.ArrowThickness;
+                            dragStartValueLogical = dArrow.Thickness;
+                        }
+                        else { clickedOnAHandle = false; }
+                    }
+                    else { clickedOnAHandle = false; }
+
+                    if (clickedOnAHandle && singleSelectedItem != null && !selectedDrawables.Contains(singleSelectedItem))
+                    {
+                        if (!ImGui.GetIO().KeyCtrl)
+                        {
+                            foreach (var d_sel_loop in selectedDrawables) d_sel_loop.IsSelected = false;
+                            selectedDrawables.Clear();
+                        }
+                        singleSelectedItem.IsSelected = true;
+                        selectedDrawables.Add(singleSelectedItem);
                     }
                 }
 
-                if (!clickedOnAHandle) // Click was not on a handle or was on an unselected item.
+                if (!clickedOnAHandle)
                 {
                     if (hoveredDrawable != null)
                     {
-                        BaseDrawable actualHoveredDrawable = hoveredDrawable;
-                        if (!ImGui.GetIO().KeyCtrl && !selectedDrawables.Contains(actualHoveredDrawable))
+                        if (!ImGui.GetIO().KeyCtrl && !selectedDrawables.Contains(hoveredDrawable))
                         {
                             foreach (var d_sel in selectedDrawables) d_sel.IsSelected = false;
                             selectedDrawables.Clear();
                         }
-                        if (selectedDrawables.Contains(actualHoveredDrawable))
+
+                        if (selectedDrawables.Contains(hoveredDrawable))
                         {
-                            if (ImGui.GetIO().KeyCtrl) { actualHoveredDrawable.IsSelected = false; selectedDrawables.Remove(actualHoveredDrawable); }
+                            if (ImGui.GetIO().KeyCtrl) { hoveredDrawable.IsSelected = false; selectedDrawables.Remove(hoveredDrawable); }
                         }
                         else
                         {
-                            actualHoveredDrawable.IsSelected = true;
-                            selectedDrawables.Add(actualHoveredDrawable);
+                            hoveredDrawable.IsSelected = true;
+                            selectedDrawables.Add(hoveredDrawable);
                         }
-                        actualHoveredDrawable.IsHovered = false;
-                        if (selectedDrawables.Any(d => d.Equals(actualHoveredDrawable) && d.IsSelected))
+
+                        if (hoveredDrawable.IsSelected) // Check if the item we just interacted with is selected
                         {
                             currentDragType = ActiveDragType.GeneralSelection;
-                            lastMouseDragPosForGeneralDrag = mousePosRelative;
+                            lastMouseDragPosLogical = mousePosLogical;
                         }
                     }
-                    else // Clicked on empty canvas.
+                    else
                     {
                         foreach (var d_sel in selectedDrawables) d_sel.IsSelected = false;
                         selectedDrawables.Clear();
@@ -344,61 +352,130 @@ namespace AetherDraw.DrawingLogic
                 }
             }
 
-            // --- Mouse Drag Logic ---
-            if (isLMBDown && currentDragType != ActiveDragType.None && singleSelectedItem != null)
+            if (isLMBDown && currentDragType != ActiveDragType.None)
             {
-                if (singleSelectedItem is DrawableImage selectedImage) // Renamed to selectedImage to avoid conflict
+                Vector2 mouseDeltaLogicalUnrotated; // For operations in object's local unrotated space
+
+                if (singleSelectedItem is DrawableImage dImg) // Use consistent variable name
                 {
                     if (currentDragType == ActiveDragType.ImageResize && draggedImageResizeHandleIndex != -1)
                     {
-                        Vector2 imageCenterRel = selectedImage.PositionRelative;
-                        float angle = selectedImage.RotationAngle;
-                        Vector2 mouseRelativeToCenter = mousePosRelative - imageCenterRel;
-                        Vector2 localMousePos = HitDetection.ImRotate(mouseRelativeToCenter, MathF.Cos(-angle), MathF.Sin(-angle));
-                        Vector2 newHalfSize;
-                        switch (draggedImageResizeHandleIndex)
-                        {
-                            case 0: newHalfSize = new Vector2(-localMousePos.X, -localMousePos.Y); break;
-                            case 1: newHalfSize = new Vector2(localMousePos.X, -localMousePos.Y); break;
-                            case 2: newHalfSize = new Vector2(localMousePos.X, localMousePos.Y); break;
-                            case 3: newHalfSize = new Vector2(-localMousePos.X, localMousePos.Y); break;
-                            default: newHalfSize = selectedImage.DrawSize / 2f; break; // DrawSize is logical/unscaled here
-                        }
-                        // Ensure minimum size after scaling
-                        // DrawableImage.UnscaledResizeHandleRadius is the base unscaled value.
-                        float minDimLogical = DrawableImage.UnscaledResizeHandleRadius * 4; // Logical minimum dimension based on handle
-                                                                                            // newHalfSize is logical. Compare with logical minDim.
-                                                                                            // The DrawSize property of DrawableImage stores logical (unscaled) dimensions.
-                        selectedImage.DrawSize = new Vector2(
-                            MathF.Max(newHalfSize.X * 2, minDimLogical),
-                            MathF.Max(newHalfSize.Y * 2, minDimLogical)
+                        // Transform mouse into image's local unrotated space centered at its position
+                        Vector2 mouseInLocalUnrotated = HitDetection.ImRotate(mousePosLogical - dImg.PositionRelative, MathF.Cos(-dImg.RotationAngle), MathF.Sin(-dImg.RotationAngle));
+                        Vector2 newHalfSize = new Vector2(Math.Abs(mouseInLocalUnrotated.X), Math.Abs(mouseInLocalUnrotated.Y));
+
+                        float minDimLogical = DrawableImage.UnscaledResizeHandleRadius * 2f;
+                        dImg.DrawSize = new Vector2(
+                            Math.Max(newHalfSize.X * 2f, minDimLogical),
+                            Math.Max(newHalfSize.Y * 2f, minDimLogical)
                         );
                     }
                     else if (currentDragType == ActiveDragType.ImageRotate)
                     {
-                        Vector2 imageCenterRel = selectedImage.PositionRelative;
-                        float dX = mousePosRelative.X - imageCenterRel.X;
-                        float dY = mousePosRelative.Y - imageCenterRel.Y;
-                        selectedImage.RotationAngle = MathF.Atan2(dY, dX) + MathF.PI / 2f;
+                        float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X);
+                        float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X);
+                        dImg.RotationAngle = dragStartRotationAngle + (angleNow - angleThen);
+                    }
+                }
+                else if (singleSelectedItem is DrawableRectangle dRect)
+                {
+                    if (currentDragType == ActiveDragType.RectResize && draggedRectCornerIndex != -1)
+                    {
+                        Vector2[] originalLogicalCorners = HitDetection.GetRotatedQuadVertices(dragStartObjectPivotLogical, (dragStartPoint2Logical - dragStartPoint1Logical) / 2f, dragStartRotationAngle);
+                        Vector2 pivotCornerLogical = originalLogicalCorners[(draggedRectCornerIndex + 2) % 4];
+                        Vector2 mouseRelativeToPivot = mousePosLogical - pivotCornerLogical;
+                        Vector2 mouseInRectLocalFrame = HitDetection.ImRotate(mouseRelativeToPivot, MathF.Cos(-dragStartRotationAngle), MathF.Sin(-dragStartRotationAngle));
+                        Vector2 newCenterInLocalFrame = mouseInRectLocalFrame / 2f;
+                        Vector2 newHalfSizeLocal = new Vector2(Math.Abs(mouseInRectLocalFrame.X) / 2f, Math.Abs(mouseInRectLocalFrame.Y) / 2f);
+                        newHalfSizeLocal.X = Math.Max(newHalfSizeLocal.X, 1f);
+                        newHalfSizeLocal.Y = Math.Max(newHalfSizeLocal.Y, 1f);
+                        Vector2 newCenter = pivotCornerLogical + HitDetection.ImRotate(newCenterInLocalFrame, MathF.Cos(dragStartRotationAngle), MathF.Sin(dragStartRotationAngle));
+
+                        dRect.StartPointRelative = newCenter - newHalfSizeLocal;
+                        dRect.EndPointRelative = newCenter + newHalfSizeLocal;
+                        // dRect.RotationAngle = dragStartRotationAngle; // Rotation doesn't change
+                    }
+                    else if (currentDragType == ActiveDragType.RectRotate)
+                    {
+                        float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X);
+                        float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X);
+                        dRect.RotationAngle = dragStartRotationAngle + (angleNow - angleThen);
+                    }
+                }
+                else if (singleSelectedItem is DrawableCone dCone)
+                {
+                    if (currentDragType == ActiveDragType.ConeApex)
+                    {
+                        Vector2 delta = mousePosLogical - dragStartMousePosLogical;
+                        dCone.SetApex(dragStartPoint1Logical + delta);
+                    }
+                    else if (currentDragType == ActiveDragType.ConeBase)
+                    {
+                        Vector2 mouseRelativeToApex = mousePosLogical - dCone.ApexRelative;
+                        Vector2 unrotatedMouseRelativeToApex = HitDetection.ImRotate(mouseRelativeToApex, MathF.Cos(-dCone.RotationAngle), MathF.Sin(-dCone.RotationAngle));
+                        dCone.SetBaseCenter(dCone.ApexRelative + unrotatedMouseRelativeToApex);
+                    }
+                    else if (currentDragType == ActiveDragType.ConeRotate)
+                    {
+                        float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X);
+                        float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X);
+                        dCone.RotationAngle = dragStartRotationAngle + (angleNow - angleThen);
+                    }
+                }
+                else if (singleSelectedItem is DrawableArrow dArrow)
+                {
+                    if (currentDragType == ActiveDragType.ArrowStartPoint)
+                    {
+                        Vector2 delta = mousePosLogical - dragStartMousePosLogical;
+                        dArrow.SetStartPoint(dragStartPoint1Logical + delta);
+                    }
+                    else if (currentDragType == ActiveDragType.ArrowEndPoint)
+                    {
+                        Vector2 mouseRelativeToStart = mousePosLogical - dArrow.StartPointRelative;
+                        Vector2 unrotatedMouseRelativeToStart = HitDetection.ImRotate(mouseRelativeToStart, MathF.Cos(-dArrow.RotationAngle), MathF.Sin(-dArrow.RotationAngle));
+                        dArrow.SetEndPoint(dArrow.StartPointRelative + unrotatedMouseRelativeToStart);
+                    }
+                    else if (currentDragType == ActiveDragType.ArrowRotate)
+                    {
+                        float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X);
+                        float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X);
+                        dArrow.RotationAngle = dragStartRotationAngle + (angleNow - angleThen);
+                    }
+                    else if (currentDragType == ActiveDragType.ArrowThickness)
+                    {
+                        Vector2 initialShaftVec = dragStartPoint2Logical - dragStartPoint1Logical;
+                        Vector2 initialShaftDir = initialShaftVec.LengthSquared() > 0.001f ? Vector2.Normalize(initialShaftVec) : new Vector2(0, -1);
+                        Vector2 perpDir = new Vector2(-initialShaftDir.Y, initialShaftDir.X);
+
+                        Vector2 currentMouseDeltaFromDragStartLogical = mousePosLogical - dragStartMousePosLogical;
+                        mouseDeltaLogicalUnrotated = HitDetection.ImRotate(currentMouseDeltaFromDragStartLogical, MathF.Cos(-dragStartRotationAngle), MathF.Sin(-dragStartRotationAngle));
+                        float thicknessDelta = Vector2.Dot(mouseDeltaLogicalUnrotated, perpDir);
+                        dArrow.Thickness = Math.Max(1f, dragStartValueLogical + thicknessDelta);
+                    }
+                }
+
+                // General selection drag needs to be handled AFTER specific handle drags for the singleSelectedItem
+                // OR ensure currentDragType is exclusively GeneralSelection
+                if (currentDragType == ActiveDragType.GeneralSelection) // Check again, as it might have been changed by handle logic
+                {
+                    if (selectedDrawables.Any()) // Ensure there's something to drag
+                    {
+                        Vector2 dragDeltaLogical = mousePosLogical - lastMouseDragPosLogical;
+                        if (dragDeltaLogical.LengthSquared() > 0.0001f)
+                        {
+                            foreach (var item in selectedDrawables)
+                            {
+                                item.Translate(dragDeltaLogical);
+                            }
+                        }
+                        lastMouseDragPosLogical = mousePosLogical;
                     }
                 }
             }
 
-            if (isLMBDown && currentDragType == ActiveDragType.GeneralSelection)
+            if (isCanvasInteractableAndHovered && isLMBReleased)
             {
-                Vector2 mouseDelta = mousePosRelative - lastMouseDragPosForGeneralDrag;
-                if (mouseDelta.LengthSquared() > 0.001f)
-                {
-                    foreach (var item in selectedDrawables) item.Translate(mouseDelta);
-                }
-                lastMouseDragPosForGeneralDrag = mousePosRelative;
-            }
-
-            if (isLMBReleased)
-            {
-                currentDragType = ActiveDragType.None;
-                draggedImageResizeHandleIndex = -1;
-                draggedRectCornerIndex = -1;
+                if (currentDragType != ActiveDragType.None) ResetDragState();
             }
         }
 
@@ -407,6 +484,7 @@ namespace AetherDraw.DrawingLogic
             currentDragType = ActiveDragType.None;
             draggedImageResizeHandleIndex = -1;
             draggedRectCornerIndex = -1;
+            draggedArrowHandleIndex = -1;
         }
     }
 }

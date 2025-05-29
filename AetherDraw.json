@@ -5,7 +5,7 @@
     "Punchline": "Whiteboard planner",
     "Description": "Draw strategy images for encounters. Use /aetherdraw to open.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "1.0.1.1",
+    "AssemblyVersion": "1.0.1.2",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [
