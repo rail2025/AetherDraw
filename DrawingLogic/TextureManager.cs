@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using Dalamud.Interface.Textures.TextureWraps;
-using AetherDraw; // Required for accessing Plugin.TextureProvider and Plugin.Log
-using Svg.Skia;    // For SKSvg
-using SkiaSharp;   // For SKBitmap, SKCanvas, SKImage, SKEncodedImageFormat, SKColors
+using AetherDraw;
+using Svg.Skia;
+using SkiaSharp;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -25,18 +25,18 @@ namespace AetherDraw.DrawingLogic
 
             if (LoadedTextures.TryGetValue(resourcePathFromPluginRoot, out var tex))
             {
-                if (tex != null && tex.ImGuiHandle == IntPtr.Zero) // Check if the cached texture is still valid
+                if (tex != null && tex.ImGuiHandle == IntPtr.Zero)
                 {
                     Plugin.Log?.Warning($"Cached texture for '{resourcePathFromPluginRoot}' was disposed or invalid. Attempting reload.");
-                    tex.Dispose(); // Ensure it's fully disposed
-                    LoadedTextures.Remove(resourcePathFromPluginRoot); // Remove from cache to force reload
-                    tex = null;    // Set to null to fall through to loading logic
+                    tex.Dispose();
+                    LoadedTextures.Remove(resourcePathFromPluginRoot);
+                    tex = null;
                 }
-                else if (tex != null) // Texture is valid and cached
+                else if (tex != null)
                 {
                     return tex;
                 }
-                // If 'tex' was initially null in the dictionary (previous load failure), it will also fall through.
+                
             }
 
             try
@@ -51,7 +51,7 @@ namespace AetherDraw.DrawingLogic
                     if (resourceStream == null)
                     {
                         Plugin.Log?.Error($"Resource stream is null for '{fullResourcePath}'. Check path, build action, and case sensitivity.");
-                        LoadedTextures[resourcePathFromPluginRoot] = null; // Cache as null to prevent repeated failed load attempts
+                        LoadedTextures[resourcePathFromPluginRoot] = null;
                         return null;
                     }
 

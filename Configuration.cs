@@ -14,7 +14,7 @@ namespace AetherDraw
         public float DefaultBrushColorG { get; set; } = 1.0f;
         public float DefaultBrushColorB { get; set; } = 1.0f;
         public float DefaultBrushColorA { get; set; } = 1.0f;
-        public float DefaultBrushThickness { get; set; } = 4.0f; // Default is 4.0f
+        public float DefaultBrushThickness { get; set; } = 4.0f;
 
         [NonSerialized]
         private IDalamudPluginInterface? pluginInterface; // Renamed from _pluginInterface

@@ -2,7 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Interface.Windowing;
 using ImGuiNET;
-using Dalamud.Interface.Utility; // Added for ImGuiHelpers
+using Dalamud.Interface.Utility; 
 
 namespace AetherDraw.Windows
 {
@@ -13,7 +13,6 @@ namespace AetherDraw.Windows
 
         public ConfigWindow(Plugin plugin) : base("AetherDraw Settings###AetherDrawConfigWindow")
         {
-            // Scale the MinimumSize constraints.
             this.SizeConstraints = new WindowSizeConstraints
             {
                 MinimumSize = new Vector2(300f * ImGuiHelpers.GlobalScale, 150f * ImGuiHelpers.GlobalScale),

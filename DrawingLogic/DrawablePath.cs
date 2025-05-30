@@ -2,8 +2,8 @@ using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
 using ImGuiNET;
-using Dalamud.Interface.Utility; // Added for ImGuiHelpers
-using System; // For MathF
+using Dalamud.Interface.Utility;
+using System;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -30,7 +30,7 @@ namespace AetherDraw.DrawingLogic
         public void AddPoint(Vector2 pointRelative)
         {
             // Add if list is empty or if new point is sufficiently far from the last.
-            // 0.01f is a small logical squared distance, likely doesn't need scaling.
+            // 0.01f is a small logical squared distance, doesn't need scaling.
             if (!PointsRelative.Any() || Vector2.DistanceSquared(PointsRelative.Last(), pointRelative) > 0.01f)
             {
                 PointsRelative.Add(pointRelative);

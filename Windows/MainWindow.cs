@@ -1,3 +1,4 @@
+// AetherDraw/Windows/MainWindow.cs
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -10,26 +11,15 @@ using AetherDraw.Serialization;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using System.IO;
+using Dalamud.Interface.ImGuiFileDialog;
 
 namespace AetherDraw.Windows
 {
     public class MainWindow : Window, IDisposable
     {
-        /// <summary>
-        /// Represents a single page within the AetherDraw whiteboard.
-        /// Contains the page's name and a list of all drawable elements on it.
-        /// This class is public to allow access from other parts of the application, such as serializers.
-        /// </summary>
         public class PageData
         {
-            /// <summary>
-            /// Gets or sets the name of the page.
-            /// </summary>
             public string Name { get; set; } = "1";
-
-            /// <summary>
-            /// Gets or sets the list of drawable elements on this page.
-            /// </summary>
             public List<BaseDrawable> Drawables { get; set; } = new List<BaseDrawable>();
         }
 
@@ -69,12 +59,8 @@ namespace AetherDraw.Windows
             new Vector4(0.5f,0.5f,0.5f,1.0f), new Vector4(0.8f,0.4f,0.0f,1.0f)
         };
 
-        private bool triggerOpenSaveDialog = false;
-        private bool triggerOpenLoadDialog = false;
-        private bool showSavePlanDialog = false;
-        private bool showLoadPlanDialog = false;
-        private string currentFilePathBuffer = "";
-        private string fileDialogError = string.Empty;
+        private readonly FileDialogManager fileDialogManager;
+        private string lastFileDialogError = string.Empty;
 
         public MainWindow(Plugin plugin) : base("AetherDraw Whiteboard###AetherDrawMainWindow")
         {
@@ -84,17 +70,10 @@ namespace AetherDraw.Windows
 
             this.shapeInteractionHandler = new ShapeInteractionHandler();
             this.inPlaceTextEditor = new InPlaceTextEditor();
+            this.fileDialogManager = new FileDialogManager();
 
-            string pluginConfigDir = AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory();
-            if (!string.IsNullOrEmpty(pluginConfigDir) && Directory.Exists(pluginConfigDir))
-            {
-                currentFilePathBuffer = Path.Combine(pluginConfigDir, "MyAetherDrawPlan.adp");
-            }
-            else
-            {
-                AetherDraw.Plugin.Log?.Warning($"[MainWindow] Plugin config directory not found or invalid. Defaulting save/load path to MyDocuments.");
-                currentFilePathBuffer = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "MyAetherDrawPlan.adp");
-            }
+            // Configure FileDialogManager defaults if needed (e.g., default sort order, custom sidebar items)
+            // Example: this.fileDialogManager.GetDefaultSortOrder = () => FileDialog.SortingField.FileName;
 
             this.canvasController = new CanvasController(
                 () => currentDrawMode,
@@ -170,7 +149,15 @@ namespace AetherDraw.Windows
                 }
                 else AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] RightPane BeginChild FAILED.");
             }
-            DrawSaveLoadDialogs();
+
+            this.fileDialogManager.Draw();
+
+            if (!string.IsNullOrEmpty(lastFileDialogError))
+            {
+                // This is just an example; you might want a better way to show persistent errors.
+                // ImGui.OpenPopup("FileDialogErrorPopup"); 
+                // if(ImGui.BeginPopup("FileDialogErrorPopup")) { ImGui.Text(lastFileDialogError); ImGui.EndPopup(); }
+            }
 
             AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] Frame {ImGui.GetFrameCount()}: Exit.");
         }
@@ -258,9 +245,7 @@ namespace AetherDraw.Windows
                 {
                     inPlaceTextEditor.CancelAndEndEdit();
                 }
-
-                // If this was the only page, rename it to "1"
-                if (pages.Count == 1 && currentPageIndex == 0) // Ensure current page index is valid if count is 1
+                if (pages.Count == 1 && currentPageIndex == 0)
                 {
                     pages[currentPageIndex].Name = "1";
                     AetherDraw.Plugin.Log?.Info($"[MainWindow.Toolbar] Last page cleared and renamed to '1'.");
@@ -404,24 +389,39 @@ namespace AetherDraw.Windows
                 float planButtonWidth = (availableWidth - ImGui.GetStyle().ItemSpacing.X * 2) / 3f;
                 planButtonWidth = Math.Max(planButtonWidth, 80 * ImGuiHelpers.GlobalScale);
 
+                string initialPath = AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory();
+                if (string.IsNullOrEmpty(initialPath) || !Directory.Exists(initialPath))
+                {
+                    initialPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                }
+
                 if (ImGui.Button("Load Plan##LoadPlanButton", new Vector2(planButtonWidth, 0)))
                 {
                     AetherDraw.Plugin.Log?.Info("[MainWindow] Load Plan button clicked.");
-                    fileDialogError = string.Empty;
-                    string pluginConfDir = AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory();
-                    currentFilePathBuffer = Path.Combine(string.IsNullOrEmpty(pluginConfDir) ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) : pluginConfDir, "MyAetherDrawPlan.adp");
-                    this.triggerOpenLoadDialog = true;
-                    this.showLoadPlanDialog = true;
+                    lastFileDialogError = string.Empty;
+                    fileDialogManager.OpenFileDialog(
+                        "Load AetherDraw Plan",
+                        "AetherDraw Plan{.adp}",
+                        HandleLoadPlanDialogResult, // Callback
+                        1,                          // Max number of selections
+                        initialPath,                // Starting path
+                        true                        // IsModal
+                    );
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Save Plan##SavePlanButton", new Vector2(planButtonWidth, 0)))
                 {
                     AetherDraw.Plugin.Log?.Info("[MainWindow] Save Plan button clicked.");
-                    fileDialogError = string.Empty;
-                    string pluginConfDir = AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory();
-                    currentFilePathBuffer = Path.Combine(string.IsNullOrEmpty(pluginConfDir) ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments) : pluginConfDir, "MyAetherDrawPlan.adp");
-                    this.triggerOpenSaveDialog = true;
-                    this.showSavePlanDialog = true;
+                    lastFileDialogError = string.Empty;
+                    fileDialogManager.SaveFileDialog(
+                        "Save AetherDraw Plan As...",
+                        "AetherDraw Plan{.adp}",
+                        "MyAetherDrawPlan", // Default file name (without extension)
+                        ".adp",             // Default extension
+                        HandleSavePlanDialogResult, // Callback
+                        initialPath,        // Starting path
+                        true                // IsModal
+                    );
                 }
                 ImGui.SameLine();
                 using (ImRaii.Disabled())
@@ -434,110 +434,46 @@ namespace AetherDraw.Windows
             }
         }
 
-        private void DrawSaveLoadDialogs()
+        // This method is no longer needed as FileDialogManager.Draw() handles dialog display.
+        // private void DrawSaveLoadDialogs() { } 
+
+        private void HandleSavePlanDialogResult(bool success, string filePath)
         {
-            if (triggerOpenSaveDialog)
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow] HandleSavePlanDialogResult: Success - {success}, Path - '{filePath ?? "null"}'");
+            if (success && !string.IsNullOrEmpty(filePath))
             {
-                ImGui.OpenPopup("Save Plan##SavePlanPopup");
-                AetherDraw.Plugin.Log?.Debug("[DrawSaveLoadDialogs] OpenPopup called for Save Plan.");
-                triggerOpenSaveDialog = false;
+                ActuallySavePlanToFile(filePath);
             }
-
-            AetherDraw.Plugin.Log?.Debug($"[DrawSaveLoadDialogs] Before Save BeginPopupModal. showSavePlanDialog: {showSavePlanDialog}");
-            if (ImGui.BeginPopupModal("Save Plan##SavePlanPopup", ref showSavePlanDialog, ImGuiWindowFlags.AlwaysAutoResize))
+            else if (!success) // Could be cancellation or an error within the dialog
             {
-                AetherDraw.Plugin.Log?.Debug("[DrawSaveLoadDialogs] Save Plan Popup is open and rendering.");
-                ImGui.Text("Enter file path to save the current plan:");
-                ImGui.InputText("##savefilepath", ref currentFilePathBuffer, 260);
-                ImGui.Text($"Recommended base directory: {AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory()}");
-                ImGui.Text("Tip: Use a .adp extension for AetherDraw Plan files.");
-
-                if (!string.IsNullOrEmpty(fileDialogError))
-                {
-                    ImGui.TextColored(new Vector4(1, 0, 0, 1), fileDialogError);
-                }
-
-                if (ImGui.Button("Save"))
-                {
-                    if (!string.IsNullOrWhiteSpace(currentFilePathBuffer))
-                    {
-                        ActuallySavePlanToFile(currentFilePathBuffer);
-                        ImGui.CloseCurrentPopup();
-                    }
-                    else
-                    {
-                        fileDialogError = "File path cannot be empty.";
-                        AetherDraw.Plugin.Log?.Error("[MainWindow.SaveDialog] File path empty.");
-                    }
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Cancel"))
-                {
-                    ImGui.CloseCurrentPopup();
-                    fileDialogError = string.Empty;
-                }
-                ImGui.EndPopup();
+                AetherDraw.Plugin.Log?.Info("[MainWindow] SaveFileDialog was cancelled or resulted in an error.");
+                
             }
-            else if (showSavePlanDialog && !triggerOpenSaveDialog)
+        }
+
+        private void HandleLoadPlanDialogResult(bool success, List<string> paths) // Corrected signature
+        {
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow] HandleLoadPlanDialogResult: Success - {success}, Paths count - {(paths?.Count ?? 0)}");
+            if (success && paths != null && paths.Count > 0 && !string.IsNullOrEmpty(paths[0]))
             {
-                AetherDraw.Plugin.Log?.Debug($"[DrawSaveLoadDialogs] Save BeginPopupModal returned false, but showSavePlanDialog is true. (trigger was {triggerOpenSaveDialog})");
+                string filePath = paths[0]; // Use the first path for single selection
+                AetherDraw.Plugin.Log?.Info($"[MainWindow] LoadFileDialog selected path: {filePath}");
+                ActuallyLoadPlanFromFile(filePath);
             }
-
-            if (triggerOpenLoadDialog)
+            else if (!success)
             {
-                ImGui.OpenPopup("Load Plan##LoadPlanPopup");
-                AetherDraw.Plugin.Log?.Debug("[DrawSaveLoadDialogs] OpenPopup called for Load Plan.");
-                triggerOpenLoadDialog = false;
-            }
-
-            AetherDraw.Plugin.Log?.Debug($"[DrawSaveLoadDialogs] Before Load BeginPopupModal. showLoadPlanDialog: {showLoadPlanDialog}");
-            if (ImGui.BeginPopupModal("Load Plan##LoadPlanPopup", ref showLoadPlanDialog, ImGuiWindowFlags.AlwaysAutoResize))
-            {
-                AetherDraw.Plugin.Log?.Debug("[DrawSaveLoadDialogs] Load Plan Popup is open and rendering.");
-                ImGui.Text("Enter file path to load a plan:");
-                ImGui.InputText("##loadfilepath", ref currentFilePathBuffer, 260);
-                ImGui.Text($"Recommended base directory: {AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory()}");
-
-                if (!string.IsNullOrEmpty(fileDialogError))
-                {
-                    ImGui.TextColored(new Vector4(1, 0, 0, 1), fileDialogError);
-                }
-
-                if (ImGui.Button("Load"))
-                {
-                    if (!string.IsNullOrWhiteSpace(currentFilePathBuffer))
-                    {
-                        ActuallyLoadPlanFromFile(currentFilePathBuffer);
-                        ImGui.CloseCurrentPopup();
-                    }
-                    else
-                    {
-                        fileDialogError = "File path cannot be empty.";
-                        AetherDraw.Plugin.Log?.Error("[MainWindow.LoadDialog] File path empty.");
-                    }
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Cancel"))
-                {
-                    ImGui.CloseCurrentPopup();
-                    fileDialogError = string.Empty;
-                }
-                ImGui.EndPopup();
-            }
-            else if (showLoadPlanDialog && !triggerOpenLoadDialog)
-            {
-                AetherDraw.Plugin.Log?.Debug($"[DrawSaveLoadDialogs] Load BeginPopupModal returned false, but showLoadPlanDialog is true. (trigger was {triggerOpenLoadDialog})");
+                AetherDraw.Plugin.Log?.Info("[MainWindow] LoadFileDialog was cancelled, resulted in an error, or no path selected.");
             }
         }
 
         private void ActuallySavePlanToFile(string filePath)
         {
             AetherDraw.Plugin.Log?.Info($"[MainWindow] Saving current plan ({pages.Count} pages) to: {filePath}");
-            fileDialogError = string.Empty;
+            lastFileDialogError = string.Empty;
             if (!pages.Any() || !pages.Any(p => p.Drawables.Any()))
             {
                 AetherDraw.Plugin.Log?.Warning("[MainWindow] No pages or no drawables on any page to save.");
-                fileDialogError = "Nothing to save in the current plan.";
+                lastFileDialogError = "Nothing to save in the current plan.";
                 return;
             }
 
@@ -566,25 +502,25 @@ namespace AetherDraw.Windows
                 else
                 {
                     AetherDraw.Plugin.Log?.Error($"[MainWindow] Plan serialization returned null for '{planName}'.");
-                    fileDialogError = "Failed to serialize plan data.";
+                    lastFileDialogError = "Failed to serialize plan data.";
                 }
             }
             catch (Exception ex)
             {
                 AetherDraw.Plugin.Log?.Error(ex, $"[MainWindow] Error saving plan to {filePath}.");
-                fileDialogError = $"Error saving plan: {ex.Message}";
+                lastFileDialogError = $"Error saving plan: {ex.Message}";
             }
         }
 
         private void ActuallyLoadPlanFromFile(string filePath)
         {
             AetherDraw.Plugin.Log?.Info($"[MainWindow] Loading plan from: {filePath}");
-            fileDialogError = string.Empty;
+            lastFileDialogError = string.Empty;
 
             if (!File.Exists(filePath))
             {
                 AetherDraw.Plugin.Log?.Warning($"[MainWindow] Plan file not found for loading: {filePath}");
-                fileDialogError = "Plan file not found.";
+                lastFileDialogError = "Plan file not found.";
                 return;
             }
 
@@ -596,7 +532,7 @@ namespace AetherDraw.Windows
                 if (loadedPlan == null || loadedPlan.Pages == null)
                 {
                     AetherDraw.Plugin.Log?.Error($"[MainWindow] Failed to deserialize plan from {filePath}. Loaded plan or pages is null.");
-                    fileDialogError = "Failed to read plan file. It might be corrupt, an incompatible version, or empty.";
+                    lastFileDialogError = "Failed to read plan file. It might be corrupt, an incompatible version, or empty.";
                     return;
                 }
 
@@ -627,7 +563,7 @@ namespace AetherDraw.Windows
             catch (Exception ex)
             {
                 AetherDraw.Plugin.Log?.Error(ex, $"[MainWindow] Error loading plan from {filePath}.");
-                fileDialogError = $"Error loading plan: {ex.Message}";
+                lastFileDialogError = $"Error loading plan: {ex.Message}";
             }
         }
 

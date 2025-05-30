@@ -1,7 +1,4 @@
-// Create this file as: DrawingLogic/InputSanitizer.cs
 using System.Text.RegularExpressions;
-// Assuming Plugin.Log is accessible.
-// using static YourPluginNamespace.Plugin; 
 
 namespace AetherDraw.DrawingLogic
 {
@@ -29,25 +26,8 @@ namespace AetherDraw.DrawingLogic
             }
 
             string originalTextForLog = inputText.Length > 30 ? inputText.Substring(0, 30) + "..." : inputText;
-            // AetherDraw.Plugin.Log?.Debug($"[InputSanitizer] Sanitize: Starting sanitization for: \"{originalTextForLog}\"");
-
-            // 1. Prevent ImGui's '%%' from being interpreted as a single '%' if user types it literally.
-            // This also prevents "%%c" or "%%[color_hex]" from being parsed as color codes by ImGui itself.
-            // Note: If you *want* users to be able to use ImGui's color tags (e.g., "%%[FF0000]Red%%"),
-            // then this specific replacement should be more nuanced or removed.
-            // For a general drawing tool, it's usually safer to escape or disallow them.
-            string sanitizedText = inputText.Replace("%%", "% %"); // Escapes '%%' to be rendered as literal "%%" (actually renders as "% %")
-                                                                   // If you want to display "%%", you might need "%%%%".
-                                                                   // A simple way to just prevent %% from being special is to break it.
-
-            // 2. Remove most control characters (except tab, newline, carriage return if they are desired)
-            // The regex above is defined to do this.
-            // sanitizedText = ControlCharRegex.Replace(sanitizedText, "");
-
-            // 3. (Optional) Normalize line endings if needed (e.g., all \r\n or \r to \n)
-            // For ImGui.InputTextMultiline, it usually handles line endings fairly well, typically using \n internally.
-            // This step is often not strictly necessary for display with ImGui but can be for consistency if saving/loading.
-            // sanitizedText = sanitizedText.Replace("\r\n", "\n").Replace("\r", "\n");
+            string sanitizedText = inputText.Replace("%%", "% %"); 
+            
 
 
             if (inputText != sanitizedText)

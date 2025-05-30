@@ -3,7 +3,7 @@ using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
 using ImGuiNET;
-using Dalamud.Interface.Utility; // Added for ImGuiHelpers
+using Dalamud.Interface.Utility;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -36,7 +36,7 @@ namespace AetherDraw.DrawingLogic
         // Adds a point to the dashed line path.
         public void AddPoint(Vector2 pointRelative)
         {
-            // 4.0f is a logical squared distance threshold, likely doesn't need scaling.
+            // 4.0f is a logical squared distance threshold, doesn't need scaling.
             if (!PointsRelative.Any() || Vector2.DistanceSquared(PointsRelative.Last(), pointRelative) > 4.0f)
             {
                 PointsRelative.Add(pointRelative);

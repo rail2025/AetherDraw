@@ -1,7 +1,7 @@
 using System.Numerics;
 using ImGuiNET;
-using Dalamud.Interface.Utility; // Added for ImGuiHelpers
-using System; // Added for MathF
+using Dalamud.Interface.Utility;
+using System;
 
 namespace AetherDraw.DrawingLogic
 {

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using AetherDraw.DrawingLogic;
-using AetherDraw.Windows; // For InPlaceTextEditor
+using AetherDraw.Windows;
 using Dalamud.Interface.Utility;
 using ImGuiNET;
 
@@ -89,7 +89,7 @@ namespace AetherDraw.Core
             bool isLMBDown, bool isLMBClickedOnCanvas, bool isLMBReleased, bool isLMBDoubleClickedOnCanvas,
             Func<DrawMode, int> getLayerPriorityFunc)
         {
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.Process] Mode: {getCurrentDrawMode()}, LMBDown: {isLMBDown}, Clicked: {isLMBClickedOnCanvas}, Released: {isLMBReleased}, DblClicked: {isLMBDoubleClickedOnCanvas}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.Process] Mode: {getCurrentDrawMode()}, LMBDown: {isLMBDown}, Clicked: {isLMBClickedOnCanvas}, Released: {isLMBReleased}, DblClicked: {isLMBDoubleClickedOnCanvas}");
 
             var currentDrawablesOnPage = getDrawablesForCurrentPageFunc();
             BaseDrawable? localHoveredDrawable = getHoveredDrawableFunc(); // Get current hovered from MainWindow
@@ -97,7 +97,7 @@ namespace AetherDraw.Core
             // Handle double-click for text editing if in select mode
             if (isLMBDoubleClickedOnCanvas && getCurrentDrawMode() == DrawMode.Select && localHoveredDrawable is DrawableText dt)
             {
-                AetherDraw.Plugin.Log?.Debug($"[CanvasController.Process] Double-clicked on DrawableText, attempting to edit."); // Corrected Log access
+                AetherDraw.Plugin.Log?.Debug($"[CanvasController.Process] Double-clicked on DrawableText, attempting to edit.");
                 if (!inPlaceTextEditor.IsCurrentlyEditing(dt))
                 {
                     inPlaceTextEditor.BeginEdit(dt, canvasOriginScreen, ImGuiHelpers.GlobalScale);
@@ -145,14 +145,14 @@ namespace AetherDraw.Core
         /// </summary>
         private void HandleEraserInput(Vector2 mousePosLogical, Vector2 mousePosScreen, ImDrawListPtr drawList, bool isLMBDown, List<BaseDrawable> currentDrawablesOnPage)
         {
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.Eraser] PosL: {mousePosLogical}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.Eraser] PosL: {mousePosLogical}");
             float scaledEraserVisualRadius = 5f * ImGuiHelpers.GlobalScale;
             drawList.AddCircle(mousePosScreen, scaledEraserVisualRadius, ImGui.GetColorU32(new Vector4(1, 0, 0, 0.7f)), 32, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
 
             if (isLMBDown)
             {
                 float logicalEraserRadius = 10f; // This is unscaled
-                AetherDraw.Plugin.Log?.Debug($"[CanvasController.Eraser] Erasing with radius {logicalEraserRadius} at {mousePosLogical}"); // Corrected Log access
+                AetherDraw.Plugin.Log?.Debug($"[CanvasController.Eraser] Erasing with radius {logicalEraserRadius} at {mousePosLogical}");
 
                 for (int i = currentDrawablesOnPage.Count - 1; i >= 0; i--)
                 {
@@ -173,7 +173,7 @@ namespace AetherDraw.Core
 
                     if (!removedByPathEdit && d.IsHit(mousePosLogical, logicalEraserRadius))
                     {
-                        AetherDraw.Plugin.Log?.Info($"[CanvasController.Eraser] Erased: {d.GetType().Name}"); // Corrected Log access
+                        AetherDraw.Plugin.Log?.Info($"[CanvasController.Eraser] Erased: {d.GetType().Name}");
                         currentDrawablesOnPage.RemoveAt(i);
                         if (selectedDrawablesListRef.Contains(d)) selectedDrawablesListRef.Remove(d);
 
@@ -192,12 +192,12 @@ namespace AetherDraw.Core
         /// </summary>
         private void HandleTextToolInput(Vector2 mousePosLogical, Vector2 canvasOriginScreen, bool isLMBClickedOnCanvas, List<BaseDrawable> currentDrawablesOnPage)
         {
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.TextTool] PosL: {mousePosLogical}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.TextTool] PosL: {mousePosLogical}");
             if (isLMBClickedOnCanvas)
             {
                 var newText = new DrawableText(mousePosLogical, "New Text", getCurrentBrushColor(), DefaultUnscaledFontSize, DefaultUnscaledTextWrapWidth);
                 currentDrawablesOnPage.Add(newText);
-                AetherDraw.Plugin.Log?.Info($"[CanvasController.TextTool] Created DrawableText at {mousePosLogical}"); // Corrected Log access
+                AetherDraw.Plugin.Log?.Info($"[CanvasController.TextTool] Created DrawableText at {mousePosLogical}");
 
                 foreach (var sel in selectedDrawablesListRef) sel.IsSelected = false;
                 selectedDrawablesListRef.Clear();
@@ -252,7 +252,7 @@ namespace AetherDraw.Core
         private void HandleImagePlacementInput(Vector2 mousePosLogical, bool isLMBClickedOnCanvas, List<BaseDrawable> currentDrawablesOnPage)
         {
             DrawMode currentMode = getCurrentDrawMode();
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.ImagePlacement] Mode: {currentMode}, PosL: {mousePosLogical}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.ImagePlacement] Mode: {currentMode}, PosL: {mousePosLogical}");
             if (ImGui.IsItemHovered()) ImGui.SetTooltip($"Click to place {currentMode}");
 
             if (isLMBClickedOnCanvas)
@@ -293,11 +293,11 @@ namespace AetherDraw.Core
                 {
                     var newImage = new DrawableImage(currentMode, imagePath, mousePosLogical, imageUnscaledSize, tint);
                     currentDrawablesOnPage.Add(newImage);
-                    AetherDraw.Plugin.Log?.Info($"[CanvasController.ImagePlacement] Placed {currentMode} at {mousePosLogical}"); // Corrected Log access
+                    AetherDraw.Plugin.Log?.Info($"[CanvasController.ImagePlacement] Placed {currentMode} at {mousePosLogical}");
                 }
                 else
                 {
-                    AetherDraw.Plugin.Log?.Warning($"[CanvasController.ImagePlacement] No imagePath defined for DrawMode: {currentMode}"); // Corrected Log access
+                    AetherDraw.Plugin.Log?.Warning($"[CanvasController.ImagePlacement] No imagePath defined for DrawMode: {currentMode}");
                 }
             }
         }
@@ -308,7 +308,7 @@ namespace AetherDraw.Core
         private void HandleShapeDrawingInput(Vector2 mousePosLogical, bool isLMBDown, bool isLMBClickedOnCanvas, bool isLMBReleased, List<BaseDrawable> currentDrawablesOnPage)
         {
             DrawMode currentMode = getCurrentDrawMode();
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.ShapeDrawing] Mode: {currentMode}, PosL: {mousePosLogical}, LMBDown: {isLMBDown}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.ShapeDrawing] Mode: {currentMode}, PosL: {mousePosLogical}, LMBDown: {isLMBDown}");
 
             float logicalBrushThickness = getCurrentBrushThickness();
 
@@ -322,7 +322,7 @@ namespace AetherDraw.Core
                     if (getHoveredDrawableFunc() != null) setHoveredDrawableAction(null);
 
                     currentDrawingObjectInternal = CreateNewDrawingObject(currentMode, mousePosLogical, getCurrentBrushColor(), logicalBrushThickness, getCurrentShapeFilled());
-                    AetherDraw.Plugin.Log?.Info($"[CanvasController.ShapeDrawing] Started drawing: {currentMode} at {mousePosLogical}"); // Corrected Log access
+                    AetherDraw.Plugin.Log?.Info($"[CanvasController.ShapeDrawing] Started drawing: {currentMode} at {mousePosLogical}");
 
                     if (currentDrawingObjectInternal is DrawablePath p) p.AddPoint(mousePosLogical);
                     else if (currentDrawingObjectInternal is DrawableDash d) d.AddPoint(mousePosLogical);
@@ -347,7 +347,7 @@ namespace AetherDraw.Core
         /// </summary>
         private BaseDrawable? CreateNewDrawingObject(DrawMode mode, Vector2 startPosLogical, Vector4 color, float thickness, bool isFilled)
         {
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.CreateNew] Mode: {mode}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.CreateNew] Mode: {mode}");
             switch (mode)
             {
                 case DrawMode.Pen: return new DrawablePath(startPosLogical, color, thickness);
@@ -358,7 +358,7 @@ namespace AetherDraw.Core
                 case DrawMode.Arrow: return new DrawableArrow(startPosLogical, color, thickness);
                 case DrawMode.Cone: return new DrawableCone(startPosLogical, color, thickness, isFilled);
                 default:
-                    AetherDraw.Plugin.Log?.Warning($"[CanvasController.CreateNew] Attempted to create drawable for unhandled mode: {mode}"); // Corrected Log access
+                    AetherDraw.Plugin.Log?.Warning($"[CanvasController.CreateNew] Attempted to create drawable for unhandled mode: {mode}");
                     return null;
             }
         }
@@ -368,7 +368,7 @@ namespace AetherDraw.Core
         /// </summary>
         private void FinalizeCurrentDrawing(List<BaseDrawable> currentDrawablesOnPage)
         {
-            AetherDraw.Plugin.Log?.Debug($"[CanvasController.Finalize] Finalizing: {currentDrawingObjectInternal?.GetType().Name}"); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug($"[CanvasController.Finalize] Finalizing: {currentDrawingObjectInternal?.GetType().Name}");
             if (currentDrawingObjectInternal == null)
             {
                 isDrawingOnCanvas = false;
@@ -391,15 +391,15 @@ namespace AetherDraw.Core
             if (isValidObject)
             {
                 currentDrawablesOnPage.Add(currentDrawingObjectInternal);
-                AetherDraw.Plugin.Log?.Info($"[CanvasController.Finalize] Added {currentDrawingObjectInternal.GetType().Name} to page."); // Corrected Log access
+                AetherDraw.Plugin.Log?.Info($"[CanvasController.Finalize] Added {currentDrawingObjectInternal.GetType().Name} to page.");
             }
             else
             {
-                AetherDraw.Plugin.Log?.Debug($"[CanvasController.Finalize] Discarded invalid/too small: {currentDrawingObjectInternal.GetType().Name}"); // Corrected Log access
-            }
+                AetherDraw.Plugin.Log?.Debug($"[CanvasController.Finalize] Discarded invalid/too small: {currentDrawingObjectInternal.GetType().Name}");
 
-            currentDrawingObjectInternal = null;
-            isDrawingOnCanvas = false;
+                currentDrawingObjectInternal = null;
+                isDrawingOnCanvas = false;
+            }
         }
     }
 }

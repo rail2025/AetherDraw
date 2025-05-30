@@ -99,9 +99,7 @@ namespace AetherDraw.DrawingLogic
         {
             if (!IsEditing || targetTextObject_ == null) return;
 
-            // It might be better to recalculate bounds each frame if window content/size can change dynamically
-            // For now, assuming initial calculation is sufficient unless text changes drastically.
-            // RecalculateEditorBounds(ImGui.GetMainViewport().Pos, ImGuiHelpers.GlobalScale); // This needs canvasOriginScreen
+           
 
             ImGui.SetNextWindowPos(editorWindowPosition_);
             ImGui.SetNextWindowSize(editorWindowSize_);
