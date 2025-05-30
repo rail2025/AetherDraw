@@ -19,6 +19,6 @@
     "DownloadLinkUpdate": "https://github.com/rail2025/AetherDraw/releases/download/v1.0.2.0/latest.zip",
     "DownloadLinkTesting": "",
     "SupportsProfiles": true,
-    "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/main/icon.png"
+    "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/icon.png"
   }
 ]
