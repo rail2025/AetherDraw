@@ -51,7 +51,7 @@ namespace AetherDraw
 
             PluginInterface.UiBuilder.Draw += DrawUI;
             PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
-            // PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI; // Optional
+            PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI; 
 
             Log.Information("AetherDraw loaded successfully.");
         }
@@ -60,7 +60,7 @@ namespace AetherDraw
         {
             PluginInterface.UiBuilder.Draw -= DrawUI;
             PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
-            // PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
+            PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
 
             this.WindowSystem.RemoveAllWindows();
 

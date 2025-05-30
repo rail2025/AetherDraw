@@ -4,4 +4,4 @@ open with /aetherdraw  <br>
 
 <br>
 Networking/live collaboration development underway<br>
-saving as a raidplan set, loading saved sets, saving as image file, sending image file to WDIGViewer <br>
+saving as image file, sending image file to WDIGViewer <br>
