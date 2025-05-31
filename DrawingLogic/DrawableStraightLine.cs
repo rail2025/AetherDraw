@@ -1,7 +1,11 @@
+// AetherDraw/DrawingLogic/DrawableStraightLine.cs
 using System.Numerics;
 using ImGuiNET;
 using Dalamud.Interface.Utility;
 using System;
+using SixLabors.ImageSharp.Processing; // Added
+using SixLabors.ImageSharp;           // Added for PointF, Color
+using SixLabors.ImageSharp.Drawing.Processing; // Added for Pens
 
 namespace AetherDraw.DrawingLogic
 {
@@ -10,19 +14,17 @@ namespace AetherDraw.DrawingLogic
         public Vector2 StartPointRelative { get; set; }
         public Vector2 EndPointRelative { get; set; }
 
-        // Constructor: Initializes a new straight line.
         public DrawableStraightLine(Vector2 startPointRelative, Vector4 color, float unscaledThickness)
         {
             this.ObjectDrawMode = DrawMode.StraightLine;
             this.StartPointRelative = startPointRelative;
-            this.EndPointRelative = startPointRelative; // End point is same as start initially.
+            this.EndPointRelative = startPointRelative;
             this.Color = color;
-            this.Thickness = unscaledThickness; // Store unscaled thickness.
-            this.IsFilled = false; // Lines are not "filled".
+            this.Thickness = unscaledThickness;
+            this.IsFilled = false;
             this.IsPreview = true;
         }
 
-        // Updates the end point of the line during preview (e.g., while dragging).
         public override void UpdatePreview(Vector2 newPointRelative)
         {
             this.EndPointRelative = newPointRelative;
@@ -30,34 +32,47 @@ namespace AetherDraw.DrawingLogic
 
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            // Determine display color based on selection/hover state.
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
             uint displayColor = ImGui.GetColorU32(displayColorVec);
-
-            // Scale base thickness and selection/hover highlight.
             float baseScaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
             float highlightThicknessAddition = this.IsSelected || this.IsHovered ? (2f * ImGuiHelpers.GlobalScale) : 0f;
             float displayScaledThickness = baseScaledThickness + highlightThicknessAddition;
-            displayScaledThickness = MathF.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness); // Ensure minimum visible thickness.
+            displayScaledThickness = MathF.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness);
 
-            Vector2 screenStart = this.StartPointRelative + canvasOriginScreen;
-            Vector2 screenEnd = this.EndPointRelative + canvasOriginScreen;
+            Vector2 screenStart = this.StartPointRelative * ImGuiHelpers.GlobalScale + canvasOriginScreen; // Apply scale
+            Vector2 screenEnd = this.EndPointRelative * ImGuiHelpers.GlobalScale + canvasOriginScreen;   // Apply scale
 
             drawList.AddLine(screenStart, screenEnd, displayColor, displayScaledThickness);
         }
 
+        public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
+        {
+            var imageSharpColor = SixLabors.ImageSharp.Color.FromRgba((byte)(Color.X * 255), (byte)(Color.Y * 255), (byte)(Color.Z * 255), (byte)(Color.W * 255));
+            float scaledThickness = Math.Max(1f, this.Thickness * currentGlobalScale);
+
+            PointF p1 = new PointF(
+                (this.StartPointRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                (this.StartPointRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+            );
+            PointF p2 = new PointF(
+                (this.EndPointRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                (this.EndPointRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+            );
+
+            context.DrawLine(imageSharpColor, scaledThickness, p1, p2);
+        }
+
+
         public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
         {
-            float scaledHitThreshold = unscaledHitThreshold * ImGuiHelpers.GlobalScale;
-            float scaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
-            float effectiveHitRange = scaledHitThreshold + (scaledThickness / 2f);
-
+            // Hit detection uses logical coordinates
+            float effectiveHitRange = unscaledHitThreshold + (this.Thickness / 2f);
             return HitDetection.DistancePointToLineSegment(queryPointRelative, this.StartPointRelative, this.EndPointRelative) <= effectiveHitRange;
         }
 
         public override BaseDrawable Clone()
         {
-            var newLine = new DrawableStraightLine(this.StartPointRelative, this.Color, this.Thickness) // Pass unscaled thickness.
+            var newLine = new DrawableStraightLine(this.StartPointRelative, this.Color, this.Thickness)
             {
                 EndPointRelative = this.EndPointRelative
             };

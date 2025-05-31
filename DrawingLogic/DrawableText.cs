@@ -1,15 +1,33 @@
+// AetherDraw/DrawingLogic/DrawableText.cs
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Text; // For StringBuilder
+using System.Text;
 using ImGuiNET;
 using Dalamud.Interface.Utility;
 
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.Fonts;
+
+using System.Linq;
+
 namespace AetherDraw.DrawingLogic
 {
+    /// <summary>
+    /// Represents a drawable text object on the canvas.
+    /// Handles both ImGui rendering and export-to-image rendering.
+    /// </summary>
     public class DrawableText : BaseDrawable
     {
         private string rawText_ = string.Empty;
+        /// <summary>
+        /// Gets or sets the raw text content.
+        /// The text is sanitized upon being set, and layout is recalculated.
+        /// </summary>
         public string RawText
         {
             get => rawText_;
@@ -24,17 +42,21 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
-        private Vector2 positionRelative_ = Vector2.Zero; // Top-left of the bounding box, logical units
+        private Vector2 positionRelative_ = Vector2.Zero;
+        /// <summary>
+        /// Gets or sets the logical, unscaled top-left position of the text block.
+        /// </summary>
         public Vector2 PositionRelative
         {
             get => positionRelative_;
             set { if (positionRelative_ != value) positionRelative_ = value; }
         }
 
-        // RotationAngle property and its usage are removed.
-        // private float rotationAngle_ = 0f;
-
-        private float fontSize_ = 16f; // Unscaled, logical font size
+        private float fontSize_ = 16f;
+        /// <summary>
+        /// Gets or sets the logical, unscaled font size.
+        /// Minimum size is 1f. Triggers layout recalculation.
+        /// </summary>
         public float FontSize
         {
             get => fontSize_;
@@ -49,7 +71,13 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
-        private float wrappingWidth_ = 0f; // Unscaled, logical width. 0 or negative for auto-width.
+        private float wrappingWidth_ = 0f;
+        /// <summary>
+        /// Gets or sets the logical, unscaled wrapping width for the text.
+        /// If 0 or less, text will not wrap for ImageSharp rendering.
+        /// ImGui rendering relies on PerformLayout's interpretation.
+        /// Triggers layout recalculation.
+        /// </summary>
         public float WrappingWidth
         {
             get => wrappingWidth_;
@@ -63,12 +91,25 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
-        public Vector2 CurrentBoundingBoxSize { get; private set; } = Vector2.Zero; // Unscaled
-        public Vector2 LocalCenter => CurrentBoundingBoxSize / 2f; // Center relative to top-left of bounding box
-        public Vector2 CanvasRelativeBoundingBoxCenter => PositionRelative + LocalCenter; // Center relative to canvas origin
+        /// <summary>
+        /// Gets the unscaled bounding box size calculated for ImGui rendering.
+        /// </summary>
+        public Vector2 CurrentBoundingBoxSize { get; private set; } = Vector2.Zero;
+        /// <summary>
+        /// Gets the local center of the ImGui-calculated bounding box.
+        /// </summary>
+        public Vector2 LocalCenter => CurrentBoundingBoxSize / 2f;
+        /// <summary>
+        /// Gets the canvas-relative center of the ImGui-calculated bounding box.
+        /// </summary>
+        public Vector2 CanvasRelativeBoundingBoxCenter => PositionRelative + LocalCenter;
 
+        // Stores lines of text after layout for ImGui rendering.
         private List<string> laidOutLines_ = new List<string>();
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DrawableText"/> class.
+        /// </summary>
         public DrawableText(Vector2 positionRelative, string rawText, Vector4 color, float fontSize, float wrappingWidth = 0f)
         {
             this.ObjectDrawMode = DrawMode.TextTool;
@@ -80,9 +121,15 @@ namespace AetherDraw.DrawingLogic
 
             fontSize_ = Math.Max(1f, fontSize);
             wrappingWidth_ = wrappingWidth;
-            this.RawText = rawText; // Setter calls PerformLayout
+            this.RawText = rawText;
         }
 
+        /// <summary>
+        /// Recalculates the text layout for ImGui display.
+        /// Populates CurrentBoundingBoxSize and laidOutLines_ for the Draw method.
+        /// Note: The line splitting logic for laidOutLines_ is a simplified stub
+        /// and may not perfectly match ImGui's complex word wrapping for all cases.
+        /// </summary>
         private void PerformLayout()
         {
             laidOutLines_.Clear();
@@ -92,230 +139,225 @@ namespace AetherDraw.DrawingLogic
                 return;
             }
 
-            ImFontPtr currentFont = ImGui.GetFont();
-            if (!(ImGui.GetCurrentContext() != IntPtr.Zero && currentFont.IsLoaded()))
+            if (ImGui.GetCurrentContext() != IntPtr.Zero && ImGui.GetFont().IsLoaded())
             {
-                AetherDraw.Plugin.Log?.Warning($"[DrawableText] PerformLayout: ImGui context or Font not fully ready.");
-                CurrentBoundingBoxSize = ImGui.CalcTextSize(this.RawText); // Fallback
-                laidOutLines_.Add(this.RawText);
-                return;
-            }
+                var imFont = ImGui.GetFont();
+                float originalFontScale = imFont.Scale;
+                float baseImGuiFontSize = (imFont.ConfigDataCount > 0 && imFont.ConfigData.SizePixels > 0) ? imFont.ConfigData.SizePixels : imFont.FontSize;
 
-            float originalFontScaleProperty = currentFont.Scale;
-            bool fontScaleWasAdjusted = false;
+                if (baseImGuiFontSize <= 0) baseImGuiFontSize = 16f;
 
-            if (currentFont.ConfigDataCount > 0 && currentFont.ConfigData.SizePixels > 0)
-            {
-                currentFont.Scale = this.FontSize / currentFont.ConfigData.SizePixels;
-                fontScaleWasAdjusted = true;
-            }
-            else
-            {
-                AetherDraw.Plugin.Log?.Warning($"[DrawableText] PerformLayout: Font has no ConfigData or SizePixels is 0. Measurement based on current font scale.");
-            }
+                float targetScaledImGuiFontSize = this.FontSize * ImGuiHelpers.GlobalScale;
+                imFont.Scale = targetScaledImGuiFontSize / baseImGuiFontSize;
 
-            float maxWidthLayout = 0f;
-            float totalHeightLayout = 0f;
-            float unscaledLineHeight = ImGui.GetTextLineHeight(); // Based on temporarily scaled font
+                float wrapPxWidth = (WrappingWidth > 0.01f) ? (WrappingWidth * ImGuiHelpers.GlobalScale) : float.MaxValue;
+                CurrentBoundingBoxSize = ImGui.CalcTextSize(RawText, false, wrapPxWidth == float.MaxValue ? 0 : wrapPxWidth) / ImGuiHelpers.GlobalScale;
 
-            if (this.WrappingWidth > 0.01f)
-            {
-                string[] paragraphs = this.RawText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-                foreach (string paragraph in paragraphs)
+                // Simplified line splitting logic for laidOutLines_.
+                if (WrappingWidth > 0.01f && wrapPxWidth > 0 && wrapPxWidth != float.MaxValue)
                 {
-                    if (string.IsNullOrEmpty(paragraph) && laidOutLines_.Count > 0)
-                    {
-                        laidOutLines_.Add(string.Empty);
-                        totalHeightLayout += unscaledLineHeight;
-                        continue;
-                    }
-                    string[] words = paragraph.Split(' ');
+                    string[] words = RawText.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.None);
                     StringBuilder currentLineSb = new StringBuilder();
-                    float currentLineWidthUnscaled = 0f;
+
                     for (int i = 0; i < words.Length; i++)
                     {
                         string word = words[i];
-                        string wordSegment = (currentLineSb.Length > 0 ? " " : "") + word;
-                        Vector2 wordSegmentSize = ImGui.CalcTextSize(wordSegment);
-                        if (currentLineSb.Length > 0 && (currentLineWidthUnscaled + wordSegmentSize.X) > this.WrappingWidth && currentLineWidthUnscaled > 0)
+                        if (word == "" && i > 0 && (RawText.Contains("\n") || RawText.Contains("\r")))
                         {
-                            laidOutLines_.Add(currentLineSb.ToString());
-                            totalHeightLayout += unscaledLineHeight;
-                            maxWidthLayout = Math.Max(maxWidthLayout, currentLineWidthUnscaled);
+                            if (currentLineSb.Length > 0) laidOutLines_.Add(currentLineSb.ToString());
+                            laidOutLines_.Add("");
                             currentLineSb.Clear();
-                            currentLineSb.Append(word);
-                            currentLineWidthUnscaled = ImGui.CalcTextSize(word).X;
+                            continue;
+                        }
+                        if (string.IsNullOrEmpty(word) && currentLineSb.Length == 0) continue;
+
+
+                        string lineSoFar = currentLineSb.ToString();
+                        string testWordWithSpace = (lineSoFar.Length > 0 ? " " : "") + word;
+                        Vector2 currentLineVisualSize = ImGui.CalcTextSize(lineSoFar + testWordWithSpace);
+
+                        if (currentLineVisualSize.X > wrapPxWidth && lineSoFar.Length > 0)
+                        {
+                            laidOutLines_.Add(lineSoFar);
+                            currentLineSb.Clear().Append(word);
                         }
                         else
                         {
-                            if (currentLineSb.Length > 0) currentLineSb.Append(" ");
+                            if (currentLineSb.Length > 0 && !string.IsNullOrEmpty(word)) currentLineSb.Append(" ");
                             currentLineSb.Append(word);
-                            currentLineWidthUnscaled = ImGui.CalcTextSize(currentLineSb.ToString()).X;
                         }
                     }
-                    if (currentLineSb.Length > 0)
-                    {
-                        laidOutLines_.Add(currentLineSb.ToString());
-                        totalHeightLayout += unscaledLineHeight;
-                        maxWidthLayout = Math.Max(maxWidthLayout, currentLineWidthUnscaled);
-                    }
+                    if (currentLineSb.Length > 0) laidOutLines_.Add(currentLineSb.ToString());
                 }
-                CurrentBoundingBoxSize = new Vector2(this.WrappingWidth, totalHeightLayout);
+
+                if (!laidOutLines_.Any() && !string.IsNullOrEmpty(RawText))
+                {
+                    laidOutLines_.AddRange(RawText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None));
+                }
+
+                imFont.Scale = originalFontScale;
             }
             else
             {
-                string[] lines = this.RawText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-                foreach (string line in lines)
-                {
-                    laidOutLines_.Add(line);
-                    Vector2 lineSizeUnscaled = ImGui.CalcTextSize(line);
-                    maxWidthLayout = Math.Max(maxWidthLayout, lineSizeUnscaled.X);
-                    totalHeightLayout += unscaledLineHeight;
-                }
-                CurrentBoundingBoxSize = new Vector2(maxWidthLayout, totalHeightLayout);
+                CurrentBoundingBoxSize = new Vector2(RawText.Length * FontSize * 0.6f, FontSize);
+                laidOutLines_.Add(RawText);
             }
-
-            if (laidOutLines_.Count == 0 && !string.IsNullOrEmpty(this.RawText))
-            {
-                Vector2 sizeOfAllText = ImGui.CalcTextSize(this.RawText);
-                laidOutLines_.Add(this.RawText);
-                CurrentBoundingBoxSize = sizeOfAllText;
-            }
-            if (laidOutLines_.Count > 0 && totalHeightLayout < 0.01f && unscaledLineHeight > 0.01f)
-            {
-                totalHeightLayout = laidOutLines_.Count * unscaledLineHeight;
-                CurrentBoundingBoxSize = new Vector2(CurrentBoundingBoxSize.X, totalHeightLayout);
-            }
-
-            if (fontScaleWasAdjusted)
-            {
-                currentFont.Scale = originalFontScaleProperty;
-            }
+            if (!laidOutLines_.Any() && !string.IsNullOrEmpty(RawText)) laidOutLines_.Add(RawText);
         }
 
+        /// <summary>
+        /// Draws the text on the ImGui canvas using the pre-calculated layout.
+        /// </summary>
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            if (laidOutLines_.Count == 0 && string.IsNullOrEmpty(RawText.Trim())) return;
+            if ((laidOutLines_ == null || laidOutLines_.Count == 0) && string.IsNullOrEmpty(RawText.Trim())) return;
 
             var displayColorVec = IsSelected ? new Vector4(1, 1, 0, 1) : (IsHovered ? new Vector4(0.7f, 0.7f, 1f, 1) : Color);
             uint displayColor = ImGui.GetColorU32(displayColorVec);
 
-            float finalScaledFontSizeForRender = Math.Max(1f, FontSize * ImGuiHelpers.GlobalScale);
-            ImFontPtr font = ImGui.GetFont();
-            float originalFontScaleProperty = font.Scale;
-            bool fontScaleAdjustedForRender = false;
+            float targetScaledFontSize = Math.Max(1f, FontSize * ImGuiHelpers.GlobalScale);
 
-            if (font.ConfigDataCount > 0 && font.ConfigData.SizePixels > 0)
+            if (ImGui.GetCurrentContext() != IntPtr.Zero && ImGui.GetFont().IsLoaded())
             {
-                font.Scale = finalScaledFontSizeForRender / font.ConfigData.SizePixels;
-                fontScaleAdjustedForRender = true;
-            }
+                var imFont = ImGui.GetFont();
+                float originalFontScale = imFont.Scale;
+                float baseImGuiFontSize = (imFont.ConfigDataCount > 0 && imFont.ConfigData.SizePixels > 0) ? imFont.ConfigData.SizePixels : imFont.FontSize;
 
-            float scaledLineHeightRender = ImGui.GetTextLineHeight(); // Line height at the render scale
+                if (baseImGuiFontSize <= 0) baseImGuiFontSize = 16f;
 
-            // Transformation: PositionRelative is top-left. Global scale and canvas origin are applied.
-            // No rotation.
-            Matrix3x2 transformMatrix =
-                Matrix3x2.CreateTranslation(PositionRelative)    // Move to final logical position
-                * Matrix3x2.CreateScale(ImGuiHelpers.GlobalScale)  // Apply global scaling
-                * Matrix3x2.CreateTranslation(canvasOriginScreen); // Move to screen space
+                imFont.Scale = targetScaledFontSize / baseImGuiFontSize;
 
-            Vector2 currentLineLocalTopLeft = Vector2.Zero; // Start drawing lines from local 0,0 relative to PositionRelative
-            foreach (string line in laidOutLines_)
-            {
-                if (!string.IsNullOrEmpty(line))
+                Vector2 currentLineScreenPos = (PositionRelative * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
+                float lineHeight = ImGui.GetTextLineHeightWithSpacing();
+
+                var linesToRender = (laidOutLines_ != null && laidOutLines_.Any()) ? laidOutLines_ : new List<string> { RawText };
+
+                foreach (string line in linesToRender)
                 {
-                    Vector2 screenPos = Vector2.Transform(currentLineLocalTopLeft, transformMatrix);
-                    drawList.AddText(font, finalScaledFontSizeForRender, screenPos, displayColor, line);
+                    drawList.AddText(imFont, imFont.FontSize * imFont.Scale, currentLineScreenPos, displayColor, line);
+                    currentLineScreenPos.Y += lineHeight;
                 }
-                // Advance by logical line height (unscaled by GlobalScale here, because transformMatrix applies it to the positions)
-                currentLineLocalTopLeft.Y += (scaledLineHeightRender / ImGuiHelpers.GlobalScale);
-            }
 
-            if (fontScaleAdjustedForRender)
-            {
-                font.Scale = originalFontScaleProperty;
-            }
-
-            // Bounding Box and Handles (No rotation handle now)
-            if (IsSelected || IsHovered)
-            {
-                uint highlightRectColor = ImGui.GetColorU32(IsSelected ? new Vector4(1, 1, 0, 0.6f) : new Vector4(0, 1, 1, 0.4f));
-                float handleRadiusScaled = 4f * ImGuiHelpers.GlobalScale;
-                float highlightThicknessScaled = 1.5f * ImGuiHelpers.GlobalScale;
-
-                // Bounding box is simply at PositionRelative, scaled, and moved to screen.
-                Vector2 screenTopLeft = Vector2.Transform(PositionRelative, Matrix3x2.CreateScale(ImGuiHelpers.GlobalScale) * Matrix3x2.CreateTranslation(canvasOriginScreen));
-                Vector2 screenBottomRight = Vector2.Transform(PositionRelative + CurrentBoundingBoxSize, Matrix3x2.CreateScale(ImGuiHelpers.GlobalScale) * Matrix3x2.CreateTranslation(canvasOriginScreen));
-
-                drawList.AddRect(screenTopLeft, screenBottomRight, highlightRectColor, 0f, ImDrawFlags.None, highlightThicknessScaled);
-
-                if (IsSelected) // Only show resize handles (for font size)
-                {
-                    uint handleColor = ImGui.GetColorU32(new Vector4(1, 0, 1, 0.8f));
-                    Vector2[] screenBoxCorners = {
-                        screenTopLeft,
-                        new Vector2(screenBottomRight.X, screenTopLeft.Y),
-                        screenBottomRight,
-                        new Vector2(screenTopLeft.X, screenBottomRight.Y)
-                    };
-                    foreach (var corner in screenBoxCorners)
-                    {
-                        drawList.AddCircleFilled(corner, handleRadiusScaled, handleColor);
-                    }
-                }
+                imFont.Scale = originalFontScale;
             }
         }
 
+        /// <summary>
+        /// Draws the text to an ImageSharp context for image export.
+        /// </summary>
+        public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
+        {
+            if (string.IsNullOrEmpty(RawText?.Trim())) return;
+
+            var imageSharpColor = SixLabors.ImageSharp.Color.FromRgba(
+                (byte)(Color.X * 255), (byte)(Color.Y * 255),
+                (byte)(Color.Z * 255), (byte)(Color.W * 255)
+            );
+
+            float scaledFontSizePoints = this.FontSize * currentGlobalScale;
+            if (scaledFontSizePoints < 1f) scaledFontSizePoints = 1f;
+
+            SixLabors.Fonts.Font? font = null;
+            try
+            {
+                FontFamily? fontFamily = SystemFonts.Families.FirstOrDefault(f => f.Name.Equals("Arial", StringComparison.OrdinalIgnoreCase));
+                if (fontFamily == null && SystemFonts.Families.Any())
+                {
+                    fontFamily = SystemFonts.Families.First();
+                }
+
+                if (fontFamily != null)
+                {
+                    // Corrected: Explicitly cast fontFamily to FontFamily after null check.
+                    // This addresses CS0266 if the null-forgiving operator wasn't sufficient.
+                    FontFamily actualNonNullFontFamily = (FontFamily)fontFamily;
+                    font = actualNonNullFontFamily.CreateFont(scaledFontSizePoints, SixLabors.Fonts.FontStyle.Regular);
+                }
+            }
+            catch (Exception ex)
+            {
+                AetherDraw.Plugin.Log?.Warning(ex, "[DrawableText.DrawToImage] Error loading system font.");
+            }
+
+            if (font == null)
+            {
+                AetherDraw.Plugin.Log?.Error("[DrawableText.DrawToImage] Font not loaded, cannot draw text to image. Ensure fonts are available on the system or bundle one with the plugin.");
+                float fallbackWidth = (RawText.Length * scaledFontSizePoints * 0.6f);
+                float fallbackHeight = scaledFontSizePoints;
+                PointF fallbackPos = new PointF(
+                    (this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                    (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+                );
+                var fallbackRect = new RectangularPolygon(fallbackPos.X, fallbackPos.Y, fallbackWidth, fallbackHeight);
+                context.Fill(SixLabors.ImageSharp.Color.DarkRed, fallbackRect);
+                return;
+            }
+
+            PointF textOrigin = new PointF(
+                (this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+            );
+
+            var textOptions = new RichTextOptions(font)
+            {
+                Origin = textOrigin,
+                WrappingLength = (this.WrappingWidth > 0.01f) ? (this.WrappingWidth * currentGlobalScale) : 0,
+                HorizontalAlignment = SixLabors.Fonts.HorizontalAlignment.Left,
+                VerticalAlignment = SixLabors.Fonts.VerticalAlignment.Top,
+            };
+
+            context.DrawText(textOptions, RawText, imageSharpColor);
+        }
+
+        /// <summary>
+        /// Performs hit detection based on the ImGui-calculated bounding box.
+        /// </summary>
         public override bool IsHit(Vector2 queryPointCanvasRelative, float unscaledHitThreshold = 5.0f)
         {
-            // queryPointCanvasRelative is logical (unscaled)
-            if (CurrentBoundingBoxSize.X < 0.01f && CurrentBoundingBoxSize.Y < 0.01f && laidOutLines_.Count == 0) return false;
+            if (CurrentBoundingBoxSize.X < 0.01f && CurrentBoundingBoxSize.Y < 0.01f && (laidOutLines_ == null || laidOutLines_.Count == 0 || string.IsNullOrEmpty(laidOutLines_.FirstOrDefault()))) return false;
 
-            // Since there's no rotation, hit detection is a simple AABB check.
-            // queryPoint is relative to canvas origin. PositionRelative is top-left of text box, relative to canvas origin.
-            // CurrentBoundingBoxSize is the logical size of the text box.
             return (queryPointCanvasRelative.X >= PositionRelative.X - unscaledHitThreshold) &&
                    (queryPointCanvasRelative.X <= PositionRelative.X + CurrentBoundingBoxSize.X + unscaledHitThreshold) &&
                    (queryPointCanvasRelative.Y >= PositionRelative.Y - unscaledHitThreshold) &&
                    (queryPointCanvasRelative.Y <= PositionRelative.Y + CurrentBoundingBoxSize.Y + unscaledHitThreshold);
         }
 
+        /// <summary>
+        /// Creates a clone of this drawable text object.
+        /// </summary>
         public override BaseDrawable Clone()
         {
             var newTextObject = new DrawableText(
                 this.PositionRelative, this.RawText, this.Color, this.FontSize, this.WrappingWidth);
-            // RotationAngle is removed.
             CopyBasePropertiesTo(newTextObject);
-            newTextObject.IsPreview = false;
             return newTextObject;
         }
 
-        public override void Translate(Vector2 deltaCanvasRelative) // delta is logical
+        /// <summary>
+        /// Translates the text object by a given delta in logical coordinates.
+        /// </summary>
+        public override void Translate(Vector2 deltaCanvasRelative)
         {
             PositionRelative += deltaCanvasRelative;
         }
 
-        // SetRotationAngleAroundCenter is removed.
+        /// <summary>
+        /// Updates the preview of the text object (not typically used for direct text placement).
+        /// </summary>
+        public override void UpdatePreview(Vector2 currentPointRelative) { /* No standard preview update */ }
 
-        public override void UpdatePreview(Vector2 currentPointRelative) { }
+        /// <summary>
+        /// Gets a short string representation of the object's hash code, for unique ImGui IDs.
+        /// </summary>
+        public string GetHashCodeShort() => Math.Abs(this.GetHashCode()).ToString().Substring(0, Math.Min(10, Math.Abs(this.GetHashCode()).ToString().Length));
 
-        // GetLocalToCanvasTransformMatrix is simplified as there's no rotation.
-        public Matrix3x2 GetLocalToCanvasTransformMatrix()
-        {
-            // Only translation by PositionRelative, as local 0,0 is already top-left.
-            return Matrix3x2.CreateTranslation(PositionRelative);
-        }
-
+        /// <summary>
+        /// Gets the transformation matrix from the text's base position to screen coordinates for the InPlaceTextEditor.
+        /// </summary>
         public Matrix3x2 GetBasePositionToScreenTransformMatrixForEditor(Vector2 canvasOriginScreen)
         {
-            // This transforms the logical PositionRelative (top-left of text)
-            // to a screen coordinate for the editor window.
             return Matrix3x2.CreateScale(ImGuiHelpers.GlobalScale) *
                    Matrix3x2.CreateTranslation(PositionRelative * ImGuiHelpers.GlobalScale + canvasOriginScreen);
         }
-
-        public string GetHashCodeShort() => Math.Abs(this.GetHashCode()).ToString().Substring(0, Math.Min(10, Math.Abs(this.GetHashCode()).ToString().Length));
-        private string LimitString(string s, int maxLength) => (s.Length <= maxLength) ? s : s.Substring(0, maxLength) + "...";
     }
 }

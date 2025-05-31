@@ -1,9 +1,16 @@
 using System.Numerics;
-using System.Collections.Generic;
-using System.Linq;
+using System.Collections.Generic; // For List
+using System.Linq; // For FirstOrDefault
 using ImGuiNET;
-using Dalamud.Interface.Utility;
-using System;
+using Dalamud.Interface.Utility; // For ImGuiHelpers
+using System; // For MathF
+
+// ImageSharp using statements
+using SixLabors.ImageSharp; // For PointF, Color
+using SixLabors.ImageSharp.PixelFormats; // If Rgba32 is used directly
+using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
+using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens
+using SixLabors.ImageSharp.Drawing.Processing; // For Draw extension method
 
 namespace AetherDraw.DrawingLogic
 {
@@ -11,31 +18,25 @@ namespace AetherDraw.DrawingLogic
     {
         public List<Vector2> PointsRelative { get; set; } = new List<Vector2>();
 
-        // Constructor: Initializes a new path.
         public DrawablePath(Vector2 startPointRelative, Vector4 color, float unscaledThickness)
         {
             this.ObjectDrawMode = DrawMode.Pen;
-            // Ensure the first point is added.
-            if (startPointRelative != default || !PointsRelative.Any()) // More robust check for empty list
+            if (startPointRelative != default || !PointsRelative.Any())
             {
                 PointsRelative.Add(startPointRelative);
             }
             this.Color = color;
-            this.Thickness = unscaledThickness; // Store unscaled thickness.
-            this.IsFilled = false; // Paths are not filled.
-            this.IsPreview = true; // Starts as a preview.
+            this.Thickness = unscaledThickness;
+            this.IsFilled = false;
+            this.IsPreview = true;
         }
 
-        // Adds a point to the path, ensuring a minimum distance from the previous point if not a preview.
         public void AddPoint(Vector2 pointRelative)
         {
-            // Add if list is empty or if new point is sufficiently far from the last.
-            // 0.01f is a small logical squared distance, doesn't need scaling.
             if (!PointsRelative.Any() || Vector2.DistanceSquared(PointsRelative.Last(), pointRelative) > 0.01f)
             {
                 PointsRelative.Add(pointRelative);
             }
-            // If it's a preview and points exist, update the last point to reflect current mouse position.
             else if (PointsRelative.Any() && this.IsPreview)
             {
                 PointsRelative[PointsRelative.Count - 1] = pointRelative;
@@ -44,20 +45,17 @@ namespace AetherDraw.DrawingLogic
 
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            if (PointsRelative.Count < 2) return; // Need at least two points to draw a line segment.
+            if (PointsRelative.Count < 2) return;
 
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
             uint displayColor = ImGui.GetColorU32(displayColorVec);
 
-            // Scale base thickness and selection highlight thickness.
             float baseScaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
             float highlightThicknessAddition = this.IsSelected || this.IsHovered ? (2f * ImGuiHelpers.GlobalScale) : 0f;
             float displayScaledThickness = baseScaledThickness + highlightThicknessAddition;
-            displayScaledThickness = Math.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness); // Ensure minimum visible thickness.
+            displayScaledThickness = Math.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness);
 
-
-            // Convert relative points to screen points.
-            Vector2[] screenPoints = PointsRelative.Select(p => p + canvasOriginScreen).ToArray();
+            Vector2[] screenPoints = PointsRelative.Select(p => p * ImGuiHelpers.GlobalScale + canvasOriginScreen).ToArray(); // Apply scale
 
             if (screenPoints.Length > 1)
             {
@@ -65,15 +63,46 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
+        public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
+        {
+            if (PointsRelative.Count < 2) return;
+
+            var imageSharpColor = SixLabors.ImageSharp.Color.FromRgba(
+                (byte)(Color.X * 255),
+                (byte)(Color.Y * 255),
+                (byte)(Color.Z * 255),
+                (byte)(Color.W * 255)
+            );
+            float scaledThickness = Math.Max(1f, this.Thickness * currentGlobalScale);
+
+            var pathBuilder = new PathBuilder();
+            var firstPoint = PointsRelative[0];
+
+            // Corrected MoveTo: Use new PointF
+            pathBuilder.MoveTo(new PointF(
+                (firstPoint.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                (firstPoint.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+            ));
+
+            for (int i = 1; i < PointsRelative.Count; i++)
+            {
+                var currentPoint = PointsRelative[i];
+                // Corrected LineTo: Use new PointF
+                pathBuilder.LineTo(new PointF(
+                    (currentPoint.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                    (currentPoint.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+                ));
+            }
+
+            IPath path = pathBuilder.Build();
+            // Corrected Pen instantiation: Use Pens.Solid()
+            context.Draw(Pens.Solid(imageSharpColor, scaledThickness), path);
+        }
+
         public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
         {
             if (PointsRelative.Count < 2) return false;
-
-            float scaledHitThreshold = unscaledHitThreshold * ImGuiHelpers.GlobalScale;
-            float scaledThickness = this.Thickness * ImGuiHelpers.GlobalScale;
-            float effectiveHitRange = scaledHitThreshold + (scaledThickness / 2f);
-
-            // Check distance from the query point to each line segment in the path.
+            float effectiveHitRange = unscaledHitThreshold + (this.Thickness / 2f);
             for (int i = 0; i < PointsRelative.Count - 1; i++)
             {
                 if (HitDetection.DistancePointToLineSegment(queryPointRelative, PointsRelative[i], PointsRelative[i + 1]) <= effectiveHitRange)
@@ -86,9 +115,9 @@ namespace AetherDraw.DrawingLogic
 
         public override BaseDrawable Clone()
         {
-            var newPath = new DrawablePath(PointsRelative.FirstOrDefault(), this.Color, this.Thickness) // Pass unscaled thickness
+            var newPath = new DrawablePath(PointsRelative.FirstOrDefault(), this.Color, this.Thickness)
             {
-                PointsRelative = new List<Vector2>(this.PointsRelative) // Deep copy the list of points.
+                PointsRelative = new List<Vector2>(this.PointsRelative)
             };
             CopyBasePropertiesTo(newPath);
             return newPath;

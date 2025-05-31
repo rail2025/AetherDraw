@@ -13,6 +13,13 @@ using Dalamud.Interface.Utility.Raii;
 using System.IO;
 using Dalamud.Interface.ImGuiFileDialog;
 
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.Fonts;
+
 namespace AetherDraw.Windows
 {
     public class MainWindow : Window, IDisposable
@@ -43,7 +50,7 @@ namespace AetherDraw.Windows
         private bool currentShapeFilled = false;
 
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
-        private List<BaseDrawable> DrawablesListOfCurrentPage =>
+        private List<BaseDrawable> DrawablesOfCurrentPageUi =>
             (pages.Count > 0 && currentPageIndex >= 0 && currentPageIndex < pages.Count)
             ? pages[currentPageIndex].Drawables
             : EmptyDrawablesFallback;
@@ -61,6 +68,8 @@ namespace AetherDraw.Windows
 
         private readonly FileDialogManager fileDialogManager;
         private string lastFileDialogError = string.Empty;
+        private Vector2 currentCanvasDrawSize;
+
 
         public MainWindow(Plugin plugin) : base("AetherDraw Whiteboard###AetherDrawMainWindow")
         {
@@ -72,16 +81,13 @@ namespace AetherDraw.Windows
             this.inPlaceTextEditor = new InPlaceTextEditor();
             this.fileDialogManager = new FileDialogManager();
 
-            // Configure FileDialogManager defaults if needed (e.g., default sort order, custom sidebar items)
-            // Example: this.fileDialogManager.GetDefaultSortOrder = () => FileDialog.SortingField.FileName;
-
             this.canvasController = new CanvasController(
                 () => currentDrawMode,
                 (newMode) => currentDrawMode = newMode,
                 () => currentBrushColor,
                 () => currentBrushThickness,
                 () => currentShapeFilled,
-                () => DrawablesListOfCurrentPage,
+                () => DrawablesOfCurrentPageUi,
                 selectedDrawables,
                 () => hoveredDrawable,
                 (newHovered) => hoveredDrawable = newHovered,
@@ -92,11 +98,7 @@ namespace AetherDraw.Windows
 
             float targetMinimumWidth = 850f * 0.75f * ImGuiHelpers.GlobalScale;
             float targetMinimumHeight = 600f * ImGuiHelpers.GlobalScale;
-            this.SizeConstraints = new WindowSizeConstraints
-            {
-                MinimumSize = new Vector2(targetMinimumWidth, targetMinimumHeight),
-                MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
-            };
+            this.SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(targetMinimumWidth, targetMinimumHeight), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
             this.RespectCloseHotkey = true;
 
             this.currentBrushColor = new Vector4(this.configuration.DefaultBrushColorR, this.configuration.DefaultBrushColorG, this.configuration.DefaultBrushColorB, this.configuration.DefaultBrushColorA);
@@ -119,13 +121,10 @@ namespace AetherDraw.Windows
 
         public override void Draw()
         {
-            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] Frame {ImGui.GetFrameCount()}: Entry. Mode: {currentDrawMode}");
-
             float scaledToolbarWidth = 125f * ImGuiHelpers.GlobalScale;
             using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(scaledToolbarWidth, 0), true, ImGuiWindowFlags.None))
             {
                 if (toolbarRaii) DrawToolbarControls();
-                else AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] ToolbarRegion BeginChild FAILED.");
             }
 
             ImGui.SameLine();
@@ -134,37 +133,26 @@ namespace AetherDraw.Windows
             {
                 if (rightPaneRaii)
                 {
-                    float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 3 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y * 2;
+                    float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 2 +
+                                                 ImGui.GetStyle().WindowPadding.Y * 2 +
+                                                 ImGui.GetStyle().ItemSpacing.Y;
                     float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsHeight - ImGui.GetStyle().ItemSpacing.Y;
                     canvasAvailableHeight = Math.Max(canvasAvailableHeight, 50f * ImGuiHelpers.GlobalScale);
 
                     if (ImGui.BeginChild("CanvasDrawingArea", new Vector2(0, canvasAvailableHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
                     {
+                        currentCanvasDrawSize = ImGui.GetContentRegionAvail();
                         DrawCanvas();
                         ImGui.EndChild();
                     }
-                    else AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] CanvasDrawingArea BeginChild FAILED.");
-
                     DrawBottomControlsBar(bottomControlsHeight);
                 }
-                else AetherDraw.Plugin.Log?.Warning("[MainWindow.Draw] RightPane BeginChild FAILED.");
             }
-
             this.fileDialogManager.Draw();
-
-            if (!string.IsNullOrEmpty(lastFileDialogError))
-            {
-                // This is just an example; you might want a better way to show persistent errors.
-                // ImGui.OpenPopup("FileDialogErrorPopup"); 
-                // if(ImGui.BeginPopup("FileDialogErrorPopup")) { ImGui.Text(lastFileDialogError); ImGui.EndPopup(); }
-            }
-
-            AetherDraw.Plugin.Log?.Debug($"[MainWindow.Draw] Frame {ImGui.GetFrameCount()}: Exit.");
         }
 
         private void DrawToolbarControls()
         {
-            AetherDraw.Plugin.Log?.Debug("[MainWindow.DrawToolbarControls] Drawing toolbar.");
             Vector4 activeToolColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
             float availableWidth = ImGui.GetContentRegionAvail().X;
             float itemSpacingX = ImGui.GetStyle().ItemSpacing.X;
@@ -178,7 +166,6 @@ namespace AetherDraw.Windows
                 {
                     if (ImGui.Button($"{label}##ToolBtn_{mode}", new Vector2(buttonWidth, 0)))
                     {
-                        AetherDraw.Plugin.Log?.Debug($"[MainWindow.Toolbar] Tool selected: {mode}");
                         currentDrawMode = mode;
                         if (mode != DrawMode.Select && mode != DrawMode.TextTool) shapeInteractionHandler.ResetDragState();
                         if (inPlaceTextEditor.IsEditing && mode != DrawMode.TextTool && mode != DrawMode.Select) { inPlaceTextEditor.CommitAndEndEdit(); }
@@ -201,7 +188,6 @@ namespace AetherDraw.Windows
 
                     if (ImGui.Button(label.Length > 3 && tex == null ? label.Substring(0, 3) : $"##{label}_container_{mode}", new Vector2(buttonWidth, 0)))
                     {
-                        AetherDraw.Plugin.Log?.Debug($"[MainWindow.Toolbar] Image tool selected: {mode}");
                         currentDrawMode = mode;
                         if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CommitAndEndEdit();
                         shapeInteractionHandler.ResetDragState();
@@ -218,41 +204,28 @@ namespace AetherDraw.Windows
                     else if (tex == null)
                     {
                         Vector2 itemMin = ImGui.GetItemRectMin();
+                        var frameHeight = ImGui.GetFrameHeight();
                         var textSize = ImGui.CalcTextSize(label.Substring(0, Math.Min(label.Length, 3)));
-                        ImGui.GetWindowDrawList().AddText(itemMin + (new Vector2(buttonWidth, ImGui.GetFrameHeight()) - textSize) / 2f, ImGui.GetColorU32(ImGuiCol.Text), label.Substring(0, Math.Min(label.Length, 3)));
+                        ImGui.GetWindowDrawList().AddText(itemMin + (new Vector2(buttonWidth, frameHeight) - textSize) / 2f, ImGui.GetColorU32(ImGuiCol.Text), label.Substring(0, Math.Min(label.Length, 3)));
                     }
                 }
             }
 
             ToolButton("Select", DrawMode.Select, btnWidthHalf); ImGui.SameLine();
             ToolButton("Eraser", DrawMode.Eraser, btnWidthHalf);
-
             if (ImGui.Button("Copy", new Vector2(btnWidthHalf, 0))) CopySelected(); ImGui.SameLine();
             if (ImGui.Button("Paste", new Vector2(btnWidthHalf, 0))) PasteCopied();
             ImGui.Checkbox("Fill Shape", ref currentShapeFilled);
-
             if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0)))
             {
-                AetherDraw.Plugin.Log?.Info($"[MainWindow.Toolbar] 'Clear All' clicked for page: {(pages.Count > 0 && currentPageIndex < pages.Count ? pages[currentPageIndex].Name : "N/A")}.");
-                if (DrawablesListOfCurrentPage.Any())
-                {
-                    DrawablesListOfCurrentPage.Clear();
-                }
+                if (DrawablesOfCurrentPageUi.Any()) DrawablesOfCurrentPageUi.Clear();
                 selectedDrawables.Clear();
                 hoveredDrawable = null;
                 shapeInteractionHandler.ResetDragState();
-                if (inPlaceTextEditor.IsEditing)
-                {
-                    inPlaceTextEditor.CancelAndEndEdit();
-                }
-                if (pages.Count == 1 && currentPageIndex == 0)
-                {
-                    pages[currentPageIndex].Name = "1";
-                    AetherDraw.Plugin.Log?.Info($"[MainWindow.Toolbar] Last page cleared and renamed to '1'.");
-                }
+                if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CancelAndEndEdit();
+                if (pages.Count == 1 && currentPageIndex == 0) pages[currentPageIndex].Name = "1";
             }
             ImGui.Separator();
-
             ToolButton("Pen", DrawMode.Pen, btnWidthHalf); ImGui.SameLine();
             ToolButton("Line", DrawMode.StraightLine, btnWidthHalf);
             ToolButton("Dash", DrawMode.Dash, btnWidthHalf); ImGui.SameLine();
@@ -262,7 +235,6 @@ namespace AetherDraw.Windows
             ToolButton("Cone", DrawMode.Cone, btnWidthHalf); ImGui.SameLine();
             ToolButton("A", DrawMode.TextTool, btnWidthHalf);
             ImGui.Separator();
-
             PlacedImageToolButton("Tank", DrawMode.RoleTankImage, "PluginImages.toolbar.Tank.JPG", btnWidthHalf); ImGui.SameLine();
             PlacedImageToolButton("Healer", DrawMode.RoleHealerImage, "PluginImages.toolbar.Healer.JPG", btnWidthHalf);
             PlacedImageToolButton("Melee", DrawMode.RoleMeleeImage, "PluginImages.toolbar.Melee.JPG", btnWidthHalf); ImGui.SameLine();
@@ -287,6 +259,7 @@ namespace AetherDraw.Windows
             ImGui.Separator();
 
             ImGui.Text("Thickness:");
+            // Correctly define thicknessButtonWidth here
             float thicknessButtonWidth = (availableWidth - itemSpacingX * (ThicknessPresets.Length - 1)) / ThicknessPresets.Length;
             thicknessButtonWidth = Math.Max(thicknessButtonWidth, 20f * ImGuiHelpers.GlobalScale);
             for (int i = 0; i < ThicknessPresets.Length; i++)
@@ -296,6 +269,7 @@ namespace AetherDraw.Windows
                 bool isSelectedThickness = Math.Abs(currentBrushThickness - t) < 0.01f;
                 using (isSelectedThickness ? ImRaii.PushColor(ImGuiCol.Button, activeToolColor) : null)
                 {
+                    // Use thicknessButtonWidth
                     if (ImGui.Button($"{t:0}##ThicknessBtn{i}", new Vector2(thicknessButtonWidth, 0))) currentBrushThickness = t;
                 }
             }
@@ -306,23 +280,17 @@ namespace AetherDraw.Windows
             float smallColorButtonActualSize = Math.Max(smallColorButtonBaseSize, ImGui.GetTextLineHeight() * 0.8f);
             smallColorButtonActualSize = Math.Max(smallColorButtonActualSize, 16f * ImGuiHelpers.GlobalScale);
             Vector2 colorButtonDimensions = new Vector2(smallColorButtonActualSize, smallColorButtonActualSize);
-            Vector4 selectedColorIndicatorColorVec = new Vector4(0.9f, 0.9f, 0.1f, 1.0f);
-            uint selectedColorIndicatorU32 = ImGui.GetColorU32(selectedColorIndicatorColorVec);
-            float selectedColorIndicatorThickness = 2.0f * ImGuiHelpers.GlobalScale;
 
             for (int i = 0; i < ColorPalette.Length; i++)
             {
-                bool isSelectedColor = (ColorPalette[i].X == currentBrushColor.X &&
-                                        ColorPalette[i].Y == currentBrushColor.Y &&
-                                        ColorPalette[i].Z == currentBrushColor.Z &&
-                                        ColorPalette[i].W == currentBrushColor.W);
+                bool isSelectedColor = (ColorPalette[i].X == currentBrushColor.X && ColorPalette[i].Y == currentBrushColor.Y && ColorPalette[i].Z == currentBrushColor.Z && ColorPalette[i].W == currentBrushColor.W);
                 if (ImGui.ColorButton($"##ColorPaletteButton{i}", ColorPalette[i], ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoAlpha, colorButtonDimensions))
                 {
                     currentBrushColor = ColorPalette[i];
                 }
                 if (isSelectedColor)
                 {
-                    ImGui.GetForegroundDrawList().AddRect(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), selectedColorIndicatorU32, 1f * ImGuiHelpers.GlobalScale, ImDrawFlags.None, selectedColorIndicatorThickness);
+                    ImGui.GetForegroundDrawList().AddRect(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), ImGui.GetColorU32(new Vector4(0.9f, 0.9f, 0.1f, 1.0f)), 1f * ImGuiHelpers.GlobalScale, ImDrawFlags.None, 2.0f * ImGuiHelpers.GlobalScale);
                 }
                 if ((i + 1) % colorsPerRow != 0 && i < ColorPalette.Length - 1)
                 {
@@ -333,7 +301,6 @@ namespace AetherDraw.Windows
 
         private void DrawBottomControlsBar(float barHeight)
         {
-            AetherDraw.Plugin.Log?.Debug("[MainWindow.DrawBottomControlsBar] Drawing bottom bar.");
             using (var bottomBarChild = ImRaii.Child("BottomControlsRegion", new Vector2(0, barHeight), true, ImGuiWindowFlags.None))
             {
                 if (!bottomBarChild) return;
@@ -343,25 +310,19 @@ namespace AetherDraw.Windows
                 {
                     if (pageTabsChild)
                     {
-                        float buttonHeight = ImGui.GetFrameHeight();
-                        Vector4 activeButtonStyleColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
-                        Vector4 selectedTabColorVec = new Vector4(
-                            Math.Clamp(activeButtonStyleColor.X * 0.8f, 0.0f, 1.0f),
-                            Math.Clamp(activeButtonStyleColor.Y * 0.8f, 0.0f, 1.0f),
-                            Math.Clamp(activeButtonStyleColor.Z * 1.2f, 0.0f, 1.0f),
-                            activeButtonStyleColor.W);
+                        float tabButtonHeight = ImGui.GetFrameHeight();
+                        Vector4 activeTabColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
 
                         for (int i = 0; i < pages.Count; i++)
                         {
                             bool isSelectedPage = (i == currentPageIndex);
                             string pageName = pages[i].Name;
-                            float buttonTextWidth = ImGui.CalcTextSize(pageName).X;
-                            float pageButtonWidth = buttonTextWidth + ImGui.GetStyle().FramePadding.X * 2.0f + (10f * ImGuiHelpers.GlobalScale);
-                            pageButtonWidth = Math.Max(pageButtonWidth, buttonHeight * 1.5f);
+                            float pageTabWidth = ImGui.CalcTextSize(pageName).X + ImGui.GetStyle().FramePadding.X * 2.0f + (10f * ImGuiHelpers.GlobalScale);
+                            pageTabWidth = Math.Max(pageTabWidth, tabButtonHeight * 1.5f);
 
-                            using (isSelectedPage ? ImRaii.PushColor(ImGuiCol.Button, selectedTabColorVec) : null)
+                            using (isSelectedPage ? ImRaii.PushColor(ImGuiCol.Button, activeTabColor) : null)
                             {
-                                if (ImGui.Button(pageName, new Vector2(pageButtonWidth, buttonHeight)))
+                                if (ImGui.Button(pageName, new Vector2(pageTabWidth, tabButtonHeight)))
                                 {
                                     if (!isSelectedPage) SwitchToPage(i);
                                 }
@@ -369,9 +330,7 @@ namespace AetherDraw.Windows
                             ImGui.SameLine(0, 3f * ImGuiHelpers.GlobalScale);
                         }
 
-                        float plusButtonWidth = buttonHeight;
-                        if (ImGui.Button("+##AddPage", new Vector2(plusButtonWidth, buttonHeight))) AddNewPage();
-
+                        if (ImGui.Button("+##AddPage", new Vector2(tabButtonHeight, tabButtonHeight))) AddNewPage();
                         if (pages.Count > 1)
                         {
                             ImGui.SameLine(0, ImGui.GetStyle().ItemSpacing.X);
@@ -379,63 +338,189 @@ namespace AetherDraw.Windows
                             using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(0.7f, 0.3f, 0.3f, 1.0f)))
                             using (ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)))
                             {
-                                if (ImGui.Button("X##DeletePage", new Vector2(plusButtonWidth, buttonHeight))) DeleteCurrentPage();
+                                if (ImGui.Button("X##DeletePage", new Vector2(tabButtonHeight, tabButtonHeight))) DeleteCurrentPage();
                             }
                         }
                     }
                 }
 
                 float availableWidth = ImGui.GetContentRegionAvail().X;
-                float planButtonWidth = (availableWidth - ImGui.GetStyle().ItemSpacing.X * 2) / 3f;
-                planButtonWidth = Math.Max(planButtonWidth, 80 * ImGuiHelpers.GlobalScale);
+                float actionButtonWidth = (availableWidth - ImGui.GetStyle().ItemSpacing.X * 4) / 5f;
+                actionButtonWidth = Math.Max(actionButtonWidth, 80f * ImGuiHelpers.GlobalScale);
 
                 string initialPath = AetherDraw.Plugin.PluginInterface.GetPluginConfigDirectory();
-                if (string.IsNullOrEmpty(initialPath) || !Directory.Exists(initialPath))
+                if (string.IsNullOrEmpty(initialPath) || !System.IO.Directory.Exists(initialPath))
                 {
                     initialPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
                 }
 
-                if (ImGui.Button("Load Plan##LoadPlanButton", new Vector2(planButtonWidth, 0)))
+                if (ImGui.Button("Load Plan##LoadPlanButton", new Vector2(actionButtonWidth, 0)))
                 {
-                    AetherDraw.Plugin.Log?.Info("[MainWindow] Load Plan button clicked.");
                     lastFileDialogError = string.Empty;
-                    fileDialogManager.OpenFileDialog(
-                        "Load AetherDraw Plan",
-                        "AetherDraw Plan{.adp}",
-                        HandleLoadPlanDialogResult, // Callback
-                        1,                          // Max number of selections
-                        initialPath,                // Starting path
-                        true                        // IsModal
-                    );
+                    fileDialogManager.OpenFileDialog("Load AetherDraw Plan", "AetherDraw Plan{.adp}", HandleLoadPlanDialogResult, 1, initialPath, true);
                 }
                 ImGui.SameLine();
-                if (ImGui.Button("Save Plan##SavePlanButton", new Vector2(planButtonWidth, 0)))
+                if (ImGui.Button("Save Plan##SavePlanButton", new Vector2(actionButtonWidth, 0)))
                 {
-                    AetherDraw.Plugin.Log?.Info("[MainWindow] Save Plan button clicked.");
                     lastFileDialogError = string.Empty;
-                    fileDialogManager.SaveFileDialog(
-                        "Save AetherDraw Plan As...",
-                        "AetherDraw Plan{.adp}",
-                        "MyAetherDrawPlan", // Default file name (without extension)
-                        ".adp",             // Default extension
-                        HandleSavePlanDialogResult, // Callback
-                        initialPath,        // Starting path
-                        true                // IsModal
-                    );
+                    fileDialogManager.SaveFileDialog("Save AetherDraw Plan As...", "AetherDraw Plan{.adp}", "MyAetherDrawPlan", ".adp", HandleSavePlanDialogResult, initialPath, true);
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Save as Image##SaveAsImageButton", new Vector2(actionButtonWidth, 0)))
+                {
+                    lastFileDialogError = string.Empty;
+                    fileDialogManager.SaveFileDialog("Save Image As...", "PNG Image{.png,.PNG}", "MyAetherDrawImage", ".png", HandleSaveImageDialogResult, initialPath, true);
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Open WDIG##OpenWDIGButton", new Vector2(actionButtonWidth, 0)))
+                {
+                    try { Plugin.CommandManager.ProcessCommand("/wdig"); }
+                    catch (Exception ex) { AetherDraw.Plugin.Log?.Error(ex, "Error processing /wdig command."); }
                 }
                 ImGui.SameLine();
                 using (ImRaii.Disabled())
                 {
-                    if (ImGui.Button("Join/Create Live##LiveRoomButton", new Vector2(planButtonWidth, 0)))
-                    {
-                        AetherDraw.Plugin.Log?.Info("[MainWindow] Live Room button clicked (feature not implemented).");
-                    }
+                    if (ImGui.Button("Join/Create Live##LiveRoomButton", new Vector2(actionButtonWidth, 0))) { /* Log action */ }
                 }
             }
         }
 
-        // This method is no longer needed as FileDialogManager.Draw() handles dialog display.
-        // private void DrawSaveLoadDialogs() { } 
+        private void HandleSaveImageDialogResult(bool success, string baseFilePathFromDialog)
+        {
+            AetherDraw.Plugin.Log?.Debug($"[MainWindow] HandleSaveImageDialogResult: Success - {success}, Base Path - '{baseFilePathFromDialog ?? "null"}'");
+            if (success && !string.IsNullOrEmpty(baseFilePathFromDialog))
+            {
+                string directory = System.IO.Path.GetDirectoryName(baseFilePathFromDialog) ?? "";
+                string baseNameOnly = System.IO.Path.GetFileNameWithoutExtension(baseFilePathFromDialog);
+                string targetExtension = ".png";
+
+                if (this.pages.Count == 0)
+                {
+                    lastFileDialogError = "No pages to save.";
+                    AetherDraw.Plugin.Log?.Warning("[MainWindow] No pages found to save as images.");
+                    return;
+                }
+
+                int successCount = 0;
+                int failureCount = 0;
+                List<string> savedFiles = new List<string>();
+
+                for (int i = 0; i < this.pages.Count; i++)
+                {
+                    PageData currentPageToSave = this.pages[i];
+                    string pagePrefix = $"{i + 1}";
+                    string pageSpecificFileName = $"{pagePrefix}-{baseNameOnly}{targetExtension}";
+                    string fullPagePath = System.IO.Path.Combine(directory, pageSpecificFileName);
+
+                    AetherDraw.Plugin.Log?.Info($"[MainWindow] Preparing to save page '{currentPageToSave.Name}' (index {i}) as '{fullPagePath}'.");
+                    try
+                    {
+                        ActuallySaveSinglePageAsImage(currentPageToSave, fullPagePath, this.currentCanvasDrawSize);
+                        successCount++;
+                        savedFiles.Add(System.IO.Path.GetFileName(fullPagePath));
+                    }
+                    catch (Exception ex)
+                    {
+                        AetherDraw.Plugin.Log?.Error(ex, $"[MainWindow] Failed to save page '{currentPageToSave.Name}' to '{fullPagePath}'.");
+                        failureCount++;
+                    }
+                }
+
+                if (failureCount > 0)
+                {
+                    lastFileDialogError = $"Saved {successCount} page(s). Failed to save {failureCount} page(s). Check log.";
+                }
+                else if (successCount > 0)
+                {
+                    lastFileDialogError = $"Successfully saved: {string.Join(", ", savedFiles)}";
+                }
+                else
+                {
+                    lastFileDialogError = "No pages were processed or saved.";
+                }
+            }
+            else if (!success)
+            {
+                AetherDraw.Plugin.Log?.Info("[MainWindow] Save Image dialog was cancelled or resulted in an error.");
+                lastFileDialogError = "Save image operation cancelled.";
+            }
+        }
+
+        private void ActuallySaveSinglePageAsImage(PageData pageToSave, string targetFilePath, Vector2 canvasVisualSize)
+        {
+            AetherDraw.Plugin.Log?.Info($"[MainWindow] Saving page '{pageToSave.Name}' to image: {targetFilePath}");
+
+            string finalFilePath = targetFilePath;
+            if (!string.IsNullOrEmpty(finalFilePath) && !finalFilePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            {
+                finalFilePath = System.IO.Path.ChangeExtension(finalFilePath, ".png");
+            }
+
+            try
+            {
+                int imageWidth = (int)Math.Max(100, canvasVisualSize.X);
+                int imageHeight = (int)Math.Max(100, canvasVisualSize.Y);
+
+                if (imageWidth <= 0 || imageHeight <= 0)
+                {
+                    AetherDraw.Plugin.Log?.Error($"[MainWindow] Invalid canvas dimensions for image export for page '{pageToSave.Name}': {imageWidth}x{imageHeight}");
+                    throw new ArgumentOutOfRangeException(nameof(canvasVisualSize), "Canvas dimensions for image export are invalid.");
+                }
+
+                using (var image = new Image<Rgba32>(imageWidth, imageHeight))
+                {
+                    var backgroundColor = new Rgba32((byte)(0.15f * 255), (byte)(0.15f * 255), (byte)(0.17f * 255), (byte)(1.0f * 255));
+                    image.Mutate(ctx => ctx.Fill(backgroundColor));
+
+                    var gridColor = SixLabors.ImageSharp.Color.FromRgba((byte)(0.3f * 255), (byte)(0.3f * 255), (byte)(0.3f * 255), (byte)(1.0f * 255));
+                    float gridLineThickness = 1f;
+                    float scaledGridCellSize = ScaledCanvasGridSize;
+
+                    if (scaledGridCellSize > 0)
+                    {
+                        image.Mutate(ctx => {
+                            for (float x = scaledGridCellSize; x < imageWidth; x += scaledGridCellSize)
+                            {
+                                var pathBuilder = new PathBuilder();
+                                pathBuilder.AddLine(new PointF(x, 0), new PointF(x, imageHeight));
+                                ctx.Draw(gridColor, gridLineThickness, pathBuilder.Build());
+                            }
+                            for (float y = scaledGridCellSize; y < imageHeight; y += scaledGridCellSize)
+                            {
+                                var pathBuilder = new PathBuilder();
+                                pathBuilder.AddLine(new PointF(0, y), new PointF(imageWidth, y));
+                                ctx.Draw(gridColor, gridLineThickness, pathBuilder.Build());
+                            }
+                        });
+                    }
+
+                    var drawablesToRender = pageToSave.Drawables.OrderBy(d => GetLayerPriority(d.ObjectDrawMode)).ToList();
+                    Vector2 imageOrigin = Vector2.Zero;
+                    float scale = ImGuiHelpers.GlobalScale;
+
+                    image.Mutate(ctx =>
+                    {
+                        foreach (var drawable in drawablesToRender)
+                        {
+                            bool isCurrentlyEditedDrawable = (pageToSave == this.pages[currentPageIndex]) &&
+                                                             inPlaceTextEditor.IsEditing &&
+                                                             inPlaceTextEditor.IsCurrentlyEditing(drawable);
+                            if (isCurrentlyEditedDrawable) continue;
+
+                            drawable.DrawToImage(ctx, imageOrigin, scale);
+                        }
+                    });
+
+                    image.SaveAsPng(finalFilePath);
+                    AetherDraw.Plugin.Log?.Info($"[MainWindow] Page '{pageToSave.Name}' saved as image successfully to {finalFilePath}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                AetherDraw.Plugin.Log?.Error(ex, $"[MainWindow] Error saving page '{pageToSave.Name}' to image at {targetFilePath}.");
+                throw;
+            }
+        }
 
         private void HandleSavePlanDialogResult(bool success, string filePath)
         {
@@ -444,21 +529,20 @@ namespace AetherDraw.Windows
             {
                 ActuallySavePlanToFile(filePath);
             }
-            else if (!success) // Could be cancellation or an error within the dialog
+            else if (!success)
             {
                 AetherDraw.Plugin.Log?.Info("[MainWindow] SaveFileDialog was cancelled or resulted in an error.");
-                
             }
         }
 
-        private void HandleLoadPlanDialogResult(bool success, List<string> paths) // Corrected signature
+        private void HandleLoadPlanDialogResult(bool success, List<string> paths)
         {
             AetherDraw.Plugin.Log?.Debug($"[MainWindow] HandleLoadPlanDialogResult: Success - {success}, Paths count - {(paths?.Count ?? 0)}");
             if (success && paths != null && paths.Count > 0 && !string.IsNullOrEmpty(paths[0]))
             {
-                string filePath = paths[0]; // Use the first path for single selection
-                AetherDraw.Plugin.Log?.Info($"[MainWindow] LoadFileDialog selected path: {filePath}");
-                ActuallyLoadPlanFromFile(filePath);
+                string filePathFromDialog = paths[0];
+                AetherDraw.Plugin.Log?.Info($"[MainWindow] LoadFileDialog selected path: {filePathFromDialog}");
+                ActuallyLoadPlanFromFile(filePathFromDialog);
             }
             else if (!success)
             {
@@ -477,21 +561,18 @@ namespace AetherDraw.Windows
                 return;
             }
 
-            string planName = Path.GetFileNameWithoutExtension(filePath);
+            string planName = System.IO.Path.GetFileNameWithoutExtension(filePath);
 
             try
             {
-                string? directory = Path.GetDirectoryName(filePath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                string? directory = System.IO.Path.GetDirectoryName(filePath);
+                if (!string.IsNullOrEmpty(directory) && !System.IO.Directory.Exists(directory))
                 {
-                    Directory.CreateDirectory(directory);
+                    System.IO.Directory.CreateDirectory(directory);
                     AetherDraw.Plugin.Log?.Info($"[MainWindow] Created directory: {directory}");
                 }
 
-                ushort appVersionMajor = 1;
-                ushort appVersionMinor = 0;
-                ushort appVersionPatch = 0;
-
+                ushort appVersionMajor = 1; ushort appVersionMinor = 0; ushort appVersionPatch = 0;
                 byte[]? serializedPlanData = PlanSerializer.SerializePlanToBytes(this.pages, planName, appVersionMajor, appVersionMinor, appVersionPatch);
 
                 if (serializedPlanData != null)
@@ -539,19 +620,12 @@ namespace AetherDraw.Windows
                 this.pages.Clear();
                 foreach (var loadedPageData in loadedPlan.Pages)
                 {
-                    var newUiPage = new MainWindow.PageData
-                    {
-                        Name = loadedPageData.Name,
-                        Drawables = loadedPageData.Drawables ?? new List<BaseDrawable>()
-                    };
+                    var newUiPage = new MainWindow.PageData { Name = loadedPageData.Name, Drawables = loadedPageData.Drawables ?? new List<BaseDrawable>() };
                     this.pages.Add(newUiPage);
                 }
 
                 currentPageIndex = 0;
-                if (!this.pages.Any())
-                {
-                    AddNewPage(true);
-                }
+                if (!this.pages.Any()) { AddNewPage(true); }
 
                 selectedDrawables.Clear();
                 hoveredDrawable = null;
@@ -569,64 +643,57 @@ namespace AetherDraw.Windows
 
         private void DrawCanvas()
         {
-            AetherDraw.Plugin.Log?.Debug("[MainWindow.DrawCanvas] Preparing canvas.");
-            Vector2 canvasSize = ImGui.GetContentRegionAvail();
+            Vector2 canvasSizeForImGuiDrawing = ImGui.GetContentRegionAvail();
+            currentCanvasDrawSize = canvasSizeForImGuiDrawing; // Update for export, though also set in Draw()
+
             float minCanvasDimension = 50f * ImGuiHelpers.GlobalScale;
-            if (canvasSize.X < minCanvasDimension) canvasSize.X = minCanvasDimension;
-            if (canvasSize.Y < minCanvasDimension) canvasSize.Y = minCanvasDimension;
+            if (canvasSizeForImGuiDrawing.X < minCanvasDimension) canvasSizeForImGuiDrawing.X = minCanvasDimension;
+            if (canvasSizeForImGuiDrawing.Y < minCanvasDimension) canvasSizeForImGuiDrawing.Y = minCanvasDimension;
 
             ImDrawListPtr drawList = ImGui.GetWindowDrawList();
             Vector2 canvasOriginScreen = ImGui.GetCursorScreenPos();
 
             uint backgroundColor = ImGui.GetColorU32(new Vector4(0.15f, 0.15f, 0.17f, 1.0f));
-            drawList.AddRectFilled(canvasOriginScreen, canvasOriginScreen + canvasSize, backgroundColor);
+            drawList.AddRectFilled(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, backgroundColor);
             uint gridColor = ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f));
             float scaledGridCellSize = ScaledCanvasGridSize;
             float scaledGridLineThickness = Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale);
             if (scaledGridCellSize > 0)
             {
-                for (float x = scaledGridCellSize; x < canvasSize.X; x += scaledGridCellSize)
-                    drawList.AddLine(new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y), new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y + canvasSize.Y), gridColor, scaledGridLineThickness);
-                for (float y = scaledGridCellSize; y < canvasSize.Y; y += scaledGridCellSize)
-                    drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSize.X, canvasOriginScreen.Y + y), gridColor, scaledGridLineThickness);
+                for (float x = scaledGridCellSize; x < canvasSizeForImGuiDrawing.X; x += scaledGridCellSize)
+                    drawList.AddLine(new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y), new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y + canvasSizeForImGuiDrawing.Y), gridColor, scaledGridLineThickness);
+                for (float y = scaledGridCellSize; y < canvasSizeForImGuiDrawing.Y; y += scaledGridCellSize)
+                    drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSizeForImGuiDrawing.X, canvasOriginScreen.Y + y), gridColor, scaledGridLineThickness);
             }
             uint canvasOutlineColorU32 = ImGui.GetColorU32(new Vector4(0.4f, 0.4f, 0.45f, 1f));
-            drawList.AddRect(canvasOriginScreen - Vector2.One, canvasOriginScreen + canvasSize + Vector2.One, canvasOutlineColorU32, 0f, ImDrawFlags.None, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+            drawList.AddRect(canvasOriginScreen - Vector2.One, canvasOriginScreen + canvasSizeForImGuiDrawing + Vector2.One, canvasOutlineColorU32, 0f, ImDrawFlags.None, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
 
             if (inPlaceTextEditor.IsEditing)
             {
-                AetherDraw.Plugin.Log?.Debug("[MainWindow.DrawCanvas] InPlaceTextEditor is active, drawing its UI.");
                 inPlaceTextEditor.RecalculateEditorBounds(canvasOriginScreen, ImGuiHelpers.GlobalScale);
                 inPlaceTextEditor.DrawEditorUI();
             }
 
             ImGui.SetCursorScreenPos(canvasOriginScreen);
-            ImGui.InvisibleButton("##AetherDrawCanvasInteractionLayer", canvasSize);
+            ImGui.InvisibleButton("##AetherDrawCanvasInteractionLayer", canvasSizeForImGuiDrawing);
 
             Vector2 mousePosScreen = ImGui.GetMousePos();
             Vector2 mousePosLogical = (mousePosScreen - canvasOriginScreen) / ImGuiHelpers.GlobalScale;
             bool canvasInteractLayerHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.None);
             bool canInteractWithCanvas = !inPlaceTextEditor.IsEditing && canvasInteractLayerHovered;
 
-            AetherDraw.Plugin.Log?.Debug($"[MainWindow.DrawCanvas] canInteract: {canInteractWithCanvas}, mouseL: {mousePosLogical}");
-
             if (canInteractWithCanvas)
             {
                 canvasController.ProcessCanvasInteraction(
-                    mousePosLogical,
-                    mousePosScreen,
-                    canvasOriginScreen,
-                    drawList,
-                    ImGui.IsMouseDown(ImGuiMouseButton.Left),
-                    ImGui.IsMouseClicked(ImGuiMouseButton.Left),
-                    ImGui.IsMouseReleased(ImGuiMouseButton.Left),
-                    ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left),
+                    mousePosLogical, mousePosScreen, canvasOriginScreen, drawList,
+                    ImGui.IsMouseDown(ImGuiMouseButton.Left), ImGui.IsMouseClicked(ImGuiMouseButton.Left),
+                    ImGui.IsMouseReleased(ImGuiMouseButton.Left), ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left),
                     GetLayerPriority
                 );
             }
 
-            ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSize, true);
-            var drawablesToRender = DrawablesListOfCurrentPage;
+            ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
+            var drawablesToRender = DrawablesOfCurrentPageUi;
             if (drawablesToRender != null && drawablesToRender.Any())
             {
                 var sortedDrawables = drawablesToRender.OrderBy(d => GetLayerPriority(d.ObjectDrawMode)).ToList();
@@ -643,16 +710,19 @@ namespace AetherDraw.Windows
         private void AddNewPage(bool switchToPage = true)
         {
             AetherDraw.Plugin.Log?.Info("[MainWindow.PageManagement] Adding new page.");
-
             int newPageNumber = pages.Any() ? pages.Select(p => int.TryParse(p.Name, out int num) ? num : 0).DefaultIfEmpty(0).Max() + 1 : 1;
             var newPage = new PageData { Name = newPageNumber.ToString() };
 
+            // Reverted to unconditional waymark preloading as per original logic.
+            // If a configuration option like 'PreloadWaymarksOnNewPage' is added to Configuration.cs,
+            // it can be used here: if (this.configuration.PreloadWaymarksOnNewPage) { ... }
             float logicalRefCanvasWidth = (850f * 0.75f) - 125f;
             float logicalRefCanvasHeight = 550f;
             Vector2 canvasCenter = new Vector2(logicalRefCanvasWidth / 2f, logicalRefCanvasHeight / 2f);
             float waymarkPlacementRadius = Math.Min(logicalRefCanvasWidth, logicalRefCanvasHeight) * 0.40f;
             Vector2 waymarkImageUnscaledSize = new Vector2(30f, 30f);
             Vector4 waymarkTint = Vector4.One;
+
             var waymarksToPreload = new[] {
                 new { Mode = DrawMode.WaymarkAImage, Path = "PluginImages.toolbar.A.JPG", Angle = 3 * MathF.PI / 2 },
                 new { Mode = DrawMode.WaymarkBImage, Path = "PluginImages.toolbar.B.JPG", Angle = 0f },
@@ -667,7 +737,7 @@ namespace AetherDraw.Windows
             {
                 float x = canvasCenter.X + waymarkPlacementRadius * MathF.Cos(wmInfo.Angle);
                 float y = canvasCenter.Y + waymarkPlacementRadius * MathF.Sin(wmInfo.Angle);
-                var drawableImage = new DrawableImage(wmInfo.Mode, wmInfo.Path, new Vector2(x, y), waymarkImageUnscaledSize, waymarkTint);
+                var drawableImage = new DrawableImage(wmInfo.Mode, wmInfo.Path, new Vector2(x, y), waymarkImageUnscaledSize, waymarkTint, 0f);
                 drawableImage.IsPreview = false;
                 newPage.Drawables.Add(drawableImage);
             }
@@ -684,6 +754,7 @@ namespace AetherDraw.Windows
             hoveredDrawable = null;
             shapeInteractionHandler.ResetDragState();
             if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CancelAndEndEdit();
+
             pages.RemoveAt(pageIndexToRemove);
             currentPageIndex = Math.Max(0, Math.Min(pageIndexToRemove, pages.Count - 1));
             SwitchToPage(currentPageIndex, true);
@@ -694,6 +765,7 @@ namespace AetherDraw.Windows
             AetherDraw.Plugin.Log?.Info($"[MainWindow.PageManagement] Switching to page index {newPageIndex}.");
             if (newPageIndex < 0 || newPageIndex >= pages.Count) return;
             if (!forceSwitch && newPageIndex == currentPageIndex && pages.Count > 0) return;
+
             currentPageIndex = newPageIndex;
             hoveredDrawable = null;
             selectedDrawables.Clear();
@@ -703,21 +775,14 @@ namespace AetherDraw.Windows
 
         private void CopySelected()
         {
-            AetherDraw.Plugin.Log?.Debug("[MainWindow.Clipboard] Copying selected.");
             if (selectedDrawables.Any())
             {
                 clipboard.Clear();
-                foreach (var sel in selectedDrawables)
-                {
-                    clipboard.Add(sel.Clone());
-                }
-                AetherDraw.Plugin.Log?.Information($"Copied {clipboard.Count} items.");
+                foreach (var sel in selectedDrawables) { clipboard.Add(sel.Clone()); }
             }
         }
-
         private void PasteCopied()
         {
-            AetherDraw.Plugin.Log?.Debug("[MainWindow.Clipboard] Pasting copied.");
             if (clipboard.Any())
             {
                 foreach (var dsel in selectedDrawables) dsel.IsSelected = false;
@@ -728,13 +793,11 @@ namespace AetherDraw.Windows
                     var newItemClone = item.Clone();
                     newItemClone.Translate(pasteOffsetLogical);
                     newItemClone.IsSelected = true;
-                    DrawablesListOfCurrentPage.Add(newItemClone);
+                    DrawablesOfCurrentPageUi.Add(newItemClone);
                     selectedDrawables.Add(newItemClone);
                 }
-                AetherDraw.Plugin.Log?.Information($"Pasted {selectedDrawables.Count} items.");
             }
         }
-
         private int GetLayerPriority(DrawMode mode)
         {
             switch (mode)

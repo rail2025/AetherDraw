@@ -1,160 +1,302 @@
+// AetherDraw/DrawingLogic/DrawableImage.cs
 using System;
 using System.Numerics;
+using System.IO;
+using System.Reflection;
 using ImGuiNET;
 using Dalamud.Interface.Textures.TextureWraps;
-using Dalamud.Interface.Utility; // Added for ImGuiHelpers
+using Dalamud.Interface.Utility;
+
+// ImageSharp using statements
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+
+// SkiaSharp and Svg.Skia for SVG rendering
+using SkiaSharp;
+using Svg.Skia;
 
 namespace AetherDraw.DrawingLogic
 {
+    /// <summary>
+    /// Represents a drawable image object on the canvas.
+    /// Handles loading, transformation, tinting, and rendering for both ImGui and image export.
+    /// </summary>
     public class DrawableImage : BaseDrawable
     {
+        /// <summary>
+        /// Path to the image resource, relative to the plugin's embedded resources.
+        /// </summary>
         public string ImageResourcePath { get; private set; }
-        public Vector2 PositionRelative { get; set; } // Logical, unscaled position
-        public Vector2 DrawSize { get; set; }         // Logical, unscaled size
+        /// <summary>
+        /// Logical, unscaled center position of the image on the canvas.
+        /// </summary>
+        public Vector2 PositionRelative { get; set; }
+        /// <summary>
+        /// Logical, unscaled dimensions (width, height) of the image. This defines the bounding box
+        /// the image (including SVGs) should fill, potentially altering aspect ratio for SVGs.
+        /// </summary>
+        public Vector2 DrawSize { get; set; }
+        /// <summary>
+        /// Rotation angle in radians around the image's center.
+        /// </summary>
         public float RotationAngle { get; set; } = 0f;
 
-        // Store unscaled base values for handles. Scale them when used.
         public static readonly float UnscaledRotationHandleDistance = 20f;
         public static readonly float UnscaledRotationHandleRadius = 5f;
         public static readonly float UnscaledResizeHandleRadius = 4f;
 
-        private IDalamudTextureWrap? textureWrap;
+        private IDalamudTextureWrap? textureWrapCache;
 
-        // Constructor: Initializes a new drawable image.
-        // positionRelative and drawSize are expected to be logical, unscaled values.
-        // Scaling for drawing is applied in the Draw() method.
+        /// <summary>
+        /// Initializes a new instance of the <see cref="DrawableImage"/> class.
+        /// </summary>
         public DrawableImage(DrawMode drawMode, string imageResourcePath, Vector2 positionRelative, Vector2 unscaledDrawSize, Vector4 tint, float rotation = 0f)
         {
             this.ObjectDrawMode = drawMode;
             this.ImageResourcePath = imageResourcePath;
             this.PositionRelative = positionRelative;
-            this.DrawSize = unscaledDrawSize; // Store unscaled size
+            this.DrawSize = unscaledDrawSize;
             this.Color = tint;
             this.RotationAngle = rotation;
-            this.Thickness = 0; // Not applicable to images
-            this.IsFilled = true; // Images are considered "filled"
-            this.IsPreview = false; // Typically images are placed, not preview-dragged like shapes
+            this.Thickness = 0;
+            this.IsFilled = true;
+            this.IsPreview = false;
         }
 
-        // Calculates the screen position of the rotation handle.
+        /// <summary>
+        /// Calculates the screen position of the rotation handle for ImGui.
+        /// </summary>
         public Vector2 GetRotationHandleScreenPosition(Vector2 canvasOriginScreen)
         {
-            // PositionRelative and DrawSize are logical. Scale them for screen calculations.
             Vector2 scaledPositionRelative = this.PositionRelative * ImGuiHelpers.GlobalScale;
             Vector2 scaledDrawSize = this.DrawSize * ImGuiHelpers.GlobalScale;
             float scaledRotationHandleDistance = UnscaledRotationHandleDistance * ImGuiHelpers.GlobalScale;
-
             Vector2 screenCenter = scaledPositionRelative + canvasOriginScreen;
             Vector2 handleOffset = new Vector2(0, -(scaledDrawSize.Y / 2f + scaledRotationHandleDistance));
-
-            float cosA = MathF.Cos(this.RotationAngle);
-            float sinA = MathF.Sin(this.RotationAngle);
-            Vector2 rotatedHandleOffset = HitDetection.ImRotate(handleOffset, cosA, sinA);
+            Vector2 rotatedHandleOffset = HitDetection.ImRotate(handleOffset, MathF.Cos(this.RotationAngle), MathF.Sin(this.RotationAngle));
             return screenCenter + rotatedHandleOffset;
         }
 
-        // Retrieves the texture, loading it if necessary.
-        private IDalamudTextureWrap? GetTextureWrap()
+        /// <summary>
+        /// Retrieves the Dalamud texture wrap, loading from TextureManager if not cached or invalid.
+        /// </summary>
+        private IDalamudTextureWrap? GetDalamudTextureWrap()
         {
-            if (textureWrap == null || textureWrap.ImGuiHandle == IntPtr.Zero)
+            if (textureWrapCache == null || textureWrapCache.ImGuiHandle == IntPtr.Zero)
             {
-                textureWrap = TextureManager.GetTexture(this.ImageResourcePath);
+                textureWrapCache = TextureManager.GetTexture(this.ImageResourcePath);
             }
-            return textureWrap;
+            return textureWrapCache;
         }
 
+        /// <summary>
+        /// Draws the image on the ImGui canvas. ImGui's AddImageQuad will stretch/scale the texture
+        /// to the quad defined by scaledDrawSize and rotation.
+        /// </summary>
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            var tex = GetTextureWrap();
-
-            // Scale logical position and size for drawing.
+            var tex = GetDalamudTextureWrap();
             Vector2 scaledPositionRelative = this.PositionRelative * ImGuiHelpers.GlobalScale;
             Vector2 scaledDrawSize = this.DrawSize * ImGuiHelpers.GlobalScale;
-
             Vector2 screenPosCenter = scaledPositionRelative + canvasOriginScreen;
-
-            var displayTintVec = this.IsSelected ? new Vector4(1, 1, 0, 0.7f) :
-                                (this.IsHovered && !this.IsSelected ? new Vector4(0.9f, 0.9f, 0.9f, 0.9f) : this.Color);
+            var displayTintVec = this.IsSelected ? new Vector4(1, 1, 0, 0.7f) : (this.IsHovered && !this.IsSelected ? new Vector4(0.9f, 0.9f, 0.9f, 0.9f) : this.Color);
             uint tintColorU32 = ImGui.GetColorU32(displayTintVec);
 
-            if (tex == null || tex.ImGuiHandle == IntPtr.Zero) // Texture not loaded or invalid.
+            if (tex == null || tex.ImGuiHandle == IntPtr.Zero)
             {
-                // Draw a placeholder if texture is missing.
                 drawList.AddRectFilled(screenPosCenter - scaledDrawSize / 2f, screenPosCenter + scaledDrawSize / 2f, ImGui.GetColorU32(new Vector4(0.5f, 0.5f, 0.5f, 0.5f)));
                 Vector2 textSize = ImGui.CalcTextSize("IMG?");
                 drawList.AddText(screenPosCenter - textSize / 2f, ImGui.GetColorU32(new Vector4(1, 0, 0, 1)), "IMG?");
                 return;
             }
-
             Vector2 scaledHalfSize = scaledDrawSize / 2.0f;
-            // GetRotatedQuadVertices expects center and halfSize in screen-space units for drawing.
-            // Here, screenPosCenter is already scaled, and scaledHalfSize is also scaled.
             Vector2[] quadVerticesScreen = HitDetection.GetRotatedQuadVertices(screenPosCenter, scaledHalfSize, this.RotationAngle);
+            drawList.AddImageQuad(tex.ImGuiHandle, quadVerticesScreen[0], quadVerticesScreen[1], quadVerticesScreen[2], quadVerticesScreen[3],
+                                  Vector2.Zero, Vector2.UnitX, Vector2.One, Vector2.UnitY, tintColorU32);
+        }
 
-            Vector2 uv0 = Vector2.Zero;
-            Vector2 uv1 = new Vector2(1, 0);
-            Vector2 uv2 = Vector2.One;
-            Vector2 uv3 = new Vector2(0, 1);
-            drawList.AddImageQuad(tex.ImGuiHandle, quadVerticesScreen[0], quadVerticesScreen[1], quadVerticesScreen[2], quadVerticesScreen[3], uv0, uv1, uv2, uv3, tintColorU32);
+        /// <summary>
+        /// Draws the image to an ImageSharp context for image export.
+        /// For SVGs, this method renders the SVG to match the potentially non-uniform DrawSize,
+        /// effectively stretching/squashing the SVG content to fit.
+        /// </summary>
+        public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
+        {
+            byte[]? initialImageBytes = null;
+            bool isSvg = ImageResourcePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
 
-            // Draw selection highlights and handles if selected.
-            if (this.IsSelected)
+            int renderTargetWidth = (int)Math.Max(1, this.DrawSize.X * currentGlobalScale);
+            int renderTargetHeight = (int)Math.Max(1, this.DrawSize.Y * currentGlobalScale);
+
+            try
             {
-                uint highlightColor = ImGui.GetColorU32(new Vector4(1, 1, 0, 1));
-                float highlightThickness = 2f * ImGuiHelpers.GlobalScale; // Scale highlight thickness.
-                for (int i = 0; i < 4; i++)
-                {
-                    drawList.AddLine(quadVerticesScreen[i], quadVerticesScreen[(i + 1) % 4], highlightColor, highlightThickness);
-                }
+                var assembly = Assembly.GetExecutingAssembly();
+                string fullResourcePath = $"{assembly.GetName().Name}.{ImageResourcePath.Replace("\\", ".").Replace("/", ".")}";
 
-                Vector2 rotationHandleScreenPos = GetRotationHandleScreenPosition(canvasOriginScreen); // Already returns scaled pos.
-                float scaledRotationHandleRadius = UnscaledRotationHandleRadius * ImGuiHelpers.GlobalScale;
-                drawList.AddCircleFilled(rotationHandleScreenPos, scaledRotationHandleRadius, highlightColor);
-                drawList.AddCircle(rotationHandleScreenPos, scaledRotationHandleRadius + (1f * ImGuiHelpers.GlobalScale), ImGui.GetColorU32(new Vector4(0, 0, 0, 1)), 12, 1.5f * ImGuiHelpers.GlobalScale);
-
-                uint resizeHandleColor = ImGui.GetColorU32(new Vector4(0, 0.8f, 1f, 1f));
-                float scaledResizeHandleRadius = UnscaledResizeHandleRadius * ImGuiHelpers.GlobalScale;
-                foreach (var corner in quadVerticesScreen) // quadVerticesScreen are already scaled screen positions.
+                using (Stream? resourceStream = assembly.GetManifestResourceStream(fullResourcePath))
                 {
-                    drawList.AddCircleFilled(corner, scaledResizeHandleRadius, resizeHandleColor);
-                    drawList.AddCircle(corner, scaledResizeHandleRadius + (1f * ImGuiHelpers.GlobalScale), ImGui.GetColorU32(new Vector4(0, 0, 0, 0.8f)), 8, 1f * ImGuiHelpers.GlobalScale);
+                    if (resourceStream == null)
+                    {
+                        AetherDraw.Plugin.Log?.Error($"[DrawableImage.DrawToImage] Resource stream is null for {fullResourcePath}.");
+                        return;
+                    }
+
+                    if (isSvg)
+                    {
+                        using (var svg = new SKSvg())
+                        {
+                            if (svg.Load(resourceStream) == null || svg.Picture == null)
+                            {
+                                AetherDraw.Plugin.Log?.Error($"[DrawableImage.DrawToImage] Failed to load SVG picture from stream for {ImageResourcePath}.");
+                                return;
+                            }
+
+                            using (var skBitmap = new SKBitmap(renderTargetWidth, renderTargetHeight, SKColorType.Rgba8888, SKAlphaType.Premul))
+                            using (var skCanvas = new SKCanvas(skBitmap))
+                            {
+                                skCanvas.Clear(SKColors.Transparent);
+
+                                SKRect svgBounds = svg.Picture.CullRect;
+                                SKRect destBounds = new SKRect(0, 0, renderTargetWidth, renderTargetHeight);
+
+                                // Manually construct the transformation matrix to achieve SKMatrixScaleToFit.Fill behavior
+                                SKMatrix skiaTransformMatrix = SKMatrix.Identity;
+                                if (svgBounds.Width > 0 && svgBounds.Height > 0) // Ensure source bounds are valid
+                                {
+                                    float scaleX = destBounds.Width / svgBounds.Width;
+                                    float scaleY = destBounds.Height / svgBounds.Height;
+
+                                    // Translate SVG origin to 0,0
+                                    skiaTransformMatrix = SKMatrix.CreateTranslation(-svgBounds.Left, -svgBounds.Top);
+                                    // Scale non-uniformly
+                                    SKMatrix scaleMatrix = SKMatrix.CreateScale(scaleX, scaleY);
+                                    skiaTransformMatrix = SKMatrix.Concat(skiaTransformMatrix, scaleMatrix);
+                                    // Translate to destination origin (which is 0,0 for destBounds)
+                                    // No additional translation to destBounds.Left/Top as destBounds starts at 0,0
+                                }
+                                else
+                                {
+                                    // Fallback if svgBounds are invalid, prevent division by zero or NaNs
+                                    AetherDraw.Plugin.Log?.Warning($"[DrawableImage.DrawToImage] SVG {ImageResourcePath} has invalid original bounds ({svgBounds}). Using identity matrix.");
+                                }
+
+                                skCanvas.DrawPicture(svg.Picture, in skiaTransformMatrix);
+                                skCanvas.Flush();
+
+                                using (var skImage = SKImage.FromBitmap(skBitmap))
+                                using (var skData = skImage.Encode(SKEncodedImageFormat.Png, 100))
+                                {
+                                    if (skData == null)
+                                    {
+                                        AetherDraw.Plugin.Log?.Error($"[DrawableImage.DrawToImage] Failed to encode rasterized SVG to PNG for {ImageResourcePath}.");
+                                        return;
+                                    }
+                                    initialImageBytes = skData.ToArray();
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        using (var ms = new MemoryStream())
+                        {
+                            resourceStream.CopyTo(ms);
+                            initialImageBytes = ms.ToArray();
+                        }
+                    }
                 }
             }
-            else if (this.IsHovered) // Draw hover highlight.
+            catch (Exception ex)
             {
-                uint hoverColor = ImGui.GetColorU32(new Vector4(0f, 1f, 1f, 0.7f));
-                float hoverThickness = 1.5f * ImGuiHelpers.GlobalScale; // Scale hover thickness.
-                for (int i = 0; i < 4; i++)
+                AetherDraw.Plugin.Log?.Error(ex, $"[DrawableImage.DrawToImage] Error loading or rasterizing resource for {ImageResourcePath}.");
+                return;
+            }
+
+            if (initialImageBytes == null || initialImageBytes.Length == 0)
+            {
+                AetherDraw.Plugin.Log?.Warning($"[DrawableImage.DrawToImage] Failed to obtain image bytes for: {ImageResourcePath}");
+                return;
+            }
+
+            try
+            {
+                using (var sourceImage = SixLabors.ImageSharp.Image.Load(initialImageBytes))
                 {
-                    drawList.AddLine(quadVerticesScreen[i], quadVerticesScreen[(i + 1) % 4], hoverColor, hoverThickness);
+                    Image<Rgba32> imageToRenderOnContext = sourceImage.CloneAs<Rgba32>();
+
+                    if (!isSvg && (imageToRenderOnContext.Width != renderTargetWidth || imageToRenderOnContext.Height != renderTargetHeight))
+                    {
+                        imageToRenderOnContext.Mutate(op => op.Resize(renderTargetWidth, renderTargetHeight));
+                    }
+
+                    if (Math.Abs(this.RotationAngle) > 0.001f)
+                    {
+                        imageToRenderOnContext.Mutate(op => op.Rotate(this.RotationAngle * (180f / MathF.PI)));
+                    }
+
+                    PointF targetCenterOnImage = new PointF(
+                        (this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                        (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+                    );
+
+                    Point drawLocation = new Point(
+                        (int)Math.Round(targetCenterOnImage.X - imageToRenderOnContext.Width / 2f),
+                        (int)Math.Round(targetCenterOnImage.Y - imageToRenderOnContext.Height / 2f)
+                    );
+
+                    context.DrawImage(imageToRenderOnContext, drawLocation, this.Color.W);
+
+                    var tintColorForBrush = SixLabors.ImageSharp.Color.FromRgba(
+                        (byte)(this.Color.X * 255), (byte)(this.Color.Y * 255),
+                        (byte)(this.Color.Z * 255), (byte)(this.Color.W * 255));
+
+                    if (this.Color.X < 0.99f || this.Color.Y < 0.99f || this.Color.Z < 0.99f)
+                    {
+                        var imageBoundsRect = new RectangularPolygon(drawLocation.X, drawLocation.Y, imageToRenderOnContext.Width, imageToRenderOnContext.Height);
+
+                        var tintDrawingOptions = new DrawingOptions
+                        {
+                            GraphicsOptions = new GraphicsOptions
+                            {
+                                Antialias = true,
+                                ColorBlendingMode = PixelColorBlendingMode.Multiply,
+                                BlendPercentage = 1.0f
+                            }
+                        };
+                        context.Fill(tintDrawingOptions, new SolidBrush(tintColorForBrush), imageBoundsRect);
+                    }
+
+                    if (imageToRenderOnContext != sourceImage)
+                    {
+                        imageToRenderOnContext.Dispose();
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                AetherDraw.Plugin.Log?.Error(ex, $"[DrawableImage.DrawToImage] Error drawing final image {ImageResourcePath} with ImageSharp.");
             }
         }
 
-        // queryPointOrEraserCenterRelative is a logical, unscaled coordinate.
-        // hitThresholdOrEraserRadius is a logical, unscaled radius.
         public override bool IsHit(Vector2 queryPointOrEraserCenterRelative, float unscaledHitThresholdOrEraserRadius = 5.0f)
         {
-            // Perform hit detection in logical, unscaled space.
+            Vector2 localQueryPoint = Vector2.Transform(queryPointOrEraserCenterRelative - this.PositionRelative, Matrix3x2.CreateRotation(-this.RotationAngle));
             Vector2 logicalHalfSize = this.DrawSize / 2f;
-            Vector2 imageRectMinRelative = this.PositionRelative - logicalHalfSize;
-            Vector2 imageRectMaxRelative = this.PositionRelative + logicalHalfSize;
-
-            // HitDetection.IntersectCircleAABB should work with logical units.
-            // The query "circle" (eraser) radius is unscaledHitThresholdOrEraserRadius.
-            // The AABB is defined by logical imageRectMinRelative and imageRectMaxRelative.
-            return HitDetection.IntersectCircleAABB(queryPointOrEraserCenterRelative, unscaledHitThresholdOrEraserRadius, imageRectMinRelative, imageRectMaxRelative);
+            return Math.Abs(localQueryPoint.X) <= logicalHalfSize.X + unscaledHitThresholdOrEraserRadius &&
+                   Math.Abs(localQueryPoint.Y) <= logicalHalfSize.Y + unscaledHitThresholdOrEraserRadius;
         }
 
         public override BaseDrawable Clone()
         {
-            // Pass unscaled DrawSize.
             var newImg = new DrawableImage(this.ObjectDrawMode, this.ImageResourcePath, this.PositionRelative, this.DrawSize, this.Color, this.RotationAngle);
             CopyBasePropertiesTo(newImg);
             return newImg;
         }
 
-        public override void Translate(Vector2 delta) // Delta is a logical, unscaled vector.
+        public override void Translate(Vector2 delta)
         {
             this.PositionRelative += delta;
         }

@@ -10,7 +10,7 @@ namespace AetherDraw.DrawingLogic
         Arrow,
         Cone,
         Dash,
-        Donut, // Assuming Donut shape might be a distinct drawable shape, not just image
+        Donut,
 
         // Tools
         Select,

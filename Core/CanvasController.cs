@@ -72,7 +72,7 @@ namespace AetherDraw.Core
             this.shapeInteractionHandler = siHandler;
             this.inPlaceTextEditor = itEditor;
             this.configuration = config;
-            AetherDraw.Plugin.Log?.Debug("[CanvasController] Initialized."); // Corrected Log access
+            AetherDraw.Plugin.Log?.Debug("[CanvasController] Initialized.");
         }
 
         /// <summary>
@@ -92,9 +92,8 @@ namespace AetherDraw.Core
             AetherDraw.Plugin.Log?.Debug($"[CanvasController.Process] Mode: {getCurrentDrawMode()}, LMBDown: {isLMBDown}, Clicked: {isLMBClickedOnCanvas}, Released: {isLMBReleased}, DblClicked: {isLMBDoubleClickedOnCanvas}");
 
             var currentDrawablesOnPage = getDrawablesForCurrentPageFunc();
-            BaseDrawable? localHoveredDrawable = getHoveredDrawableFunc(); // Get current hovered from MainWindow
+            BaseDrawable? localHoveredDrawable = getHoveredDrawableFunc();
 
-            // Handle double-click for text editing if in select mode
             if (isLMBDoubleClickedOnCanvas && getCurrentDrawMode() == DrawMode.Select && localHoveredDrawable is DrawableText dt)
             {
                 AetherDraw.Plugin.Log?.Debug($"[CanvasController.Process] Double-clicked on DrawableText, attempting to edit.");
@@ -102,21 +101,20 @@ namespace AetherDraw.Core
                 {
                     inPlaceTextEditor.BeginEdit(dt, canvasOriginScreen, ImGuiHelpers.GlobalScale);
                 }
-                return; // Text editor takes focus, further canvas interaction paused
+                return;
             }
 
-            // Handle interactions based on the current drawing mode
             switch (getCurrentDrawMode())
             {
                 case DrawMode.Select:
                     BaseDrawable? singleSelectedItem = selectedDrawablesListRef.Count == 1 ? selectedDrawablesListRef[0] : null;
                     shapeInteractionHandler.ProcessInteractions(
                         singleSelectedItem, selectedDrawablesListRef, currentDrawablesOnPage, getLayerPriorityFunc,
-                        ref localHoveredDrawable, // SH directly modifies this local copy
+                        ref localHoveredDrawable,
                         mousePosLogical, mousePosScreen, canvasOriginScreen, true,
                         isLMBClickedOnCanvas, isLMBDown, isLMBReleased, drawList, ref lastMouseDragPosLogical
                     );
-                    setHoveredDrawableAction(localHoveredDrawable); // Update MainWindow's state with the (potentially) modified hovered drawable
+                    setHoveredDrawableAction(localHoveredDrawable);
                     break;
 
                 case DrawMode.Eraser:
@@ -127,12 +125,12 @@ namespace AetherDraw.Core
                     HandleTextToolInput(mousePosLogical, canvasOriginScreen, isLMBClickedOnCanvas, currentDrawablesOnPage);
                     break;
 
-                default: // Covers Pen, Shapes, and Image Placement modes
+                default:
                     if (IsImagePlacementMode(getCurrentDrawMode()))
                     {
                         HandleImagePlacementInput(mousePosLogical, isLMBClickedOnCanvas, currentDrawablesOnPage);
                     }
-                    else // Pen, Line, Rectangle, Circle, Arrow, Cone, Dash
+                    else
                     {
                         HandleShapeDrawingInput(mousePosLogical, isLMBDown, isLMBClickedOnCanvas, isLMBReleased, currentDrawablesOnPage);
                     }
@@ -140,9 +138,6 @@ namespace AetherDraw.Core
             }
         }
 
-        /// <summary>
-        /// Handles input for the eraser tool.
-        /// </summary>
         private void HandleEraserInput(Vector2 mousePosLogical, Vector2 mousePosScreen, ImDrawListPtr drawList, bool isLMBDown, List<BaseDrawable> currentDrawablesOnPage)
         {
             AetherDraw.Plugin.Log?.Debug($"[CanvasController.Eraser] PosL: {mousePosLogical}");
@@ -151,7 +146,7 @@ namespace AetherDraw.Core
 
             if (isLMBDown)
             {
-                float logicalEraserRadius = 10f; // This is unscaled
+                float logicalEraserRadius = 10f;
                 AetherDraw.Plugin.Log?.Debug($"[CanvasController.Eraser] Erasing with radius {logicalEraserRadius} at {mousePosLogical}");
 
                 for (int i = currentDrawablesOnPage.Count - 1; i >= 0; i--)
@@ -176,8 +171,6 @@ namespace AetherDraw.Core
                         AetherDraw.Plugin.Log?.Info($"[CanvasController.Eraser] Erased: {d.GetType().Name}");
                         currentDrawablesOnPage.RemoveAt(i);
                         if (selectedDrawablesListRef.Contains(d)) selectedDrawablesListRef.Remove(d);
-
-                        // Use getHoveredDrawableFunc to check current MainWindow state before setting
                         if (getHoveredDrawableFunc() != null && getHoveredDrawableFunc()!.Equals(d))
                         {
                             setHoveredDrawableAction(null);
@@ -187,9 +180,6 @@ namespace AetherDraw.Core
             }
         }
 
-        /// <summary>
-        /// Handles input for the text tool.
-        /// </summary>
         private void HandleTextToolInput(Vector2 mousePosLogical, Vector2 canvasOriginScreen, bool isLMBClickedOnCanvas, List<BaseDrawable> currentDrawablesOnPage)
         {
             AetherDraw.Plugin.Log?.Debug($"[CanvasController.TextTool] PosL: {mousePosLogical}");
@@ -210,12 +200,8 @@ namespace AetherDraw.Core
             }
         }
 
-        /// <summary>
-        /// Determines if the current draw mode is for placing an image.
-        /// </summary>
         private bool IsImagePlacementMode(DrawMode mode)
         {
-            // Covers all image types from DrawMode enum
             return mode switch
             {
                 DrawMode.BossImage => true,
@@ -246,9 +232,6 @@ namespace AetherDraw.Core
             };
         }
 
-        /// <summary>
-        /// Handles input for placing images on the canvas.
-        /// </summary>
         private void HandleImagePlacementInput(Vector2 mousePosLogical, bool isLMBClickedOnCanvas, List<BaseDrawable> currentDrawablesOnPage)
         {
             DrawMode currentMode = getCurrentDrawMode();
@@ -302,9 +285,6 @@ namespace AetherDraw.Core
             }
         }
 
-        /// <summary>
-        /// Handles input for drawing shapes like Pen, Line, Rectangle, etc.
-        /// </summary>
         private void HandleShapeDrawingInput(Vector2 mousePosLogical, bool isLMBDown, bool isLMBClickedOnCanvas, bool isLMBReleased, List<BaseDrawable> currentDrawablesOnPage)
         {
             DrawMode currentMode = getCurrentDrawMode();
@@ -342,9 +322,6 @@ namespace AetherDraw.Core
             }
         }
 
-        /// <summary>
-        /// Creates a new drawable object based on the current drawing mode.
-        /// </summary>
         private BaseDrawable? CreateNewDrawingObject(DrawMode mode, Vector2 startPosLogical, Vector4 color, float thickness, bool isFilled)
         {
             AetherDraw.Plugin.Log?.Debug($"[CanvasController.CreateNew] Mode: {mode}");
@@ -363,30 +340,29 @@ namespace AetherDraw.Core
             }
         }
 
-        /// <summary>
-        /// Finalizes the current drawing object, validates it, and adds it to the page.
-        /// </summary>
         private void FinalizeCurrentDrawing(List<BaseDrawable> currentDrawablesOnPage)
         {
             AetherDraw.Plugin.Log?.Debug($"[CanvasController.Finalize] Finalizing: {currentDrawingObjectInternal?.GetType().Name}");
             if (currentDrawingObjectInternal == null)
             {
-                isDrawingOnCanvas = false;
+                isDrawingOnCanvas = false; // Reset if called with no object (safeguard)
                 return;
             }
 
             currentDrawingObjectInternal.IsPreview = false;
             bool isValidObject = true;
-            float minDistanceSqUnscaled = (2f * 2f);
-            float minRadiusUnscaled = 1.5f;
+            float minDistanceSqUnscaled = (2f * 2f); // Example: 2 logical units
+            float minRadiusUnscaled = 1.5f;       // Example: 1.5 logical units
 
+            // Validation logic (same as before)
             if (currentDrawingObjectInternal is DrawablePath p && p.PointsRelative.Count < 2) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableDash d && d.PointsRelative.Count < 2) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableCircle ci && ci.Radius < minRadiusUnscaled) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableStraightLine sl && Vector2.DistanceSquared(sl.StartPointRelative, sl.EndPointRelative) < minDistanceSqUnscaled) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableRectangle r && (Math.Abs(r.StartPointRelative.X - r.EndPointRelative.X) < 2f || Math.Abs(r.StartPointRelative.Y - r.EndPointRelative.Y) < 2f)) isValidObject = false;
-            else if (currentDrawingObjectInternal is DrawableArrow arrow && Vector2.DistanceSquared(arrow.StartPointRelative, arrow.EndPointRelative) < minDistanceSqUnscaled && arrow.StartPointRelative != arrow.EndPointRelative) isValidObject = false;
+            else if (currentDrawingObjectInternal is DrawableArrow arrow && Vector2.DistanceSquared(arrow.StartPointRelative, arrow.EndPointRelative) < minDistanceSqUnscaled) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableCone co && Vector2.DistanceSquared(co.ApexRelative, co.BaseCenterRelative) < minDistanceSqUnscaled) isValidObject = false;
+
 
             if (isValidObject)
             {
@@ -396,10 +372,11 @@ namespace AetherDraw.Core
             else
             {
                 AetherDraw.Plugin.Log?.Debug($"[CanvasController.Finalize] Discarded invalid/too small: {currentDrawingObjectInternal.GetType().Name}");
-
-                currentDrawingObjectInternal = null;
-                isDrawingOnCanvas = false;
             }
+
+            // Reset state AFTER processing the object, regardless of validity
+            currentDrawingObjectInternal = null;
+            isDrawingOnCanvas = false;
         }
     }
 }
