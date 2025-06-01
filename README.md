@@ -1,3 +1,5 @@
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/rail2025/AetherDraw/total?logoColor=brightgreen)
+<br>
 ![aetherdraw1 1 0 0](https://github.com/user-attachments/assets/9dfa0722-6a5a-461e-aae6-9027fe6608b5) <br>
 <br>
 <br>
