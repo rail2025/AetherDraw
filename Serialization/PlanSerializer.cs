@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using AetherDraw.DrawingLogic;
-using AetherDraw.Windows; // For MainWindow.PageData
+using AetherDraw.Core; // Changed from AetherDraw.Windows to AetherDraw.Core for PageData
 
 namespace AetherDraw.Serialization
 {
@@ -16,32 +16,59 @@ namespace AetherDraw.Serialization
     /// </summary>
     public static class PlanSerializer
     {
+        // File signature to identify AetherDraw Plan files
         private static readonly byte[] FileSignature = { (byte)'A', (byte)'D', (byte)'P', (byte)'N' }; // "ADPN" for AetherDraw PlaN
-        private const uint CurrentPlanFormatVersion = 1; // Version for the multi-page plan structure itself
+        // Version for the multi-page plan structure itself. Increment if plan structure changes.
+        private const uint CurrentPlanFormatVersion = 1;
 
         /// <summary>
         /// Represents the deserialized structure of an AetherDraw plan.
+        /// Contains plan metadata and a list of pages.
         /// </summary>
         public class DeserializedPlan
         {
+            /// <summary>
+            /// Gets or sets the name of the plan.
+            /// </summary>
             public string PlanName { get; set; } = string.Empty;
-            public List<MainWindow.PageData> Pages { get; set; } = new List<MainWindow.PageData>();
+
+            /// <summary>
+            /// Gets or sets the list of pages in the plan.
+            /// Uses Core.PageData after refactoring.
+            /// </summary>
+            public List<PageData> Pages { get; set; } = new List<PageData>(); // Changed to use Core.PageData
+
+            /// <summary>
+            /// Gets or sets the file format version read from the plan file.
+            /// </summary>
             public uint FileFormatVersionRead { get; set; }
+
+            /// <summary>
+            /// Gets or sets the major version of AetherDraw that saved the plan.
+            /// </summary>
             public ushort ProgramVersionMajorRead { get; set; }
+
+            /// <summary>
+            /// Gets or sets the minor version of AetherDraw that saved the plan.
+            /// </summary>
             public ushort ProgramVersionMinorRead { get; set; }
+
+            /// <summary>
+            /// Gets or sets the patch version of AetherDraw that saved the plan.
+            /// </summary>
             public ushort ProgramVersionPatchRead { get; set; }
         }
 
         /// <summary>
         /// Serializes a collection of pages into a byte array representing an AetherDraw plan.
         /// </summary>
-        /// <param name="allPages">The list of PageData objects (from MainWindow) to serialize.</param>
+        /// <param name="allPages">The list of PageData objects (from AetherDraw.Core) to serialize.</param>
         /// <param name="planName">The user-defined name for the plan.</param>
         /// <param name="appVersionMajor">Major version of the AetherDraw application.</param>
         /// <param name="appVersionMinor">Minor version of the AetherDraw application.</param>
         /// <param name="appVersionPatch">Patch version of the AetherDraw application.</param>
         /// <returns>A byte array representing the serialized plan, or null if an error occurs.</returns>
-        public static byte[]? SerializePlanToBytes(List<MainWindow.PageData> allPages, string planName,
+        public static byte[]? SerializePlanToBytes(List<PageData> allPages, string planName, // Changed to use Core.PageData
                                                   ushort appVersionMajor = 1, ushort appVersionMinor = 0, ushort appVersionPatch = 0)
         {
             if (allPages == null)
@@ -56,35 +83,38 @@ namespace AetherDraw.Serialization
             try
             {
                 using (var memoryStream = new MemoryStream())
-                using (var writer = new BinaryWriter(memoryStream, Encoding.UTF8, false))
+                using (var writer = new BinaryWriter(memoryStream, Encoding.UTF8, false)) // Use UTF-8 for string encoding
                 {
-                    writer.Write(FileSignature);
-                    writer.Write(CurrentPlanFormatVersion);
-                    writer.Write(appVersionMajor);
-                    writer.Write(appVersionMinor);
-                    writer.Write(appVersionPatch);
-                    writer.Write(planName); // BinaryWriter handles UTF-8 string length prefixing
-                    writer.Write(allPages.Count);
+                    // Write file header information
+                    writer.Write(FileSignature);            // File type identifier
+                    writer.Write(CurrentPlanFormatVersion); // Version of the plan format
+                    writer.Write(appVersionMajor);          // Saving application's major version
+                    writer.Write(appVersionMinor);          // Saving application's minor version
+                    writer.Write(appVersionPatch);          // Saving application's patch version
+                    writer.Write(planName);                 // Name of the plan
+                    writer.Write(allPages.Count);           // Number of pages in the plan
 
+                    // Serialize each page
                     for (int i = 0; i < allPages.Count; i++)
                     {
                         var page = allPages[i];
                         AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Serializing page {i + 1}/{allPages.Count}: '{page.Name}'");
-                        writer.Write(page.Name ?? $"Page {i + 1}");
+                        writer.Write(page.Name ?? $"Page {i + 1}"); // Page name
 
+                        // Serialize the drawables on the page using DrawableSerializer
                         byte[] pageDrawablesData = DrawableSerializer.SerializePageToBytes(page.Drawables);
-                        writer.Write(pageDrawablesData.Length);
-                        writer.Write(pageDrawablesData);
+                        writer.Write(pageDrawablesData.Length); // Length of the serialized page data
+                        writer.Write(pageDrawablesData);        // Serialized page data itself
                     }
 
                     AetherDraw.Plugin.Log?.Info($"[PlanSerializer] Plan '{planName}' serialized successfully. Total size: {memoryStream.Length} bytes.");
-                    return memoryStream.ToArray();
+                    return memoryStream.ToArray(); // Return the complete serialized plan as a byte array
                 }
             }
             catch (Exception ex)
             {
                 AetherDraw.Plugin.Log?.Error(ex, $"[PlanSerializer] Error during plan serialization for '{planName}'.");
-                return null;
+                return null; // Return null if serialization fails
             }
         }
 
@@ -95,7 +125,8 @@ namespace AetherDraw.Serialization
         /// <returns>A DeserializedPlan object containing the plan details, or null if deserialization fails.</returns>
         public static DeserializedPlan? DeserializePlanFromBytes(byte[] planDataBytes)
         {
-            if (planDataBytes == null || planDataBytes.Length < FileSignature.Length + sizeof(uint)) // Basic check for minimum size
+            // Basic validation of input data
+            if (planDataBytes == null || planDataBytes.Length < FileSignature.Length + sizeof(uint))
             {
                 AetherDraw.Plugin.Log?.Error("[PlanSerializer] Input plan data is null or too short to be valid.");
                 return null;
@@ -103,10 +134,11 @@ namespace AetherDraw.Serialization
             AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Starting deserialization of plan data. Size: {planDataBytes.Length} bytes.");
 
             using (var memoryStream = new MemoryStream(planDataBytes))
-            using (var reader = new BinaryReader(memoryStream, Encoding.UTF8, false))
+            using (var reader = new BinaryReader(memoryStream, Encoding.UTF8, false)) // Use UTF-8 for string encoding
             {
                 try
                 {
+                    // Verify file signature
                     byte[] signatureFromFile = reader.ReadBytes(FileSignature.Length);
                     if (!signatureFromFile.SequenceEqual(FileSignature))
                     {
@@ -114,56 +146,60 @@ namespace AetherDraw.Serialization
                         return null;
                     }
 
+                    // Read and verify plan format version
                     uint fileFormatVersionRead = reader.ReadUInt32();
                     if (fileFormatVersionRead > CurrentPlanFormatVersion)
                     {
                         AetherDraw.Plugin.Log?.Error($"[PlanSerializer] Unsupported plan file format version. File version: {fileFormatVersionRead}, Max supported: {CurrentPlanFormatVersion}.");
                         return null;
                     }
-                    // Older versions might require upgrade logic if format changes significantly.
-                    // For now, we accept same or older versions if DrawableSerializer handles its own versioning robustly.
+                    // Future: Add logic here to handle older versions if backward compatibility requires data transformation.
                     AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] File Format Version: {fileFormatVersionRead}");
 
-
+                    // Read AetherDraw version that saved the plan
                     ushort progMajor = reader.ReadUInt16();
                     ushort progMinor = reader.ReadUInt16();
                     ushort progPatch = reader.ReadUInt16();
                     AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Plan saved with AetherDraw Version: {progMajor}.{progMinor}.{progPatch}");
 
+                    // Read plan name and number of pages
                     string planName = reader.ReadString();
                     AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Plan Name: '{planName}'");
 
                     int numberOfPages = reader.ReadInt32();
-                    if (numberOfPages < 0 || numberOfPages > 1000) // Sanity check for page count
+                    // Sanity check for page count to prevent issues with corrupted files
+                    if (numberOfPages < 0 || numberOfPages > 1000)
                     {
                         AetherDraw.Plugin.Log?.Error($"[PlanSerializer] Invalid number of pages in plan: {numberOfPages}. File may be corrupt.");
                         return null;
                     }
                     AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Number of Pages in Plan: {numberOfPages}");
 
-                    var loadedPages = new List<MainWindow.PageData>();
+                    var loadedPages = new List<PageData>(); // Changed to use Core.PageData
                     for (int i = 0; i < numberOfPages; i++)
                     {
                         AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Deserializing page index {i}.");
-                        string pageName = reader.ReadString();
-                        int pageDataLength = reader.ReadInt32();
+                        string pageName = reader.ReadString(); // Page name
+                        int pageDataLength = reader.ReadInt32(); // Length of serialized drawables for this page
 
-                        if (pageDataLength < 0 || pageDataLength > memoryStream.Length - memoryStream.Position) // Sanity check
+                        // Sanity check for page data length
+                        if (pageDataLength < 0 || pageDataLength > memoryStream.Length - memoryStream.Position)
                         {
                             AetherDraw.Plugin.Log?.Error($"[PlanSerializer] Invalid page data length ({pageDataLength} bytes) for page '{pageName}'. File may be corrupt.");
                             return null;
                         }
-                        byte[] pageDrawablesData = reader.ReadBytes(pageDataLength);
+                        byte[] pageDrawablesData = reader.ReadBytes(pageDataLength); // Serialized drawables data
 
+                        // Deserialize drawables for the page
                         List<BaseDrawable> drawables = DrawableSerializer.DeserializePageFromBytes(pageDrawablesData);
-                        // DeserializePageFromBytes handles its own versioning and error logging for page data.
-                        // If it returns an empty list due to error, we still add the page structure.
 
-                        loadedPages.Add(new MainWindow.PageData { Name = pageName, Drawables = drawables ?? new List<BaseDrawable>() });
+                        // Create PageData object (Core.PageData)
+                        loadedPages.Add(new PageData { Name = pageName, Drawables = drawables ?? new List<BaseDrawable>() });
                         AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Page '{pageName}' deserialized with {(drawables?.Count ?? 0)} drawables.");
                     }
 
                     AetherDraw.Plugin.Log?.Info($"[PlanSerializer] Plan '{planName}' deserialized successfully with {loadedPages.Count} pages.");
+                    // Return the fully deserialized plan
                     return new DeserializedPlan
                     {
                         PlanName = planName,

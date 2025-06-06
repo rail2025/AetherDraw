@@ -1,4 +1,5 @@
 // AetherDraw/DrawingLogic/BaseDrawable.cs
+using System; // Added for Guid
 using System.Numerics;
 using ImGuiNET; // For ImDrawListPtr in existing Draw method
 using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
@@ -8,6 +9,12 @@ namespace AetherDraw.DrawingLogic
 {
     public abstract class BaseDrawable
     {
+        /// <summary>
+        /// Gets the Unique Identifier for this drawable object.
+        /// It is assigned once upon creation.
+        /// </summary>
+        public Guid UniqueId { get; private set; }
+
         public DrawMode ObjectDrawMode { get; protected set; }
         public Vector4 Color { get; set; }
         public float Thickness { get; set; }
@@ -15,6 +22,15 @@ namespace AetherDraw.DrawingLogic
         public bool IsPreview { get; set; }
         public bool IsSelected { get; set; } = false;
         public bool IsHovered { get; set; } = false;
+
+        /// <summary>
+        /// Protected constructor for BaseDrawable.
+        /// Initializes the UniqueId for the drawable object.
+        /// </summary>
+        protected BaseDrawable()
+        {
+            this.UniqueId = Guid.NewGuid();
+        }
 
         // Abstract method for ImGui drawing
         public abstract void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen);
@@ -30,11 +46,12 @@ namespace AetherDraw.DrawingLogic
 
         protected void CopyBasePropertiesTo(BaseDrawable target)
         {
+            // UniqueId is not copied; the clone gets its own new UniqueId upon its construction.
             target.ObjectDrawMode = this.ObjectDrawMode;
             target.Color = this.Color;
             target.Thickness = this.Thickness;
             target.IsFilled = this.IsFilled;
-            target.IsPreview = false;
+            target.IsPreview = false; // Cloned objects are generally not previews by default
             target.IsSelected = false;
             target.IsHovered = false;
         }

@@ -78,7 +78,7 @@ namespace AetherDraw.DrawingLogic
             var pathBuilder = new PathBuilder();
             var firstPoint = PointsRelative[0];
 
-            
+            // Corrected MoveTo: Use new PointF
             pathBuilder.MoveTo(new PointF(
                 (firstPoint.X * currentGlobalScale) + canvasOriginInOutputImage.X,
                 (firstPoint.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
@@ -87,7 +87,7 @@ namespace AetherDraw.DrawingLogic
             for (int i = 1; i < PointsRelative.Count; i++)
             {
                 var currentPoint = PointsRelative[i];
-               
+                // Corrected LineTo: Use new PointF
                 pathBuilder.LineTo(new PointF(
                     (currentPoint.X * currentGlobalScale) + canvasOriginInOutputImage.X,
                     (currentPoint.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
@@ -95,7 +95,7 @@ namespace AetherDraw.DrawingLogic
             }
 
             IPath path = pathBuilder.Build();
-            
+            // Corrected Pen instantiation: Use Pens.Solid()
             context.Draw(Pens.Solid(imageSharpColor, scaledThickness), path);
         }
 
