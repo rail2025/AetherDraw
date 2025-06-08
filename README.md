@@ -2,16 +2,12 @@
 <br>
 ![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)
  <br>
-
 <br>
 ![draw area example](https://github.com/user-attachments/assets/85fa34e4-aa57-494c-8f58-34ffd09c4101)
+<br>
+![export example](https://github.com/user-attachments/assets/93cbb47b-b749-4409-a878-2e76c73756a4)
 
 <br>
-![draw example small](https://github.com/user-attachments/assets/497a7529-5933-4ce4-9881-3418497e2a7d)
-
-<br>
-![export example](https://github.com/user-attachments/assets/b78d5b1e-19e2-41da-b15d-4f79882d2ca0)
-
 
 open with /aetherdraw  <br>
 add to repo, (if not showing on experimental tab, check the get testing builds at the top). If still not showing add manually: <br>
