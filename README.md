@@ -7,7 +7,10 @@
 <br>
 ![export example](https://github.com/user-attachments/assets/93cbb47b-b749-4409-a878-2e76c73756a4)
 
+<br>![save plan example](https://github.com/user-attachments/assets/4033928c-234c-4e07-a56e-db7506633b6b)
+
 <br>
+
 
 open with /aetherdraw  <br>
 add to repo, (if not showing on experimental tab, check the get testing builds at the top). If still not showing add manually: <br>
