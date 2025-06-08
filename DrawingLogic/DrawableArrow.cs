@@ -1,37 +1,44 @@
 // AetherDraw/DrawingLogic/DrawableArrow.cs
 using System;
+using System.Drawing; // Required for RectangleF
 using System.Numerics;
-using ImGuiNET; // For ImDrawListPtr in existing Draw method
-using Dalamud.Interface.Utility; // For ImGuiHelpers
+using ImGuiNET;
+using Dalamud.Interface.Utility;
 
-// ImageSharp using statements
-using SixLabors.ImageSharp; // For PointF, Color, Matrix3x2 (from System.Numerics)
-using SixLabors.ImageSharp.PixelFormats; // For Rgba32 if needed directly
-using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
-using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens, IPath
-using SixLabors.ImageSharp.Drawing.Processing; // For Fill, Draw extension methods
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.Processing;
 
 namespace AetherDraw.DrawingLogic
 {
     public class DrawableArrow : BaseDrawable
     {
-        // Logical, unscaled start point of the arrow shaft. Also the pivot for rotation.
+        /// <summary>
+        /// The logical, unscaled start point of the arrow shaft. Also the pivot for rotation.
+        /// </summary>
         public Vector2 StartPointRelative { get; set; }
-        // Logical, unscaled end point of the arrow shaft (before arrowhead extension).
+        /// <summary>
+        /// The logical, unscaled end point of the arrow shaft.
+        /// </summary>
         public Vector2 EndPointRelative { get; set; }
-        // Rotation angle in radians around StartPointRelative.
+        /// <summary>
+        /// The rotation angle in radians around the StartPointRelative.
+        /// </summary>
         public float RotationAngle { get; set; } = 0f;
 
-        // Offset determining arrowhead length from the shaft's thickness.
+        /// <summary>
+        /// The offset determining the arrowhead's length based on the shaft's thickness.
+        /// </summary>
         public float ArrowheadLengthOffset { get; set; }
-        // Scale factor determining arrowhead width from the shaft's thickness.
+        /// <summary>
+        /// The scale factor determining the arrowhead's width based on the shaft's thickness.
+        /// </summary>
         public float ArrowheadWidthScale { get; set; }
 
-        public static readonly float DefaultArrowheadLengthFactorFromThickness = 2.5f;
-        public static readonly float DefaultArrowheadWidthFactorFromThickness = 1.5f;
-        // Minimum absolute dimension for arrowhead components to ensure visibility.
+        public static readonly float DefaultArrowheadLengthFactorFromThickness = 5.0f;
+        public static readonly float DefaultArrowheadWidthFactorFromThickness = 3.0f;
         public static readonly float MinArrowheadAbsoluteDim = 5f;
-
 
         public DrawableArrow(Vector2 startPointRelative, Vector4 color, float unscaledThickness)
         {
@@ -39,53 +46,19 @@ namespace AetherDraw.DrawingLogic
             this.StartPointRelative = startPointRelative;
             this.EndPointRelative = startPointRelative;
             this.Color = color;
-            this.Thickness = Math.Max(1f, unscaledThickness); // Ensure minimum thickness
-            this.IsFilled = true; // Arrowhead is filled.
+            this.Thickness = Math.Max(1f, unscaledThickness);
+            this.IsFilled = true; // Arrowhead is always filled.
             this.IsPreview = true;
-            this.RotationAngle = 0f;
 
-            // Initialize arrowhead dimensions based on thickness
             this.ArrowheadLengthOffset = Math.Max(MinArrowheadAbsoluteDim, this.Thickness * DefaultArrowheadLengthFactorFromThickness);
             this.ArrowheadWidthScale = DefaultArrowheadWidthFactorFromThickness;
         }
 
-        // Updates the arrow's end point during preview drawing.
         public override void UpdatePreview(Vector2 newPointRelative)
         {
             this.EndPointRelative = newPointRelative;
         }
 
-        // Gets the vector representing the arrow's shaft in logical, unrotated space (from StartPoint to EndPoint).
-        public Vector2 GetShaftVectorLogical() => EndPointRelative - StartPointRelative;
-
-        // Calculates the geometric points of the arrowhead in local space relative to the shaft's end point.
-        // shaftEndPointLocal: The end point of the shaft, treated as (0,0) for this calculation if shaftDirectionLocal is relative to it.
-        //                     More accurately, these points are offsets from shaftEndPointLocal.
-        // shaftDirectionLogical: Normalized direction of the shaft.
-        // currentThicknessLogical: The logical thickness of the shaft.
-        // Returns points of the arrowhead: (visualTip, baseVertex1, baseVertex2), all relative to shaftEndPointLogical.
-        public (Vector2 visualTip, Vector2 base1, Vector2 base2) GetArrowheadGeometricPoints(
-            Vector2 shaftEndPointLocal, // This is actually the shaft vector (end - start) in local unrotated space
-            Vector2 shaftDirectionLogical,
-            float currentThicknessLogical
-            )
-        {
-            // Arrowhead dimensions are based on properties and shaft thickness
-            float actualArrowheadLength = Math.Max(MinArrowheadAbsoluteDim, this.ArrowheadLengthOffset);
-            float actualArrowheadHalfWidth = Math.Max(MinArrowheadAbsoluteDim / 2f, (currentThicknessLogical * this.ArrowheadWidthScale) / 2f);
-
-            // Tip of the arrowhead extends beyond the shaft's end point
-            Vector2 visualTipPoint = shaftEndPointLocal + shaftDirectionLogical * actualArrowheadLength;
-
-            // Base vertices of the arrowhead are perpendicular to the shaft direction at the shaft's end point
-            Vector2 perpendicularOffset = new Vector2(shaftDirectionLogical.Y, -shaftDirectionLogical.X) * actualArrowheadHalfWidth;
-            Vector2 basePoint1 = shaftEndPointLocal + perpendicularOffset;
-            Vector2 basePoint2 = shaftEndPointLocal - perpendicularOffset;
-
-            return (visualTipPoint, basePoint1, basePoint2);
-        }
-
-        // Draws the arrow on the ImGui canvas.
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
             var displayColorVec = IsSelected ? new Vector4(1, 1, 0, 1) : (IsHovered ? new Vector4(0, 1, 1, 1) : Color);
@@ -95,44 +68,30 @@ namespace AetherDraw.DrawingLogic
             if (IsSelected || IsHovered) scaledShaftThickness += 2f * ImGuiHelpers.GlobalScale;
 
             Vector2 shaftStartLogical = StartPointRelative;
-            Vector2 shaftEndLogical = EndPointRelative; // End of shaft line segment
-            Vector2 shaftVectorLogicalUnrotated = shaftEndLogical - shaftStartLogical; // Shaft vector before rotation
+            Vector2 shaftEndLogical = EndPointRelative;
+            Vector2 shaftVectorLogicalUnrotated = shaftEndLogical - shaftStartLogical;
 
-            // Transformation matrix: Rotates around StartPointRelative, then translates by StartPointRelative, scales, then translates to screen.
-            Matrix3x2 transform =
-                Matrix3x2.CreateRotation(RotationAngle) * Matrix3x2.CreateTranslation(shaftStartLogical) * Matrix3x2.CreateScale(ImGuiHelpers.GlobalScale) *
-                Matrix3x2.CreateTranslation(canvasOriginScreen);
-
-            // Transform shaft points. Local start is (0,0), local end is shaftVectorLogicalUnrotated.
-            Vector2 screenShaftStart = Vector2.Transform(Vector2.Zero, transform);
-            Vector2 screenShaftEnd = Vector2.Transform(shaftVectorLogicalUnrotated, transform);
-
+            // If the arrow is too small to see, just draw a dot.
             if (IsPreview && shaftVectorLogicalUnrotated.LengthSquared() < (0.5f * 0.5f))
             {
-                drawList.AddCircleFilled(screenShaftStart, scaledShaftThickness / 2f + (2f * ImGuiHelpers.GlobalScale), displayColor);
+                drawList.AddCircleFilled((shaftStartLogical * ImGuiHelpers.GlobalScale) + canvasOriginScreen, scaledShaftThickness / 2f + (2f * ImGuiHelpers.GlobalScale), displayColor);
                 return;
             }
 
-            drawList.AddLine(screenShaftStart, screenShaftEnd, displayColor, scaledShaftThickness);
+            // Get all vertices of the arrow polygon.
+            var vertices = GetTransformedVertices();
 
-            Vector2 shaftDirLogicalUnrotated = shaftVectorLogicalUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(shaftVectorLogicalUnrotated) : new Vector2(0, -1);
+            // Scale and translate the vertices to screen coordinates.
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                vertices[i] = (vertices[i] * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
+            }
 
-            // Get arrowhead points in local space (relative to StartPointRelative, unrotated)
-            var (ahTipLocal, ahBase1Local, ahBase2Local) = GetArrowheadGeometricPoints(
-                shaftVectorLogicalUnrotated, // This is the shaft's end in local unrotated space relative to start
-                shaftDirLogicalUnrotated,
-                Thickness // Use logical thickness for geometry
-            );
-
-            // Transform arrowhead points using the same matrix
-            Vector2 screenAhTip = Vector2.Transform(ahTipLocal, transform);
-            Vector2 screenAhBase1 = Vector2.Transform(ahBase1Local, transform);
-            Vector2 screenAhBase2 = Vector2.Transform(ahBase2Local, transform);
-
-            drawList.AddTriangleFilled(screenAhTip, screenAhBase1, screenAhBase2, displayColor);
+            // Draw the arrow components.
+            drawList.AddLine(vertices[0], vertices[1], displayColor, scaledShaftThickness); // Shaft
+            drawList.AddTriangleFilled(vertices[2], vertices[3], vertices[4], displayColor); // Arrowhead
         }
 
-        // Draws the arrow to an ImageSharp context for image export.
         public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
         {
             var imageSharpColor = SixLabors.ImageSharp.Color.FromRgba(
@@ -141,85 +100,67 @@ namespace AetherDraw.DrawingLogic
             );
             float scaledShaftThickness = Math.Max(1f, this.Thickness * currentGlobalScale);
 
-            Vector2 shaftStartLogical = this.StartPointRelative;
-            Vector2 shaftEndLogical = this.EndPointRelative;
-            Vector2 shaftVectorLogicalUnrotated = shaftEndLogical - shaftStartLogical;
-
-            // If the arrow is degenerate (e.g., during preview before dragging), don't draw to image.
-            if (shaftVectorLogicalUnrotated.LengthSquared() < (0.1f * 0.1f) / (currentGlobalScale * currentGlobalScale) && this.IsPreview)
-            {
-                // Optionally draw a small dot for extremely small arrows if not a preview
+            if ((this.EndPointRelative - this.StartPointRelative).LengthSquared() < 0.01f && this.IsPreview)
                 return;
+
+            // Get the final vertex positions for drawing.
+            var vertices = GetTransformedVertices();
+
+            // Convert to ImageSharp points and apply canvas origin offset.
+            var imageSharpPoints = new SixLabors.ImageSharp.PointF[vertices.Length];
+            var transform = Matrix3x2.CreateScale(currentGlobalScale) * Matrix3x2.CreateTranslation(canvasOriginInOutputImage);
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                var transformedVec = Vector2.Transform(vertices[i], transform);
+                imageSharpPoints[i] = new SixLabors.ImageSharp.PointF(transformedVec.X, transformedVec.Y);
             }
 
-            // Transformation matrix:
-            // 1. Rotate around local origin (0,0) by RotationAngle.
-            // 2. Translate by StartPointRelative to position the rotated shape in logical space.
-            // 3. Scale by currentGlobalScale.
-            // 4. Translate by canvasOriginInOutputImage to place on the final image.
-            Matrix3x2 transformMatrix =
-                Matrix3x2.CreateRotation(this.RotationAngle) * Matrix3x2.CreateTranslation(shaftStartLogical) * Matrix3x2.CreateScale(currentGlobalScale) * Matrix3x2.CreateTranslation(canvasOriginInOutputImage);
+            // Draw shaft line.
+            context.DrawLine(imageSharpColor, scaledShaftThickness, imageSharpPoints[0], imageSharpPoints[1]);
 
-            // Transform shaft points. Shaft starts at local (0,0) and ends at shaftVectorLogicalUnrotated.
-            PointF screenShaftStart = PointF.Transform(Vector2.Zero, transformMatrix);
-            PointF screenShaftEnd = PointF.Transform(shaftVectorLogicalUnrotated, transformMatrix);
-
-            // Draw shaft line
-            var shaftPathBuilder = new PathBuilder();
-            shaftPathBuilder.AddLine(screenShaftStart, screenShaftEnd);
-            context.Draw(Pens.Solid(imageSharpColor, scaledShaftThickness), shaftPathBuilder.Build());
-
-            // Calculate and transform arrowhead points
-            Vector2 shaftDirLogicalUnrotated = shaftVectorLogicalUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(shaftVectorLogicalUnrotated) : new Vector2(0, -1); // Default up if zero length
-
-            // Get arrowhead points in local space (relative to StartPointRelative, unrotated)
-            var (ahTipLocal, ahBase1Local, ahBase2Local) = GetArrowheadGeometricPoints(
-                shaftVectorLogicalUnrotated, // End of shaft in local unrotated space (relative to StartPointRelative)
-                shaftDirLogicalUnrotated,
-                this.Thickness // Use logical thickness for geometry calculation
-            );
-
-            // Transform arrowhead points using the same matrix
-            PointF screenAhTip = PointF.Transform(ahTipLocal, transformMatrix);
-            PointF screenAhBase1 = PointF.Transform(ahBase1Local, transformMatrix);
-            PointF screenAhBase2 = PointF.Transform(ahBase2Local, transformMatrix);
-
-            var arrowheadPathBuilder = new PathBuilder();
-            arrowheadPathBuilder.AddLines(new PointF[] { screenAhTip, screenAhBase1, screenAhBase2 });
-            arrowheadPathBuilder.CloseFigure(); // Make it a triangle
-            context.Fill(imageSharpColor, arrowheadPathBuilder.Build()); // Arrowhead is always filled
+            // Draw arrowhead triangle.
+            var arrowheadPath = new PathBuilder().AddLines(new[] { imageSharpPoints[2], imageSharpPoints[3], imageSharpPoints[4] }).CloseFigure().Build();
+            context.Fill(imageSharpColor, arrowheadPath);
         }
 
-        // Performs hit detection for the arrow in logical (unscaled) coordinates.
+        public override System.Drawing.RectangleF GetBoundingBox()
+        {
+            // Get the final absolute positions of all defining vertices.
+            var vertices = GetTransformedVertices();
+
+            float minX = vertices[0].X, minY = vertices[0].Y, maxX = vertices[0].X, maxY = vertices[0].Y;
+
+            // The shaft start (vertices[0]) is already included. We check the other 4 points.
+            for (int i = 1; i < vertices.Length; i++)
+            {
+                minX = MathF.Min(minX, vertices[i].X);
+                minY = MathF.Min(minY, vertices[i].Y);
+                maxX = MathF.Max(maxX, vertices[i].X);
+                maxY = MathF.Max(maxY, vertices[i].Y);
+            }
+
+            return new System.Drawing.RectangleF(minX, minY, maxX - minX, maxY - minY);
+        }
+
         public override bool IsHit(Vector2 queryPointCanvasRelative, float unscaledHitThreshold = 5.0f)
         {
-            // Transform query point into the arrow's local unrotated space (StartPointRelative is origin)
+            // Transform query point into the arrow's local unrotated space.
             Vector2 localQueryPoint = Vector2.Transform(queryPointCanvasRelative - this.StartPointRelative, Matrix3x2.CreateRotation(-this.RotationAngle));
 
             float effectiveHitRangeShaft = unscaledHitThreshold + (this.Thickness / 2f);
-            Vector2 localShaftStart = Vector2.Zero; // StartPointRelative is the local origin
-            Vector2 localShaftEnd = this.EndPointRelative - this.StartPointRelative; // EndPoint in local unrotated space
+            Vector2 localShaftStart = Vector2.Zero;
+            Vector2 localShaftEnd = this.EndPointRelative - this.StartPointRelative;
 
-            // Check hit on shaft
+            // Check hit on shaft.
             if (HitDetection.DistancePointToLineSegment(localQueryPoint, localShaftStart, localShaftEnd) <= effectiveHitRangeShaft) return true;
 
-            // Check hit on arrowhead (which is filled)
+            // Check hit on arrowhead triangle.
             Vector2 shaftDirLocal = localShaftEnd.LengthSquared() > 0.001f ? Vector2.Normalize(localShaftEnd) : new Vector2(0, -1);
-            var (ahTip, ahB1, ahB2) = GetArrowheadGeometricPoints(localShaftEnd, shaftDirLocal, this.Thickness);
+            var (ahTip, ahB1, ahB2) = GetArrowheadGeometricPoints(localShaftEnd, shaftDirLocal);
 
-            // Check if point is inside the arrowhead triangle (ahTip, ahB1, ahB2 are relative to localShaftStart i.e. Vector2.Zero here)
-            if (HitDetection.PointInTriangle(localQueryPoint, ahTip, ahB1, ahB2)) return true;
-
-            // Optional: Add proximity check to arrowhead edges if more generous hit is needed for outline-like selection
-            // float edgeProximity = unscaledHitThreshold + Thickness * 0.25f; 
-            // if (HitDetection.DistancePointToLineSegment(localQueryPoint, ahTip, ahB1) <= edgeProximity) return true;
-            // if (HitDetection.DistancePointToLineSegment(localQueryPoint, ahTip, ahB2) <= edgeProximity) return true;
-            // if (HitDetection.DistancePointToLineSegment(localQueryPoint, ahB1, ahB2) <= edgeProximity) return true;
-
-            return false;
+            return HitDetection.PointInTriangle(localQueryPoint, ahTip, ahB1, ahB2);
         }
 
-        // Creates a clone of this drawable arrow.
         public override BaseDrawable Clone()
         {
             var newArrow = new DrawableArrow(this.StartPointRelative, this.Color, this.Thickness)
@@ -233,14 +174,12 @@ namespace AetherDraw.DrawingLogic
             return newArrow;
         }
 
-        // Translates the arrow by a given delta in logical coordinates.
         public override void Translate(Vector2 delta)
         {
             this.StartPointRelative += delta;
             this.EndPointRelative += delta;
         }
 
-        // Sets the start point and adjusts the end point to maintain the shaft vector.
         public void SetStartPoint(Vector2 newStartLogical)
         {
             Vector2 diff = newStartLogical - this.StartPointRelative;
@@ -248,10 +187,49 @@ namespace AetherDraw.DrawingLogic
             this.EndPointRelative += diff;
         }
 
-        // Sets the end point directly (relative to the unrotated start point).
         public void SetEndPoint(Vector2 newEndLogical)
         {
             this.EndPointRelative = newEndLogical;
+        }
+
+        private (Vector2 visualTip, Vector2 base1, Vector2 base2) GetArrowheadGeometricPoints(Vector2 shaftEnd, Vector2 shaftDir)
+        {
+            float actualArrowheadLength = Math.Max(MinArrowheadAbsoluteDim, this.ArrowheadLengthOffset);
+            float actualArrowheadHalfWidth = Math.Max(MinArrowheadAbsoluteDim / 2f, (this.Thickness * this.ArrowheadWidthScale) / 2f);
+
+            Vector2 visualTipPoint = shaftEnd + shaftDir * actualArrowheadLength;
+
+            Vector2 perpendicularOffset = new Vector2(shaftDir.Y, -shaftDir.X) * actualArrowheadHalfWidth;
+            Vector2 basePoint1 = shaftEnd + perpendicularOffset;
+            Vector2 basePoint2 = shaftEnd - perpendicularOffset;
+
+            return (visualTipPoint, basePoint1, basePoint2);
+        }
+
+        private Vector2[] GetTransformedVertices()
+        {
+            Vector2 shaftStart = this.StartPointRelative;
+            Vector2 shaftEnd = this.EndPointRelative;
+            Vector2 shaftVector = shaftEnd - shaftStart;
+
+            if (shaftVector.LengthSquared() < 0.01f)
+                return new Vector2[] { shaftStart, shaftStart, shaftStart, shaftStart, shaftStart };
+
+            Vector2 shaftDir = Vector2.Normalize(shaftVector);
+
+            // Get arrowhead points relative to the shaft end
+            var (ahTip, ahB1, ahB2) = GetArrowheadGeometricPoints(shaftVector, shaftDir);
+
+            // Create the transformation matrix for rotation and positioning
+            Matrix3x2 transform = Matrix3x2.CreateRotation(this.RotationAngle) * Matrix3x2.CreateTranslation(shaftStart);
+
+            return new Vector2[] {
+                Vector2.Transform(Vector2.Zero, transform), // Final Shaft Start
+                Vector2.Transform(shaftVector, transform), // Final Shaft End
+                Vector2.Transform(ahTip, transform), // Final Arrowhead Tip
+                Vector2.Transform(ahB1, transform), // Final Arrowhead Base 1
+                Vector2.Transform(ahB2, transform)  // Final Arrowhead Base 2
+            };
         }
     }
 }

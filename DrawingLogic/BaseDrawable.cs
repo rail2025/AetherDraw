@@ -1,9 +1,9 @@
 // AetherDraw/DrawingLogic/BaseDrawable.cs
-using System; // Added for Guid
+using System;
+using System.Drawing; // Required for RectangleF
 using System.Numerics;
-using ImGuiNET; // For ImDrawListPtr in existing Draw method
-using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
-// Potentially SixLabors.ImageSharp and SixLabors.ImageSharp.PixelFormats if needed directly here later
+using ImGuiNET;
+using SixLabors.ImageSharp.Processing;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -32,11 +32,18 @@ namespace AetherDraw.DrawingLogic
             this.UniqueId = Guid.NewGuid();
         }
 
-        // Abstract method for ImGui drawing
+        // Abstract method for ImGui drawing.
         public abstract void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen);
 
-        // NEW abstract method for drawing to an ImageSharp context
+        // Abstract method for drawing to an ImageSharp context.
         public abstract void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale);
+
+        /// <summary>
+        /// A required method for all shapes to calculate and return their axis-aligned bounding box.
+        /// The bounding box is the smallest non-rotated rectangle that completely encloses the shape.
+        /// </summary>
+        /// <returns>A RectangleF representing the bounding box in logical (unscaled) coordinates.</returns>
+        public abstract RectangleF GetBoundingBox();
 
         public abstract bool IsHit(Vector2 queryPointOrEraserCenterRelative, float hitThresholdOrEraserRadius = 5.0f);
         public abstract BaseDrawable Clone();

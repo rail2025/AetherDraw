@@ -2,22 +2,15 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Dalamud.Interface.Windowing; // For Window base class
-using ImGuiNET;                    // For ImGui UI calls
-using System.Linq;                 // For LINQ operations like .Any(), .OrderBy()
-using AetherDraw.DrawingLogic; // For BaseDrawable, DrawMode, TextureManager etc.
-using AetherDraw.Core;         // For PageManager, PlanIOManager, UndoManager, CanvasController etc.
-using AetherDraw.UI;           // For ToolbarDrawer
-using Dalamud.Interface.Utility;    // For ImGuiHelpers
-using Dalamud.Interface.Utility.Raii; // For ImRaii (RAII wrappers for ImGui)
-
-// ImageSharp usings are less critical here now but retained for any minor utilities or type refs.
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Drawing;
-using SixLabors.ImageSharp.Drawing.Processing;
-using SixLabors.Fonts;
+using Dalamud.Interface.Windowing;
+using ImGuiNET;
+using System.Linq;
+using AetherDraw.DrawingLogic;
+using AetherDraw.Core;
+using AetherDraw.UI;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+using Dalamud.Utility;
 
 namespace AetherDraw.Windows
 {
@@ -30,38 +23,31 @@ namespace AetherDraw.Windows
     /// </summary>
     public class MainWindow : Window, IDisposable
     {
-        // Core plugin instance and configuration, providing access to global settings and services.
+        // Core plugin instance and configuration
         private readonly Plugin plugin;
         private readonly Configuration configuration;
 
-        // Specialized managers, controllers, and UI drawers for different functionalities.
+        // Specialized managers, controllers, and UI drawers
         private readonly ShapeInteractionHandler shapeInteractionHandler;
-        private readonly DrawingLogic.InPlaceTextEditor inPlaceTextEditor; // Fully qualified for clarity
+        private readonly DrawingLogic.InPlaceTextEditor inPlaceTextEditor;
         private readonly CanvasController canvasController;
         private readonly UndoManager undoManager;
         private readonly PageManager pageManager;
         private readonly PlanIOManager planIOManager;
-        private readonly ToolbarDrawer toolbarDrawer; // Handles drawing the left-side toolbar
+        private readonly ToolbarDrawer toolbarDrawer;
 
-        // UI Interaction State, owned by MainWindow as it pertains to the overall window context.
+        // UI Interaction State
         private BaseDrawable? hoveredDrawable = null;
         private List<BaseDrawable> selectedDrawables = new List<BaseDrawable>();
         private List<BaseDrawable> clipboard = new List<BaseDrawable>();
 
-        // Current Drawing Tool Settings, owned by MainWindow and passed to/updated by ToolbarDrawer via delegates.
+        // Current Drawing Tool Settings
         private DrawMode currentDrawMode = DrawMode.Pen;
         private Vector4 currentBrushColor;
         private float currentBrushThickness;
         private bool currentShapeFilled = false;
 
-        /// <summary>
-        /// Gets the scaled size of the grid cells on the drawing canvas.
-        /// Base size is 40f, scaled by ImGui's global scale.
-        /// </summary>
         private float ScaledCanvasGridSize => 40f * ImGuiHelpers.GlobalScale;
-
-        // currentCanvasDrawSize stores the pixel dimensions of the drawable canvas area.
-        // Updated each frame in DrawCanvas() and used for image export.
         private Vector2 currentCanvasDrawSize;
 
         /// <summary>
@@ -75,34 +61,20 @@ namespace AetherDraw.Windows
             this.configuration = plugin.Configuration;
             AetherDraw.Plugin.Log?.Debug("[MainWindow] Initializing...");
 
-            // Instantiate core functional components.
             this.undoManager = new UndoManager();
             this.pageManager = new PageManager();
-
-            // InPlaceTextEditor now needs UndoManager and PageManager
             this.inPlaceTextEditor = new DrawingLogic.InPlaceTextEditor(this.undoManager, this.pageManager);
-
-            // ShapeInteractionHandler now needs UndoManager and PageManager
             this.shapeInteractionHandler = new ShapeInteractionHandler(this.undoManager, this.pageManager);
 
-
-            // Instantiate PlanIOManager, providing its dependencies.
             this.planIOManager = new PlanIOManager(
-                this.pageManager,
-                this.inPlaceTextEditor, // This instance is now correctly initialized
-                Plugin.PluginInterface,
-                () => this.ScaledCanvasGridSize,
-                this.GetLayerPriority,
-                () => this.pageManager.GetCurrentPageIndex()
+                this.pageManager, this.inPlaceTextEditor, Plugin.PluginInterface,
+                () => this.ScaledCanvasGridSize, this.GetLayerPriority, () => this.pageManager.GetCurrentPageIndex()
             );
-            // Subscribe to PlanIOManager's event for successful plan loads.
             this.planIOManager.OnPlanLoadSuccess += HandleSuccessfulPlanLoad;
 
-            // Instantiate ToolbarDrawer, passing delegates for MainWindow's state and action methods.
             this.toolbarDrawer = new ToolbarDrawer(
                 () => this.currentDrawMode, (newMode) => this.currentDrawMode = newMode,
-                this.shapeInteractionHandler,
-                this.inPlaceTextEditor, // This instance is now correctly initialized
+                this.shapeInteractionHandler, this.inPlaceTextEditor,
                 this.PerformCopySelected, this.PerformPasteCopied,
                 this.PerformClearAll, this.PerformUndo,
                 () => this.currentShapeFilled, (isFilled) => this.currentShapeFilled = isFilled,
@@ -111,36 +83,24 @@ namespace AetherDraw.Windows
                 () => this.currentBrushColor, (newColor) => this.currentBrushColor = newColor
             );
 
-            // Instantiate CanvasController, passing UndoManager and PageManager.
             this.canvasController = new CanvasController(
-                this.undoManager,
-                this.pageManager,
-                () => currentDrawMode,
-                (newMode) => currentDrawMode = newMode,
-                () => currentBrushColor,
-                () => currentBrushThickness,
-                () => currentShapeFilled,
-                selectedDrawables,
-                () => hoveredDrawable,
-                (newHovered) => hoveredDrawable = newHovered,
-                this.shapeInteractionHandler,
-                this.inPlaceTextEditor, // This instance is now correctly initialized
-                this.configuration
+                this.undoManager, this.pageManager,
+                () => currentDrawMode, (newMode) => currentDrawMode = newMode,
+                () => currentBrushColor, () => currentBrushThickness, () => currentShapeFilled,
+                selectedDrawables, () => hoveredDrawable, (newHovered) => hoveredDrawable = newHovered,
+                this.shapeInteractionHandler, this.inPlaceTextEditor, this.configuration
             );
 
-            // Configure window size constraints.
             float targetMinimumWidth = 850f * 0.75f * ImGuiHelpers.GlobalScale;
             float targetMinimumHeight = 600f * ImGuiHelpers.GlobalScale;
             this.SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(targetMinimumWidth, targetMinimumHeight), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
             this.RespectCloseHotkey = true;
 
-            // Initialize brush settings from saved configuration.
             this.currentBrushColor = new Vector4(this.configuration.DefaultBrushColorR, this.configuration.DefaultBrushColorG, this.configuration.DefaultBrushColorB, this.configuration.DefaultBrushColorA);
             var initialThicknessPresets = new float[] { 1.5f, 4f, 7f, 10f };
             this.currentBrushThickness = initialThicknessPresets.Contains(this.configuration.DefaultBrushThickness)
                                             ? this.configuration.DefaultBrushThickness
                                             : initialThicknessPresets[1];
-
             undoManager.ClearHistory();
             AetherDraw.Plugin.Log?.Debug("[MainWindow] Initialization complete.");
         }
@@ -180,9 +140,7 @@ namespace AetherDraw.Windows
             {
                 if (rightPaneRaii)
                 {
-                    float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 2 +
-                                                 ImGui.GetStyle().WindowPadding.Y * 2 +
-                                                 ImGui.GetStyle().ItemSpacing.Y;
+                    float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y;
                     float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsHeight - ImGui.GetStyle().ItemSpacing.Y;
                     canvasAvailableHeight = Math.Max(canvasAvailableHeight, 50f * ImGuiHelpers.GlobalScale);
 
@@ -228,14 +186,13 @@ namespace AetherDraw.Windows
             {
                 if (!bottomBarChild) return;
 
+                // --- First Row: Page Controls ---
                 float pageButtonRowHeight = ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y;
                 using (var pageTabsChild = ImRaii.Child("PageTabsSubRegion", new Vector2(0, pageButtonRowHeight), false, ImGuiWindowFlags.HorizontalScrollbar))
                 {
                     if (pageTabsChild)
                     {
                         float tabButtonHeight = ImGui.GetFrameHeight();
-                        Vector4 activeTabColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
-
                         var currentPages = pageManager.GetAllPages();
                         int currentVisiblePageIndex = pageManager.GetCurrentPageIndex();
 
@@ -245,8 +202,7 @@ namespace AetherDraw.Windows
                             string pageName = currentPages[i].Name;
                             float pageTabWidth = ImGui.CalcTextSize(pageName).X + ImGui.GetStyle().FramePadding.X * 2.0f + (10f * ImGuiHelpers.GlobalScale);
                             pageTabWidth = Math.Max(pageTabWidth, tabButtonHeight * 1.5f);
-
-                            using (isSelectedPage ? ImRaii.PushColor(ImGuiCol.Button, activeTabColor) : null)
+                            using (isSelectedPage ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
                             {
                                 if (ImGui.Button(pageName, new Vector2(pageTabWidth, tabButtonHeight)))
                                 {
@@ -257,6 +213,15 @@ namespace AetherDraw.Windows
                         }
 
                         if (ImGui.Button("+##AddPage", new Vector2(tabButtonHeight, tabButtonHeight))) RequestAddNewPage();
+                        ImGui.SameLine(0, ImGui.GetStyle().ItemSpacing.X);
+                        float copyButtonWidth = ImGui.CalcTextSize("Copy Page").X + ImGui.GetStyle().FramePadding.X * 2.0f;
+                        if (ImGui.Button("Copy Page##CopyPageButton", new Vector2(copyButtonWidth, tabButtonHeight))) RequestCopyPage();
+                        ImGui.SameLine(0, ImGui.GetStyle().ItemSpacing.X);
+                        using (ImRaii.Disabled(!pageManager.HasCopiedPage()))
+                        {
+                            float pasteButtonWidth = ImGui.CalcTextSize("Paste Page").X + ImGui.GetStyle().FramePadding.X * 2.0f;
+                            if (ImGui.Button("Paste Page##PastePageButton", new Vector2(pasteButtonWidth, tabButtonHeight))) RequestPastePage();
+                        }
                         if (currentPages.Count > 1)
                         {
                             ImGui.SameLine(0, ImGui.GetStyle().ItemSpacing.X);
@@ -270,26 +235,17 @@ namespace AetherDraw.Windows
                     }
                 }
 
+                // --- Second Row: Action Buttons ---
                 float availableWidth = ImGui.GetContentRegionAvail().X;
                 int numberOfActionButtons = 5;
                 float totalSpacing = ImGui.GetStyle().ItemSpacing.X * (numberOfActionButtons - 1);
                 float actionButtonWidth = (availableWidth - totalSpacing) / numberOfActionButtons;
-                actionButtonWidth = Math.Max(actionButtonWidth, 80f * ImGuiHelpers.GlobalScale);
 
-                if (ImGui.Button("Load Plan##LoadPlanButton", new Vector2(actionButtonWidth, 0)))
-                {
-                    planIOManager.RequestLoadPlan();
-                }
+                if (ImGui.Button("Load Plan##LoadPlanButton", new Vector2(actionButtonWidth, 0))) planIOManager.RequestLoadPlan();
                 ImGui.SameLine();
-                if (ImGui.Button("Save Plan##SavePlanButton", new Vector2(actionButtonWidth, 0)))
-                {
-                    planIOManager.RequestSavePlan();
-                }
+                if (ImGui.Button("Save Plan##SavePlanButton", new Vector2(actionButtonWidth, 0))) planIOManager.RequestSavePlan();
                 ImGui.SameLine();
-                if (ImGui.Button("Save as Image##SaveAsImageButton", new Vector2(actionButtonWidth, 0)))
-                {
-                    planIOManager.RequestSaveImage(this.currentCanvasDrawSize);
-                }
+                if (ImGui.Button("Save as Image##SaveAsImageButton", new Vector2(actionButtonWidth, 0))) planIOManager.RequestSaveImage(this.currentCanvasDrawSize);
                 ImGui.SameLine();
                 if (ImGui.Button("Open WDIG##OpenWDIGButton", new Vector2(actionButtonWidth, 0)))
                 {
@@ -299,10 +255,7 @@ namespace AetherDraw.Windows
                 ImGui.SameLine();
                 using (ImRaii.Disabled())
                 {
-                    if (ImGui.Button("Join/Create Live##LiveRoomButton", new Vector2(actionButtonWidth, 0)))
-                    {
-                        AetherDraw.Plugin.Log?.Info("[MainWindow] 'Join/Create Live' button clicked (currently placeholder).");
-                    }
+                    if (ImGui.Button("Join/Create Live##LiveRoomButton", new Vector2(actionButtonWidth, 0))) { }
                 }
 
                 var fileError = planIOManager.LastFileDialogError;
@@ -408,6 +361,27 @@ namespace AetherDraw.Windows
             }
         }
 
+        private void RequestCopyPage()
+        {
+            pageManager.CopyCurrentPageToClipboard();
+        }
+
+        private void RequestPastePage()
+        {
+            if (!pageManager.HasCopiedPage()) return;
+            var currentDrawables = pageManager.GetCurrentPageDrawables();
+            undoManager.RecordAction(currentDrawables, "Paste Page (Overwrite)");
+            if (pageManager.PastePageFromClipboard())
+            {
+                ResetInteractionStates();
+            }
+            else
+            {
+                undoManager.Undo();
+                AetherDraw.Plugin.Log?.Warning("[MainWindow] Paste failed, reverting temporary undo recording.");
+            }
+        }
+
         private void RequestSwitchToPage(int newPageIndex)
         {
             if (pageManager.SwitchToPage(newPageIndex))
@@ -433,12 +407,9 @@ namespace AetherDraw.Windows
             {
                 var currentDrawables = pageManager.GetCurrentPageDrawables();
                 undoManager.RecordAction(currentDrawables, "Paste Drawables");
-
                 foreach (var dsel in selectedDrawables) dsel.IsSelected = false;
                 selectedDrawables.Clear();
-
                 Vector2 pasteOffsetLogical = new Vector2(15f, 15f);
-
                 foreach (var item in clipboard)
                 {
                     var newItemClone = item.Clone();
@@ -453,50 +424,26 @@ namespace AetherDraw.Windows
 
         private int GetLayerPriority(DrawMode mode)
         {
-            switch (mode)
+            return mode switch
             {
-                case DrawMode.TextTool: return 10;
+                DrawMode.TextTool => 10,
+                DrawMode.Waymark1Image or DrawMode.Waymark2Image or DrawMode.Waymark3Image or DrawMode.Waymark4Image or
+                DrawMode.WaymarkAImage or DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or
+                DrawMode.RoleTankImage or DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or
+                DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or
+                DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.TriangleImage or DrawMode.PlusImage or
+                DrawMode.StackIcon or DrawMode.SpreadIcon or DrawMode.TetherIcon or
+                DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon => 5,
 
-                case DrawMode.Waymark1Image:
-                case DrawMode.Waymark2Image:
-                case DrawMode.Waymark3Image:
-                case DrawMode.Waymark4Image:
-                case DrawMode.WaymarkAImage:
-                case DrawMode.WaymarkBImage:
-                case DrawMode.WaymarkCImage:
-                case DrawMode.WaymarkDImage:
-                case DrawMode.RoleTankImage:
-                case DrawMode.RoleHealerImage:
-                case DrawMode.RoleMeleeImage:
-                case DrawMode.RoleRangedImage:
-                    return 4;
+                DrawMode.BossImage or DrawMode.CircleAoEImage or DrawMode.DonutAoEImage or
+                DrawMode.FlareImage or DrawMode.LineStackImage or DrawMode.SpreadImage or
+                DrawMode.StackImage => 3,
 
-                case DrawMode.BossImage:
-                case DrawMode.CircleAoEImage:
-                case DrawMode.DonutAoEImage:
-                case DrawMode.FlareImage:
-                case DrawMode.LineStackImage:
-                case DrawMode.SpreadImage:
-                case DrawMode.StackImage:
-                case DrawMode.StackIcon:
-                case DrawMode.SpreadIcon:
-                case DrawMode.TetherIcon:
-                case DrawMode.BossIconPlaceholder:
-                case DrawMode.AddMobIcon:
-                    return 3;
+                DrawMode.Pen or DrawMode.StraightLine or DrawMode.Rectangle or DrawMode.Circle or
+                DrawMode.Arrow or DrawMode.Cone or DrawMode.Dash or DrawMode.Donut => 2,
 
-                case DrawMode.Pen:
-                case DrawMode.StraightLine:
-                case DrawMode.Rectangle:
-                case DrawMode.Circle:
-                case DrawMode.Arrow:
-                case DrawMode.Cone:
-                case DrawMode.Dash:
-                case DrawMode.Donut:
-                    return 2;
-
-                default: return 1;
-            }
+                _ => 1,
+            };
         }
     }
 }

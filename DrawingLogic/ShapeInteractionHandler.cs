@@ -6,56 +6,63 @@ using ImGuiNET;
 using System.Linq;
 using AetherDraw.Core;
 using Dalamud.Interface.Utility;
-using SixLabors.ImageSharp;
 
 namespace AetherDraw.DrawingLogic
 {
+    /// <summary>
+    /// Manages the state and coordinates all user interactions with shapes on the canvas,
+    /// such as selection, movement, and manipulation via handles.
+    /// It delegates shape-specific logic to the InteractionHandlerHelpers class.
+    /// </summary>
     public class ShapeInteractionHandler
     {
+        // Dependencies required from other parts of the plugin.
         private readonly UndoManager undoManager;
         private readonly PageManager pageManager;
 
+        /// <summary>
+        /// Defines the type of drag operation currently being performed by the user.
+        /// </summary>
         public enum ActiveDragType
         {
-            None, GeneralSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate,
+            None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate,
             RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize
         }
-        private ActiveDragType currentDragType = ActiveDragType.None;
-        public ActiveDragType GetCurrentDragType() => currentDragType;
 
-        private Vector2 dragStartMousePosLogical;
-        private Vector2 dragStartObjectPivotLogical;
-        private float dragStartRotationAngle;
-        private Vector2 dragStartPoint1Logical;
-        private Vector2 dragStartPoint2Logical;
-        private Vector2 dragStartSizeLogical;
-        private float dragStartValueLogical;
-        private Vector2 dragStartTextPositionLogical;
-        private Vector2 dragStartTextBoundingBoxSizeLogical;
-        private float dragStartFontSizeLogical;
+        // This holds the current state of the user's drag action.
+        public ActiveDragType currentDragType = ActiveDragType.None;
 
-        private int draggedImageResizeHandleIndex = -1;
-        private int draggedRectCornerIndex = -1;
-        private int draggedArrowHandleIndex = -1;
-        private int draggedTextResizeHandleIndex = -1;
+        #region Public State for Helpers
+        // These fields store information about a drag operation from its start,
+        // so the helper class can perform calculations correctly. They are public
+        // so the static helper class can access them.
+        public Vector2 dragStartMousePosLogical;
+        public Vector2 dragStartObjectPivotLogical;
+        public float dragStartRotationAngle;
+        public Vector2 dragStartPoint1Logical;
+        public Vector2 dragStartPoint2Logical;
+        public Vector2 dragStartSizeLogical;
+        public float dragStartValueLogical;
+        public Vector2 dragStartTextPositionLogical;
+        public Vector2 dragStartTextBoundingBoxSizeLogical;
+        public float dragStartFontSizeLogical;
+        public int draggedHandleIndex = -1;
+        #endregion
 
+        #region UI Constants
+        // Constants that define the size and appearance of the interaction handles.
         private const float LogicalHandleInteractionRadius = 7f;
         private float ScaledHandleDrawRadius => 5f * ImGuiHelpers.GlobalScale;
-
-        private readonly uint handleColorDefault;
-        private readonly uint handleColorHover;
-        private readonly uint handleColorRotation;
-        private readonly uint handleColorRotationHover;
-        private readonly uint handleColorResize;
-        private readonly uint handleColorResizeHover;
-        private readonly uint handleColorSpecial;
-        private readonly uint handleColorSpecialHover;
+        public readonly uint handleColorDefault, handleColorHover, handleColorRotation, handleColorRotationHover,
+                              handleColorResize, handleColorResizeHover, handleColorSpecial, handleColorSpecialHover;
+        #endregion
 
         public ShapeInteractionHandler(UndoManager undoManagerInstance, PageManager pageManagerInstance)
         {
             this.undoManager = undoManagerInstance ?? throw new ArgumentNullException(nameof(undoManagerInstance));
             this.pageManager = pageManagerInstance ?? throw new ArgumentNullException(nameof(pageManagerInstance));
 
+            // Set up the colors for the interaction handles.
             this.handleColorDefault = ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 0.9f));
             this.handleColorHover = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.5f, 1.0f));
             this.handleColorRotation = ImGui.GetColorU32(new Vector4(0.5f, 1.0f, 0.5f, 0.9f));
@@ -66,255 +73,354 @@ namespace AetherDraw.DrawingLogic
             this.handleColorSpecialHover = ImGui.GetColorU32(new Vector4(1.0f, 0.7f, 0.4f, 1.0f));
         }
 
-        private bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalHandlePos, Vector2 canvasOriginScreen,
-                                        Vector2 mousePosLogical, ref bool mouseOverAnyHandleFlag,
-                                        ImGuiMouseCursor cursor = ImGuiMouseCursor.Hand, uint color = 0, uint hoverColor = 0)
-        {
-            uint actualColor = color == 0 ? this.handleColorDefault : color;
-            uint actualHoverColor = hoverColor == 0 ? this.handleColorHover : hoverColor;
-
-            Vector2 screenHandlePos = logicalHandlePos * ImGuiHelpers.GlobalScale + canvasOriginScreen;
-            bool isHoveringThisHandle = Vector2.Distance(mousePosLogical, logicalHandlePos) < LogicalHandleInteractionRadius;
-
-            if (isHoveringThisHandle)
-            {
-                mouseOverAnyHandleFlag = true;
-                ImGui.SetMouseCursor(cursor);
-            }
-            drawList.AddCircleFilled(screenHandlePos, ScaledHandleDrawRadius, isHoveringThisHandle ? actualHoverColor : actualColor);
-            drawList.AddCircle(screenHandlePos, ScaledHandleDrawRadius + 1f * ImGuiHelpers.GlobalScale, ImGui.GetColorU32(new Vector4(0, 0, 0, 0.7f)), 12, 1.5f * ImGuiHelpers.GlobalScale);
-            return isHoveringThisHandle;
-        }
-
+        /// <summary>
+        /// The main entry point called every frame to process interactions.
+        /// It acts as a coordinator, calling smaller methods to handle specific tasks.
+        /// </summary>
         public void ProcessInteractions(
-            BaseDrawable? singleSelectedItem,
-            List<BaseDrawable> selectedDrawables,
-            List<BaseDrawable> allDrawablesOnPage,
-            Func<DrawMode, int> getLayerPriorityFunc,
-            ref BaseDrawable? hoveredDrawable,
-            Vector2 mousePosLogical,
-            Vector2 mousePosScreen,
-            Vector2 canvasOriginScreen,
-            bool isCanvasInteractableAndHovered,
-            bool isLMBClickedOnCanvas,
-            bool isLMBDown,
-            bool isLMBReleased,
-            ImDrawListPtr drawList,
-            ref Vector2 lastMouseDragPosLogical)
+            BaseDrawable? singleSelectedItem, List<BaseDrawable> selectedDrawables, List<BaseDrawable> allDrawablesOnPage,
+            Func<DrawMode, int> getLayerPriorityFunc, ref BaseDrawable? hoveredDrawable,
+            Vector2 mousePosLogical, Vector2 mousePosScreen, Vector2 canvasOriginScreen,
+            bool isLMBClicked, bool isLMBDown, bool isLMBReleased, ImDrawListPtr drawList)
         {
-            BaseDrawable? newlyHoveredThisFrame = null;
-
+            // If we are not currently dragging anything, reset hover states.
             if (currentDragType == ActiveDragType.None)
+                ResetHoverStates(allDrawablesOnPage);
+
+            // Check if the mouse is over any handles on the selected object.
+            bool mouseOverAnyHandle = ProcessHandles(singleSelectedItem, mousePosLogical, canvasOriginScreen, drawList);
+
+            // If not dragging and not over a handle, check if we are hovering over an object.
+            if (currentDragType == ActiveDragType.None && !mouseOverAnyHandle)
+                UpdateHoveredObject(allDrawablesOnPage, getLayerPriorityFunc, ref hoveredDrawable, mousePosLogical);
+
+            // If the mouse was just clicked, figure out what action to start.
+            if (isLMBClicked)
+                InitiateDrag(singleSelectedItem, selectedDrawables, hoveredDrawable, mouseOverAnyHandle, mousePosLogical);
+
+            // If the mouse is being held down, update any active drag operation.
+            if (isLMBDown)
             {
-                foreach (var dItem in allDrawablesOnPage) dItem.IsHovered = false;
-                draggedImageResizeHandleIndex = -1;
-                draggedRectCornerIndex = -1;
-                draggedArrowHandleIndex = -1;
-                draggedTextResizeHandleIndex = -1;
+                if (currentDragType != ActiveDragType.None && currentDragType != ActiveDragType.MarqueeSelection)
+                    UpdateDrag(singleSelectedItem, mousePosLogical);
+
+                // If we are marquee selecting, draw the visual box.
+                if (currentDragType == ActiveDragType.MarqueeSelection)
+                    DrawMarqueeVisuals(mousePosLogical, mousePosScreen, canvasOriginScreen, drawList);
             }
 
-            bool mouseOverAnyHandle = false;
-
-            // Draw the preview box if we are in the middle of a text resize drag.
-            if (currentDragType == ActiveDragType.TextResize && singleSelectedItem is DrawableText)
+            // If the mouse was just released, end any drag operation.
+            if (isLMBReleased)
             {
-                int anchorIndex = (draggedTextResizeHandleIndex + 2) % 4;
-                Vector2[] initialCorners = new Vector2[4];
-                initialCorners[0] = dragStartTextPositionLogical;
-                initialCorners[1] = dragStartTextPositionLogical + new Vector2(dragStartTextBoundingBoxSizeLogical.X, 0);
-                initialCorners[2] = dragStartTextPositionLogical + dragStartTextBoundingBoxSizeLogical;
-                initialCorners[3] = dragStartTextPositionLogical + new Vector2(0, dragStartTextBoundingBoxSizeLogical.Y);
-                Vector2 anchorPoint = initialCorners[anchorIndex];
+                // ADDED: If the drag was a marquee selection, finalize the selection.
+                if (currentDragType == ActiveDragType.MarqueeSelection)
+                    FinalizeMarqueeSelection(selectedDrawables, allDrawablesOnPage, mousePosLogical);
 
-                Vector2 previewCorner1_screen = anchorPoint * ImGuiHelpers.GlobalScale + canvasOriginScreen;
-                Vector2 previewCorner2_screen = mousePosScreen;
-
-                drawList.AddRect(previewCorner1_screen, previewCorner2_screen, ImGui.GetColorU32(new Vector4(1, 1, 0, 0.4f)), 3f, ImDrawFlags.None, 1.5f * ImGuiHelpers.GlobalScale);
-            }
-
-            if (isCanvasInteractableAndHovered && singleSelectedItem != null)
-            {
-                if (singleSelectedItem is DrawableImage dImg)
-                {
-                    Vector2[] logicalCorners = HitDetection.GetRotatedQuadVertices(dImg.PositionRelative, dImg.DrawSize / 2f, dImg.RotationAngle);
-                    for (int i = 0; i < 4; i++) { if (DrawAndCheckHandle(drawList, logicalCorners[i], canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorResize, this.handleColorResizeHover)) { draggedImageResizeHandleIndex = i; break; } }
-                    if (!mouseOverAnyHandle) draggedImageResizeHandleIndex = -1;
-                    Vector2 logicalCenter = dImg.PositionRelative;
-                    Vector2 handleOffsetLocal = new Vector2(0, -(dImg.DrawSize.Y / 2f + DrawableImage.UnscaledRotationHandleDistance));
-                    Vector2 rotatedHandleOffset = HitDetection.ImRotate(handleOffsetLocal, MathF.Cos(dImg.RotationAngle), MathF.Sin(dImg.RotationAngle));
-                    Vector2 logicalRotationHandlePos = logicalCenter + rotatedHandleOffset;
-                    DrawAndCheckHandle(drawList, logicalRotationHandlePos, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
-                }
-                else if (singleSelectedItem is DrawableRectangle dRect)
-                {
-                    Vector2[] logicalRotatedCorners = dRect.GetRotatedCorners();
-                    for (int i = 0; i < 4; i++) { if (DrawAndCheckHandle(drawList, logicalRotatedCorners[i], canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorResize, this.handleColorResizeHover)) { draggedRectCornerIndex = i; break; } }
-                    if (!mouseOverAnyHandle) draggedRectCornerIndex = -1;
-                    var (rectCenterLogical, rectHalfSize) = dRect.GetGeometry();
-                    float handleDistance = rectHalfSize.Y + DrawableRectangle.UnscaledRotationHandleExtraOffset;
-                    Vector2 rotationHandleLogicalPos = rectCenterLogical + Vector2.Transform(new Vector2(0, -handleDistance), Matrix3x2.CreateRotation(dRect.RotationAngle));
-                    DrawAndCheckHandle(drawList, rotationHandleLogicalPos, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
-                }
-                else if (singleSelectedItem is DrawableCone dCone)
-                {
-                    Vector2 logicalApex = dCone.ApexRelative;
-                    Vector2 logicalBaseEndUnrotated = dCone.BaseCenterRelative - dCone.ApexRelative;
-                    Vector2 logicalBaseEndRotated = Vector2.Transform(logicalBaseEndUnrotated, Matrix3x2.CreateRotation(dCone.RotationAngle));
-                    Vector2 logicalRotatedBaseCenter = dCone.ApexRelative + logicalBaseEndRotated;
-                    bool apexH = DrawAndCheckHandle(drawList, logicalApex, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
-                    bool baseH = !apexH && DrawAndCheckHandle(drawList, logicalRotatedBaseCenter, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
-                    Vector2 axisDir = logicalBaseEndUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(logicalBaseEndRotated) : new Vector2(0, 1);
-                    Vector2 rotHandleLogical = logicalRotatedBaseCenter + axisDir * (DrawableRectangle.UnscaledRotationHandleExtraOffset * 0.75f);
-                    bool rotH = !apexH && !baseH && DrawAndCheckHandle(drawList, rotHandleLogical, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
-                    if (apexH) draggedArrowHandleIndex = 0; else if (baseH) draggedArrowHandleIndex = 1; else if (rotH) draggedArrowHandleIndex = 2; else draggedArrowHandleIndex = -1;
-                }
-                else if (singleSelectedItem is DrawableArrow dArrow)
-                {
-                    Vector2 logicalStart = dArrow.StartPointRelative;
-                    Vector2 localShaftEndUnrotated = dArrow.EndPointRelative - dArrow.StartPointRelative;
-                    Vector2 logicalRotatedShaftEnd = dArrow.StartPointRelative + Vector2.Transform(localShaftEndUnrotated, Matrix3x2.CreateRotation(dArrow.RotationAngle));
-                    bool startH = DrawAndCheckHandle(drawList, logicalStart, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
-                    bool endH = !startH && DrawAndCheckHandle(drawList, logicalRotatedShaftEnd, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeAll, this.handleColorResize, this.handleColorResizeHover);
-                    Vector2 rotHandleOffsetLocal = new Vector2(0, -DrawableRectangle.UnscaledRotationHandleExtraOffset);
-                    Vector2 rotHandleLogical = dArrow.StartPointRelative + Vector2.Transform(rotHandleOffsetLocal, Matrix3x2.CreateRotation(dArrow.RotationAngle));
-                    bool rotH = !startH && !endH && DrawAndCheckHandle(drawList, rotHandleLogical, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.Hand, this.handleColorRotation, this.handleColorRotationHover);
-                    Vector2 shaftMidLogicalRotated = dArrow.StartPointRelative + Vector2.Transform(localShaftEndUnrotated / 2f, Matrix3x2.CreateRotation(dArrow.RotationAngle));
-                    Vector2 shaftDirRotated = localShaftEndUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(Vector2.Transform(localShaftEndUnrotated, Matrix3x2.CreateRotation(dArrow.RotationAngle))) : Vector2.Transform(new Vector2(0, 1), Matrix3x2.CreateRotation(dArrow.RotationAngle));
-                    Vector2 perpOffsetThick = new Vector2(-shaftDirRotated.Y, shaftDirRotated.X) * (dArrow.Thickness / 2f + 10f);
-                    bool thickH = !startH && !endH && !rotH && DrawAndCheckHandle(drawList, shaftMidLogicalRotated + perpOffsetThick, canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, ImGuiMouseCursor.ResizeNS, this.handleColorSpecial, this.handleColorSpecialHover);
-                    if (startH) draggedArrowHandleIndex = 0; else if (endH) draggedArrowHandleIndex = 1; else if (rotH) draggedArrowHandleIndex = 2; else if (thickH) draggedArrowHandleIndex = 3; else draggedArrowHandleIndex = -1;
-                }
-                else if (singleSelectedItem is DrawableText dText)
-                {
-                    Vector2 boxTopLeft = dText.PositionRelative;
-                    Vector2 boxSize = dText.CurrentBoundingBoxSize;
-
-                    Vector2[] bboxCorners = new Vector2[4];
-                    bboxCorners[0] = boxTopLeft;
-                    bboxCorners[1] = boxTopLeft + new Vector2(boxSize.X, 0);
-                    bboxCorners[2] = boxTopLeft + boxSize;
-                    bboxCorners[3] = boxTopLeft + new Vector2(0, boxSize.Y);
-
-                    ImGuiMouseCursor[] cursors = { ImGuiMouseCursor.ResizeNWSE, ImGuiMouseCursor.ResizeNESW, ImGuiMouseCursor.ResizeNWSE, ImGuiMouseCursor.ResizeNESW };
-                    int currentlyHoveredTextHandle = -1;
-                    for (int i = 0; i < 4; i++) { if (DrawAndCheckHandle(drawList, bboxCorners[i], canvasOriginScreen, mousePosLogical, ref mouseOverAnyHandle, cursors[i], this.handleColorResize, this.handleColorResizeHover)) { currentlyHoveredTextHandle = i; } }
-                    draggedTextResizeHandleIndex = currentlyHoveredTextHandle;
-                }
-            }
-
-            if (isCanvasInteractableAndHovered && !mouseOverAnyHandle && currentDragType == ActiveDragType.None)
-            {
-                var sortedForHover = allDrawablesOnPage.OrderByDescending(d => getLayerPriorityFunc(d.ObjectDrawMode)).ToList();
-                newlyHoveredThisFrame = null;
-                foreach (var drawable in sortedForHover) { if (drawable.IsHit(mousePosLogical, LogicalHandleInteractionRadius * 0.8f)) { newlyHoveredThisFrame = drawable; if (!selectedDrawables.Contains(newlyHoveredThisFrame)) { newlyHoveredThisFrame.IsHovered = true; } break; } }
-            }
-            if (currentDragType == ActiveDragType.None) { hoveredDrawable = newlyHoveredThisFrame; }
-
-            if (isCanvasInteractableAndHovered && isLMBClickedOnCanvas)
-            {
-                bool clickedOnAHandle = false; ActiveDragType potentialDragType = ActiveDragType.None;
-                if (singleSelectedItem != null && mouseOverAnyHandle)
-                {
-                    clickedOnAHandle = true; dragStartMousePosLogical = mousePosLogical;
-                    if (singleSelectedItem is DrawableImage dImg) { Vector2 logicalCenter = dImg.PositionRelative; Vector2 handleOffsetLocal = new Vector2(0, -(dImg.DrawSize.Y / 2f + DrawableImage.UnscaledRotationHandleDistance)); Vector2 rotatedHandleOffset = HitDetection.ImRotate(handleOffsetLocal, MathF.Cos(dImg.RotationAngle), MathF.Sin(dImg.RotationAngle)); Vector2 logicalRotationHandlePos = logicalCenter + rotatedHandleOffset; if (Vector2.Distance(mousePosLogical, logicalRotationHandlePos) < LogicalHandleInteractionRadius) { potentialDragType = ActiveDragType.ImageRotate; dragStartObjectPivotLogical = dImg.PositionRelative; dragStartRotationAngle = dImg.RotationAngle; } else if (draggedImageResizeHandleIndex != -1) { potentialDragType = ActiveDragType.ImageResize; dragStartObjectPivotLogical = dImg.PositionRelative; dragStartSizeLogical = dImg.DrawSize; dragStartRotationAngle = dImg.RotationAngle; } else { clickedOnAHandle = false; } }
-                    else if (singleSelectedItem is DrawableRectangle dRect) { var (rectCenterLogical, rectHalfSize) = dRect.GetGeometry(); float handleDistance = rectHalfSize.Y + DrawableRectangle.UnscaledRotationHandleExtraOffset; Vector2 rotationHandleLogicalPos = rectCenterLogical + Vector2.Transform(new Vector2(0, -handleDistance), Matrix3x2.CreateRotation(dRect.RotationAngle)); if (Vector2.Distance(mousePosLogical, rotationHandleLogicalPos) < LogicalHandleInteractionRadius) { potentialDragType = ActiveDragType.RectRotate; dragStartObjectPivotLogical = rectCenterLogical; dragStartRotationAngle = dRect.RotationAngle; } else if (draggedRectCornerIndex != -1) { potentialDragType = ActiveDragType.RectResize; dragStartPoint1Logical = dRect.StartPointRelative; dragStartPoint2Logical = dRect.EndPointRelative; dragStartRotationAngle = dRect.RotationAngle; dragStartObjectPivotLogical = rectCenterLogical; } else { clickedOnAHandle = false; } }
-                    else if (singleSelectedItem is DrawableCone dCone) { if (draggedArrowHandleIndex == 0) { potentialDragType = ActiveDragType.ConeApex; dragStartPoint1Logical = dCone.ApexRelative; dragStartPoint2Logical = dCone.BaseCenterRelative; } else if (draggedArrowHandleIndex == 1) { potentialDragType = ActiveDragType.ConeBase; dragStartPoint1Logical = dCone.ApexRelative; dragStartPoint2Logical = dCone.BaseCenterRelative; } else if (draggedArrowHandleIndex == 2) { potentialDragType = ActiveDragType.ConeRotate; dragStartObjectPivotLogical = dCone.ApexRelative; dragStartRotationAngle = dCone.RotationAngle; } else { clickedOnAHandle = false; } }
-                    else if (singleSelectedItem is DrawableArrow dArrow) { dragStartPoint1Logical = dArrow.StartPointRelative; dragStartPoint2Logical = dArrow.EndPointRelative; dragStartRotationAngle = dArrow.RotationAngle; if (draggedArrowHandleIndex == 0) { potentialDragType = ActiveDragType.ArrowStartPoint; } else if (draggedArrowHandleIndex == 1) { potentialDragType = ActiveDragType.ArrowEndPoint; } else if (draggedArrowHandleIndex == 2) { potentialDragType = ActiveDragType.ArrowRotate; dragStartObjectPivotLogical = dArrow.StartPointRelative; } else if (draggedArrowHandleIndex == 3) { potentialDragType = ActiveDragType.ArrowThickness; dragStartValueLogical = dArrow.Thickness; } else { clickedOnAHandle = false; } }
-                    else if (singleSelectedItem is DrawableText dText && draggedTextResizeHandleIndex != -1)
-                    {
-                        potentialDragType = ActiveDragType.TextResize;
-                        dragStartTextPositionLogical = dText.PositionRelative;
-                        dragStartTextBoundingBoxSizeLogical = dText.CurrentBoundingBoxSize;
-                        dragStartFontSizeLogical = dText.FontSize;
-                    }
-                    else { clickedOnAHandle = false; }
-                    if (clickedOnAHandle && singleSelectedItem != null && !singleSelectedItem.IsSelected) { if (!ImGui.GetIO().KeyCtrl) { foreach (var d_sel_loop in selectedDrawables) d_sel_loop.IsSelected = false; selectedDrawables.Clear(); } singleSelectedItem.IsSelected = true; selectedDrawables.Add(singleSelectedItem); }
-                }
-                if (!clickedOnAHandle)
-                {
-                    if (hoveredDrawable != null) { if (!ImGui.GetIO().KeyCtrl) { if (!selectedDrawables.Contains(hoveredDrawable)) { foreach (var d_sel in selectedDrawables) d_sel.IsSelected = false; selectedDrawables.Clear(); hoveredDrawable.IsSelected = true; selectedDrawables.Add(hoveredDrawable); } } else { if (selectedDrawables.Contains(hoveredDrawable)) { hoveredDrawable.IsSelected = false; selectedDrawables.Remove(hoveredDrawable); } else { hoveredDrawable.IsSelected = true; selectedDrawables.Add(hoveredDrawable); } } if (selectedDrawables.Any(d => d.IsSelected)) { potentialDragType = ActiveDragType.GeneralSelection; lastMouseDragPosLogical = mousePosLogical; } }
-                    else { foreach (var d_sel in selectedDrawables) d_sel.IsSelected = false; selectedDrawables.Clear(); potentialDragType = ActiveDragType.None; }
-                }
-                currentDragType = potentialDragType;
-
-                if (currentDragType != ActiveDragType.None)
-                {
-                    var currentDrawablesForUndo = pageManager.GetCurrentPageDrawables();
-                    if (currentDrawablesForUndo != null)
-                    {
-                        undoManager.RecordAction(currentDrawablesForUndo, $"Start {currentDragType}");
-                    }
-                }
-            }
-
-            if (isLMBDown && currentDragType != ActiveDragType.None)
-            {
-                if (currentDragType != ActiveDragType.TextResize && singleSelectedItem != null)
-                {
-                    if (singleSelectedItem is DrawableImage dImg) { if (currentDragType == ActiveDragType.ImageResize && draggedImageResizeHandleIndex != -1) { Vector2 mouseInLocalUnrotated = HitDetection.ImRotate(mousePosLogical - dImg.PositionRelative, MathF.Cos(-dImg.RotationAngle), MathF.Sin(-dImg.RotationAngle)); Vector2 newHalfSize = new Vector2(Math.Abs(mouseInLocalUnrotated.X), Math.Abs(mouseInLocalUnrotated.Y)); float minDimLogical = DrawableImage.UnscaledResizeHandleRadius * 2f; dImg.DrawSize = new Vector2(Math.Max(newHalfSize.X * 2f, minDimLogical), Math.Max(newHalfSize.Y * 2f, minDimLogical)); } else if (currentDragType == ActiveDragType.ImageRotate) { float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X); float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X); dImg.RotationAngle = dragStartRotationAngle + (angleNow - angleThen); } }
-                    else if (singleSelectedItem is DrawableRectangle dRect) { if (currentDragType == ActiveDragType.RectResize && draggedRectCornerIndex != -1) { Vector2[] originalLogicalCorners = HitDetection.GetRotatedQuadVertices(dragStartObjectPivotLogical, (dragStartPoint2Logical - dragStartPoint1Logical) / 2f, dragStartRotationAngle); Vector2 pivotCornerLogical = originalLogicalCorners[(draggedRectCornerIndex + 2) % 4]; Vector2 mouseRelativeToPivot = mousePosLogical - pivotCornerLogical; Vector2 mouseInRectLocalFrame = HitDetection.ImRotate(mouseRelativeToPivot, MathF.Cos(-dragStartRotationAngle), MathF.Sin(-dragStartRotationAngle)); Vector2 newCenterInLocalFrame = mouseInRectLocalFrame / 2f; Vector2 newHalfSizeLocal = new Vector2(Math.Abs(mouseInRectLocalFrame.X) / 2f, Math.Abs(mouseInRectLocalFrame.Y) / 2f); newHalfSizeLocal.X = Math.Max(newHalfSizeLocal.X, 1f); newHalfSizeLocal.Y = Math.Max(newHalfSizeLocal.Y, 1f); Vector2 newCenter = pivotCornerLogical + HitDetection.ImRotate(newCenterInLocalFrame, MathF.Cos(dragStartRotationAngle), MathF.Sin(dragStartRotationAngle)); dRect.StartPointRelative = newCenter - newHalfSizeLocal; dRect.EndPointRelative = newCenter + newHalfSizeLocal; dRect.RotationAngle = dragStartRotationAngle; } else if (currentDragType == ActiveDragType.RectRotate) { float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X); float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X); dRect.RotationAngle = dragStartRotationAngle + (angleNow - angleThen); } }
-                    else if (singleSelectedItem is DrawableCone dCone) { if (currentDragType == ActiveDragType.ConeApex) { dCone.SetApex(dragStartPoint1Logical + (mousePosLogical - dragStartMousePosLogical)); } else if (currentDragType == ActiveDragType.ConeBase) { Vector2 mouseRelativeToApex = mousePosLogical - dCone.ApexRelative; Vector2 unrotatedMouseRelativeToApex = HitDetection.ImRotate(mouseRelativeToApex, MathF.Cos(-dCone.RotationAngle), MathF.Sin(-dCone.RotationAngle)); dCone.SetBaseCenter(dCone.ApexRelative + unrotatedMouseRelativeToApex); } else if (currentDragType == ActiveDragType.ConeRotate) { float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X); float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X); dCone.RotationAngle = dragStartRotationAngle + (angleNow - angleThen); } }
-                    else if (singleSelectedItem is DrawableArrow dArrow) { if (currentDragType == ActiveDragType.ArrowStartPoint) { dArrow.SetStartPoint(dragStartPoint1Logical + (mousePosLogical - dragStartMousePosLogical)); } else if (currentDragType == ActiveDragType.ArrowEndPoint) { Vector2 mouseRelativeToStart = mousePosLogical - dArrow.StartPointRelative; Vector2 unrotatedMouseRelativeToStart = HitDetection.ImRotate(mouseRelativeToStart, MathF.Cos(-dArrow.RotationAngle), MathF.Sin(-dArrow.RotationAngle)); dArrow.SetEndPoint(dArrow.StartPointRelative + unrotatedMouseRelativeToStart); } else if (currentDragType == ActiveDragType.ArrowRotate) { float angleNow = MathF.Atan2(mousePosLogical.Y - dragStartObjectPivotLogical.Y, mousePosLogical.X - dragStartObjectPivotLogical.X); float angleThen = MathF.Atan2(dragStartMousePosLogical.Y - dragStartObjectPivotLogical.Y, dragStartMousePosLogical.X - dragStartObjectPivotLogical.X); dArrow.RotationAngle = dragStartRotationAngle + (angleNow - angleThen); } else if (currentDragType == ActiveDragType.ArrowThickness) { Vector2 initialShaftVec = dragStartPoint2Logical - dragStartPoint1Logical; Vector2 initialShaftDir = initialShaftVec.LengthSquared() > 0.001f ? Vector2.Normalize(initialShaftVec) : new Vector2(0, -1); Vector2 perpDir = new Vector2(-initialShaftDir.Y, initialShaftDir.X); Vector2 currentMouseDeltaFromDragStartUnrotated = HitDetection.ImRotate((mousePosLogical - dragStartMousePosLogical), MathF.Cos(-dragStartRotationAngle), MathF.Sin(-dragStartRotationAngle)); float thicknessDeltaProjection = Vector2.Dot(currentMouseDeltaFromDragStartUnrotated, perpDir); dArrow.Thickness = Math.Max(1f, dragStartValueLogical + thicknessDeltaProjection); } }
-                }
-                else if (currentDragType == ActiveDragType.TextResize && singleSelectedItem is DrawableText dText)
-                {
-                    // Get the corner opposite to the one being dragged; this is our anchor.
-                    int anchorIndex = (draggedTextResizeHandleIndex + 2) % 4;
-                    Vector2[] initialCorners = {
-                        dragStartTextPositionLogical,
-                        dragStartTextPositionLogical + new Vector2(dragStartTextBoundingBoxSizeLogical.X, 0),
-                        dragStartTextPositionLogical + dragStartTextBoundingBoxSizeLogical,
-                        dragStartTextPositionLogical + new Vector2(0, dragStartTextBoundingBoxSizeLogical.Y)
-                    };
-                    Vector2 anchorPoint = initialCorners[anchorIndex];
-
-                    // Determine the new bounding box from the anchor and the current mouse position.
-                    Vector2 newTopLeft = new Vector2(Math.Min(anchorPoint.X, mousePosLogical.X), Math.Min(anchorPoint.Y, mousePosLogical.Y));
-                    Vector2 newBottomRight = new Vector2(Math.Max(anchorPoint.X, mousePosLogical.X), Math.Max(anchorPoint.Y, mousePosLogical.Y));
-
-                    float newWidth = newBottomRight.X - newTopLeft.X;
-                    float newHeight = newBottomRight.Y - newTopLeft.Y;
-
-                    // Update the text object's properties in real-time.
-                    // This triggers PerformLayout() in DrawableText, reflowing the text.
-                    dText.PositionRelative = newTopLeft;
-                    if (newWidth > 10f) // Prevent the box from becoming too small.
-                    {
-                        dText.WrappingWidth = newWidth;
-                    }
-
-                    // Adjust font size proportionally to the change in height.
-                    if (dragStartTextBoundingBoxSizeLogical.Y > 1f && newHeight > 10f)
-                    {
-                        float heightRatio = newHeight / dragStartTextBoundingBoxSizeLogical.Y;
-                        dText.FontSize = Math.Max(8f, dragStartFontSizeLogical * heightRatio); // Minimum font size of 8.
-                    }
-                }
-
-                if (currentDragType == ActiveDragType.GeneralSelection && selectedDrawables.Any())
-                {
-                    Vector2 dragDeltaLogical = mousePosLogical - lastMouseDragPosLogical;
-                    if (dragDeltaLogical.LengthSquared() > 0.0001f) { foreach (var item in selectedDrawables) { item.Translate(dragDeltaLogical); } }
-                }
-                lastMouseDragPosLogical = mousePosLogical;
-            }
-
-            if (isCanvasInteractableAndHovered && isLMBReleased)
-            {
-                if (currentDragType != ActiveDragType.None)
-                {
-                    ResetDragState();
-                }
+                ResetDragState();
             }
         }
 
+        /// <summary>
+        /// Draws the visual marquee selection box on the canvas, changing style based on drag direction.
+        /// </summary>
+        private void DrawMarqueeVisuals(Vector2 mousePosLogical, Vector2 mousePosScreen, Vector2 canvasOriginScreen, ImDrawListPtr drawList)
+        {
+            // Determine drag direction to set the style.
+            bool isCrossing = mousePosLogical.X < dragStartMousePosLogical.X;
+
+            uint borderColor;
+            uint fillColor;
+            float thickness;
+
+            if (isCrossing) // Right-to-Left Drag (Crossing/Touching)
+            {
+                borderColor = ImGui.GetColorU32(new Vector4(0.3f, 1.0f, 0.4f, 0.9f)); // Greenish
+                fillColor = ImGui.GetColorU32(new Vector4(0.3f, 1.0f, 0.4f, 0.2f));
+                thickness = 4.0f; // Thicker border
+            }
+            else // Left-to-Right Drag (Enclosing/Window)
+            {
+                borderColor = ImGui.GetColorU32(new Vector4(0.3f, 0.7f, 1.0f, 0.9f)); // Bluish
+                fillColor = ImGui.GetColorU32(new Vector4(0.3f, 0.7f, 1.0f, 0.2f));
+                thickness = 1.0f; // Thinner border
+            }
+
+            // Draw the filled rectangle and its border.
+            var rectStartScreen = dragStartMousePosLogical * ImGuiHelpers.GlobalScale + canvasOriginScreen;
+            drawList.AddRectFilled(rectStartScreen, mousePosScreen, fillColor);
+            drawList.AddRect(rectStartScreen, mousePosScreen, borderColor, 0f, ImDrawFlags.None, thickness);
+        }
+
+        /// <summary>
+        /// This new method processes the selection logic when a marquee drag is finished.
+        /// It now supports all drawable types and uses a more precise intersection test for circles.
+        /// </summary>
+        private void FinalizeMarqueeSelection(List<BaseDrawable> selectedList, List<BaseDrawable> allDrawables, Vector2 mousePos)
+        {
+            bool ctrl = ImGui.GetIO().KeyCtrl;
+            // If not holding control, clear the previous selection first.
+            if (!ctrl)
+            {
+                foreach (var d in selectedList) d.IsSelected = false;
+                selectedList.Clear();
+            }
+
+            // Define the marquee selection box in logical (unscaled) coordinates.
+            var min = Vector2.Min(dragStartMousePosLogical, mousePos);
+            var max = Vector2.Max(dragStartMousePosLogical, mousePos);
+            var marqueeRect = new System.Drawing.RectangleF(min.X, min.Y, max.X - min.X, max.Y - min.Y);
+
+            // A right-to-left drag is a "crossing" selection.
+            bool isCrossing = mousePos.X < dragStartMousePosLogical.X;
+            bool selectionChanged = false;
+
+            foreach (var drawable in allDrawables)
+            {
+                var objectBoundingBox = drawable.GetBoundingBox();
+                bool shouldSelect = false;
+
+                if (isCrossing) // Right-to-left drag: select if object is touched.
+                {
+                    // We use a more precise check for circles to see if the marquee truly hits the circle.
+                    if (drawable is DrawableCircle circle)
+                    {
+                        // This checks for intersection between the marquee Rectangle and the Circle itself.
+                        if (HitDetection.IntersectCircleAABB(circle.CenterRelative, circle.Radius, new Vector2(marqueeRect.Left, marqueeRect.Top), new Vector2(marqueeRect.Right, marqueeRect.Bottom)))
+                            shouldSelect = true;
+                    }
+                    // For all other shapes, we'll use their rectangular bounding box for now.
+                    else if (marqueeRect.IntersectsWith(objectBoundingBox))
+                    {
+                        shouldSelect = true;
+                    }
+                }
+                else // Left-to-right drag: select only if object is fully enclosed.
+                {
+                    // This check is accurate for all shapes.
+                    if (marqueeRect.Contains(objectBoundingBox))
+                        shouldSelect = true;
+                }
+
+                // If the object should be selected and isn't already, add it to the selection.
+                if (shouldSelect && !drawable.IsSelected)
+                {
+                    drawable.IsSelected = true;
+                    selectedList.Add(drawable);
+                    selectionChanged = true;
+                }
+            }
+
+            // If the selection actually changed, create an undo state.
+            if (selectionChanged)
+                undoManager.RecordAction(allDrawables, "Marquee Select");
+        }
+
+        /// <summary>
+        /// Resets the drag state to None.
+        /// </summary>
         public void ResetDragState()
         {
             currentDragType = ActiveDragType.None;
-            draggedImageResizeHandleIndex = -1;
-            draggedRectCornerIndex = -1;
-            draggedArrowHandleIndex = -1;
-            draggedTextResizeHandleIndex = -1;
+            draggedHandleIndex = -1;
+        }
+
+        /// <summary>
+        /// A generic helper to draw a single circular handle and check if the mouse is over it.
+        /// This is public so the helper class can call it.
+        /// </summary>
+        public bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalPos, Vector2 canvasOrigin, Vector2 mousePos, ref bool mouseOverAny, uint color, uint hoverColor)
+        {
+            Vector2 screenPos = logicalPos * ImGuiHelpers.GlobalScale + canvasOrigin;
+            bool isHovering = Vector2.Distance(mousePos, logicalPos) < LogicalHandleInteractionRadius;
+            if (isHovering) mouseOverAny = true;
+            drawList.AddCircleFilled(screenPos, ScaledHandleDrawRadius, isHovering ? hoverColor : color);
+            drawList.AddCircle(screenPos, ScaledHandleDrawRadius + 1f, ImGui.GetColorU32(new Vector4(0, 0, 0, 0.7f)));
+            return isHovering;
+        }
+
+        /// <summary>
+        /// Overload for DrawAndCheckHandle that also sets the mouse cursor style.
+        /// </summary>
+        public bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalPos, Vector2 canvasOrigin, Vector2 mousePos, ref bool mouseOverAny, ImGuiMouseCursor cursor, uint color, uint hoverColor)
+        {
+            if (DrawAndCheckHandle(drawList, logicalPos, canvasOrigin, mousePos, ref mouseOverAny, color, hoverColor))
+            {
+                ImGui.SetMouseCursor(cursor);
+                return true;
+            }
+            return false;
+        }
+
+        private void ResetHoverStates(List<BaseDrawable> allDrawablesOnPage)
+        {
+            foreach (var dItem in allDrawablesOnPage) dItem.IsHovered = false;
+            draggedHandleIndex = -1;
+        }
+
+        /// <summary>
+        /// Determines which set of handles to draw by checking the selected object's type
+        /// and calling the appropriate helper method.
+        /// </summary>
+        private bool ProcessHandles(BaseDrawable? item, Vector2 mousePos, Vector2 canvasOrigin, ImDrawListPtr drawList)
+        {
+            if (item == null) return false;
+
+            bool mouseOverAny = false;
+            switch (item)
+            {
+                case DrawableImage dImg: InteractionHandlerHelpers.ProcessImageHandles(dImg, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawableRectangle dRect: InteractionHandlerHelpers.ProcessRectangleHandles(dRect, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawableText dText: InteractionHandlerHelpers.ProcessTextHandles(dText, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawableArrow dArrow: InteractionHandlerHelpers.ProcessArrowHandles(dArrow, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawableCone dCone: InteractionHandlerHelpers.ProcessConeHandles(dCone, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+            }
+            return mouseOverAny;
+        }
+
+        private void UpdateHoveredObject(List<BaseDrawable> allDrawables, Func<DrawMode, int> layerPriority, ref BaseDrawable? hovered, Vector2 mousePos)
+        {
+            hovered = null;
+            var sortedForHover = allDrawables.OrderByDescending(d => layerPriority(d.ObjectDrawMode));
+            foreach (var drawable in sortedForHover)
+            {
+                if (drawable.IsHit(mousePos, LogicalHandleInteractionRadius * 0.8f))
+                {
+                    hovered = drawable;
+                    drawable.IsHovered = true;
+                    break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Determines the correct action to take when the user first clicks the mouse.
+        /// </summary>
+        private void InitiateDrag(BaseDrawable? singleSelectedItem, List<BaseDrawable> selectedList, BaseDrawable? hovered, bool onHandle, Vector2 mousePos)
+        {
+            if (onHandle && singleSelectedItem != null)
+            {
+                StartHandleDrag(singleSelectedItem, mousePos);
+            }
+            else if (hovered != null)
+            {
+                bool ctrl = ImGui.GetIO().KeyCtrl;
+                if (!ctrl)
+                {
+                    if (!selectedList.Contains(hovered))
+                    {
+                        foreach (var d in selectedList) d.IsSelected = false;
+                        selectedList.Clear();
+                        hovered.IsSelected = true;
+                        selectedList.Add(hovered);
+                    }
+                }
+                else
+                {
+                    if (selectedList.Contains(hovered)) { hovered.IsSelected = false; selectedList.Remove(hovered); }
+                    else { hovered.IsSelected = true; selectedList.Add(hovered); }
+                }
+                if (selectedList.Count > 0) StartDrag(ActiveDragType.GeneralSelection, mousePos);
+            }
+            else
+            {
+                StartDrag(ActiveDragType.MarqueeSelection, mousePos);
+            }
+        }
+
+        /// <summary>
+        /// Begins a drag operation and records the initial state for the Undo system.
+        /// </summary>
+        private void StartDrag(ActiveDragType type, Vector2 mousePos)
+        {
+            currentDragType = type;
+            dragStartMousePosLogical = mousePos;
+            // Do not create an undo state for marquee selection, as it doesn't modify the canvas yet.
+            if (type != ActiveDragType.MarqueeSelection)
+                undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), $"Start {type}");
+        }
+
+        /// <summary>
+        /// Sets the specific drag type and records initial state when a handle is dragged.
+        /// </summary>
+        private void StartHandleDrag(BaseDrawable item, Vector2 mousePos)
+        {
+            var initialType = ActiveDragType.None;
+            switch (item)
+            {
+                case DrawableImage dImg when draggedHandleIndex == 4: initialType = ActiveDragType.ImageRotate; dragStartObjectPivotLogical = dImg.PositionRelative; dragStartRotationAngle = dImg.RotationAngle; break;
+                case DrawableImage dImg: initialType = ActiveDragType.ImageResize; dragStartObjectPivotLogical = dImg.PositionRelative; dragStartSizeLogical = dImg.DrawSize; dragStartRotationAngle = dImg.RotationAngle; break;
+                case DrawableRectangle dRect when draggedHandleIndex == 4: initialType = ActiveDragType.RectRotate; (dragStartObjectPivotLogical, _) = dRect.GetGeometry(); dragStartRotationAngle = dRect.RotationAngle; break;
+                case DrawableRectangle dRect: initialType = ActiveDragType.RectResize; dragStartPoint1Logical = dRect.StartPointRelative; dragStartPoint2Logical = dRect.EndPointRelative; dragStartRotationAngle = dRect.RotationAngle; (dragStartObjectPivotLogical, _) = dRect.GetGeometry(); break;
+                case DrawableText dText: initialType = ActiveDragType.TextResize; dragStartTextPositionLogical = dText.PositionRelative; dragStartTextBoundingBoxSizeLogical = dText.CurrentBoundingBoxSize; dragStartFontSizeLogical = dText.FontSize; break;
+                case DrawableArrow dArr:
+                    dragStartPoint1Logical = dArr.StartPointRelative;
+                    dragStartPoint2Logical = dArr.EndPointRelative;
+                    dragStartRotationAngle = dArr.RotationAngle;
+                    if (draggedHandleIndex == 0) initialType = ActiveDragType.ArrowStartPoint;
+                    else if (draggedHandleIndex == 1) initialType = ActiveDragType.ArrowEndPoint;
+                    else if (draggedHandleIndex == 2) { initialType = ActiveDragType.ArrowRotate; dragStartObjectPivotLogical = dArr.StartPointRelative; }
+                    else if (draggedHandleIndex == 3) { initialType = ActiveDragType.ArrowThickness; dragStartValueLogical = dArr.Thickness; }
+                    break;
+                case DrawableCone dCone:
+                    dragStartRotationAngle = dCone.RotationAngle;
+                    if (draggedHandleIndex == 0) { initialType = ActiveDragType.ConeApex; dragStartPoint1Logical = dCone.ApexRelative; dragStartPoint2Logical = dCone.BaseCenterRelative; }
+                    else if (draggedHandleIndex == 1) { initialType = ActiveDragType.ConeBase; dragStartPoint1Logical = dCone.ApexRelative; dragStartPoint2Logical = dCone.BaseCenterRelative; }
+                    else if (draggedHandleIndex == 2) { initialType = ActiveDragType.ConeRotate; dragStartObjectPivotLogical = dCone.ApexRelative; }
+                    break;
+            }
+
+            if (initialType != ActiveDragType.None)
+                StartDrag(initialType, mousePos);
+        }
+
+        /// <summary>
+        /// Updates the properties of a dragged object by calling the appropriate helper method.
+        /// </summary>
+        private void UpdateDrag(BaseDrawable? item, Vector2 mousePos)
+        {
+            // First, handle the general case of moving selected objects.
+            // This applies whether one or multiple items are selected.
+            if (currentDragType == ActiveDragType.GeneralSelection)
+            {
+                var selectedDrawablesOnPage = pageManager.GetCurrentPageDrawables().Where(d => d.IsSelected);
+                if (selectedDrawablesOnPage.Any())
+                {
+                    Vector2 dragDelta = mousePos - dragStartMousePosLogical;
+                    if (dragDelta.LengthSquared() > 0)
+                    {
+                        foreach (var selected in selectedDrawablesOnPage)
+                            selected.Translate(dragDelta);
+
+                        // Update the start position for the next frame's delta calculation.
+                        dragStartMousePosLogical = mousePos;
+                    }
+                }
+                return; // Exit after processing the move.
+            }
+
+            // If it's not a general move, it must be a handle drag, which requires a single item.
+            if (item == null)
+            {
+                // This case should not be hit for handle drags, but we exit to be safe.
+                return;
+            }
+
+            // Process specific handle-based drag operations.
+            switch (currentDragType)
+            {
+                case ActiveDragType.ImageResize: InteractionHandlerHelpers.UpdateImageDrag((DrawableImage)item, mousePos, this); break;
+                case ActiveDragType.ImageRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
+                case ActiveDragType.RectResize: InteractionHandlerHelpers.UpdateRectangleDrag((DrawableRectangle)item, mousePos, this); break;
+                case ActiveDragType.RectRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
+                case ActiveDragType.TextResize: InteractionHandlerHelpers.UpdateTextResizeDrag((DrawableText)item, mousePos, this); break;
+                case ActiveDragType.ArrowStartPoint: InteractionHandlerHelpers.UpdateArrowStartDrag((DrawableArrow)item, mousePos, this); break;
+                case ActiveDragType.ArrowEndPoint: InteractionHandlerHelpers.UpdateArrowEndDrag((DrawableArrow)item, mousePos); break;
+                case ActiveDragType.ArrowRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
+                case ActiveDragType.ArrowThickness: InteractionHandlerHelpers.UpdateArrowThicknessDrag((DrawableArrow)item, mousePos, this); break;
+                case ActiveDragType.ConeApex: InteractionHandlerHelpers.UpdateConeApexDrag((DrawableCone)item, mousePos, this); break;
+                case ActiveDragType.ConeBase: InteractionHandlerHelpers.UpdateConeBaseDrag((DrawableCone)item, mousePos); break;
+                case ActiveDragType.ConeRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
+            }
         }
     }
 }

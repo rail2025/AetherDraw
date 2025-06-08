@@ -1,15 +1,14 @@
 // AetherDraw/DrawingLogic/DrawableRectangle.cs
 using System;
+using System.Drawing; // Required for RectangleF
 using System.Numerics;
-using ImGuiNET; // For ImDrawListPtr in existing Draw method
-using Dalamud.Interface.Utility; // For ImGuiHelpers
+using ImGuiNET;
+using Dalamud.Interface.Utility;
 
-// ImageSharp using statements
-using SixLabors.ImageSharp; // For PointF, Color, Matrix3x2 (from System.Numerics)
-using SixLabors.ImageSharp.PixelFormats; // For Rgba32 if needed directly
-using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
-using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens, IPath
-using SixLabors.ImageSharp.Drawing.Processing; // For Fill, Draw extension methods
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
 
 
 namespace AetherDraw.DrawingLogic
@@ -109,33 +108,22 @@ namespace AetherDraw.DrawingLogic
             // Do not draw if it has no area.
             if (halfSize.X < 0.01f || halfSize.Y < 0.01f) return;
 
-            // Define corners relative to a local (0,0) center.
-            PointF[] localCorners = {
-                new PointF(-halfSize.X, -halfSize.Y), new PointF(halfSize.X, -halfSize.Y),
-                new PointF(halfSize.X, halfSize.Y), new PointF(-halfSize.X, halfSize.Y)
+            var localCorners = new SixLabors.ImageSharp.PointF[] {
+                new (-halfSize.X, -halfSize.Y), new (halfSize.X, -halfSize.Y),
+                new (halfSize.X, halfSize.Y), new (-halfSize.X, halfSize.Y)
             };
 
-            PointF[] transformedCorners = new PointF[4];
-
-            // Transformation:
-            // 1. Rotate around local origin (0,0).
-            // 2. Translate by logical center to position the rotated shape.
-            // 3. Scale by currentGlobalScale.
-            // 4. Translate by canvasOriginInOutputImage to place on the final image.
             Matrix3x2 transformMatrix =
                 Matrix3x2.CreateRotation(this.RotationAngle) * Matrix3x2.CreateTranslation(center) * Matrix3x2.CreateScale(currentGlobalScale) * Matrix3x2.CreateTranslation(canvasOriginInOutputImage);
 
+            var transformedCorners = new SixLabors.ImageSharp.PointF[4];
             for (int i = 0; i < 4; i++)
             {
-                // Convert local PointF to Vector2 for System.Numerics.Matrix3x2.Transform, then back to PointF
                 var transformedVec = Vector2.Transform(new Vector2(localCorners[i].X, localCorners[i].Y), transformMatrix);
-                transformedCorners[i] = new PointF(transformedVec.X, transformedVec.Y);
+                transformedCorners[i] = new SixLabors.ImageSharp.PointF(transformedVec.X, transformedVec.Y);
             }
 
-            var pathBuilder = new PathBuilder();
-            pathBuilder.AddLines(transformedCorners);
-            pathBuilder.CloseFigure(); // Ensure the rectangle path is closed.
-            IPath path = pathBuilder.Build();
+            var path = new PathBuilder().AddLines(transformedCorners).CloseFigure().Build();
 
             if (IsFilled)
             {
@@ -145,6 +133,33 @@ namespace AetherDraw.DrawingLogic
             {
                 context.Draw(Pens.Solid(imageSharpColor, scaledThickness), path);
             }
+        }
+
+        /// <summary>
+        /// Calculates the axis-aligned bounding box that encloses the (potentially rotated) rectangle.
+        /// </summary>
+        /// <returns>A RectangleF representing the bounding box.</returns>
+        public override System.Drawing.RectangleF GetBoundingBox()
+        {
+            // Get the final absolute positions of the four corners.
+            Vector2[] corners = GetRotatedCorners();
+
+            // Find the minimum and maximum X and Y coordinates among all corners.
+            float minX = corners[0].X;
+            float minY = corners[0].Y;
+            float maxX = corners[0].X;
+            float maxY = corners[0].Y;
+
+            for (int i = 1; i < 4; i++)
+            {
+                minX = MathF.Min(minX, corners[i].X);
+                minY = MathF.Min(minY, corners[i].Y);
+                maxX = MathF.Max(maxX, corners[i].X);
+                maxY = MathF.Max(maxY, corners[i].Y);
+            }
+
+            // Create the bounding box from the min/max values.
+            return new System.Drawing.RectangleF(minX, minY, maxX - minX, maxY - minY);
         }
 
         // Performs hit detection for the rectangle in logical (unscaled) coordinates.
@@ -192,7 +207,6 @@ namespace AetherDraw.DrawingLogic
         }
 
         // Helper to get corners in logical, rotated space (not scaled, no canvas origin offset).
-        // Used by ShapeInteractionHandler.
         public Vector2[] GetRotatedCorners()
         {
             var (center, halfSize) = GetGeometry();

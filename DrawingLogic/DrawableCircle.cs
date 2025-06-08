@@ -1,15 +1,14 @@
 // AetherDraw/DrawingLogic/DrawableCircle.cs
 using System;
+using System.Drawing; // Required for RectangleF
 using System.Numerics;
-using ImGuiNET; // For ImDrawListPtr in existing Draw method
-using Dalamud.Interface.Utility; // For ImGuiHelpers
+using ImGuiNET;
+using Dalamud.Interface.Utility;
 
-// ImageSharp using statements
-using SixLabors.ImageSharp; // For PointF, Color
-using SixLabors.ImageSharp.PixelFormats; // For Rgba32 if needed directly
-using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
-using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens, IPath, EllipsePolygon
-using SixLabors.ImageSharp.Drawing.Processing; // For Fill, Draw extension methods
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -24,7 +23,7 @@ namespace AetherDraw.DrawingLogic
         {
             this.ObjectDrawMode = DrawMode.Circle;
             this.CenterRelative = centerRelative;
-            this.Radius = 0f; // Radius is typically determined during UpdatePreview.
+            this.Radius = 0f;
             this.Color = color;
             this.Thickness = unscaledThickness;
             this.IsFilled = isFilled;
@@ -40,7 +39,6 @@ namespace AetherDraw.DrawingLogic
         // Draws the circle on the ImGui canvas.
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            // Avoid drawing if the radius is very small during preview.
             if (this.Radius < 0.5f && this.IsPreview) return;
 
             var displayColorVec = this.IsSelected ? new Vector4(1, 1, 0, 1) : (this.IsHovered ? new Vector4(0, 1, 1, 1) : this.Color);
@@ -51,13 +49,11 @@ namespace AetherDraw.DrawingLogic
             float displayScaledThickness = baseScaledThickness + highlightThicknessAddition;
             displayScaledThickness = MathF.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness);
 
-            // Scale center and radius for ImGui drawing
             Vector2 screenCenter = (this.CenterRelative * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
             float scaledRadiusForImGui = this.Radius * ImGuiHelpers.GlobalScale;
 
             int numSegments = (int)(scaledRadiusForImGui / 2f);
             numSegments = Math.Clamp(numSegments, 12, 128);
-
 
             if (this.IsFilled)
             {
@@ -72,7 +68,6 @@ namespace AetherDraw.DrawingLogic
         // Draws the circle to an ImageSharp context for image export.
         public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
         {
-            // Do not draw if radius is negligible for the export.
             if (this.Radius * currentGlobalScale < 0.5f) return;
 
             var imageSharpColor = SixLabors.ImageSharp.Color.FromRgba(
@@ -82,13 +77,11 @@ namespace AetherDraw.DrawingLogic
             float scaledThickness = Math.Max(1f, this.Thickness * currentGlobalScale);
             float finalScaledRadius = this.Radius * currentGlobalScale;
 
-            // Calculate the center point on the output image.
-            PointF centerPoint = new PointF(
+            var centerPoint = new SixLabors.ImageSharp.PointF(
                 (this.CenterRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X,
                 (this.CenterRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
             );
 
-            // Create an EllipsePolygon representing the circle.
             var ellipse = new EllipsePolygon(centerPoint, finalScaledRadius);
 
             if (IsFilled)
@@ -101,21 +94,28 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
+        /// <summary>
+        /// Calculates the axis-aligned bounding box for this circle.
+        /// </summary>
+        /// <returns>A RectangleF representing the bounding box.</returns>
+        public override System.Drawing.RectangleF GetBoundingBox()
+        {
+            float diameter = this.Radius * 2;
+            // We explicitly use System.Drawing.RectangleF to resolve ambiguity with the ImageSharp library's RectangleF.
+            return new System.Drawing.RectangleF(this.CenterRelative.X - this.Radius, this.CenterRelative.Y - this.Radius, diameter, diameter);
+        }
+
         // Performs hit detection for the circle in logical (unscaled) coordinates.
         public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
         {
-            // Hit detection uses logical (unscaled) values.
             float distanceToCenter = Vector2.Distance(queryPointRelative, this.CenterRelative);
 
             if (this.IsFilled)
             {
-                // For filled circles, check if the point is within the radius (plus hit threshold).
                 return distanceToCenter <= this.Radius + unscaledHitThreshold;
             }
             else
             {
-                // For outlined circles, check if the point is close to the circumference.
-                // The thickness component is for the line's own width.
                 return MathF.Abs(distanceToCenter - this.Radius) <= unscaledHitThreshold + (this.Thickness / 2f);
             }
         }

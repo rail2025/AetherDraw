@@ -75,7 +75,7 @@ namespace AetherDraw.DrawingLogic
             {
                 // Font Size Buttons
                 var activeColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
-                var fontSizes = new[] { ("S", 12f), ("M", 16f), ("L", 24f), ("XL", 32f) };
+                var fontSizes = new[] { ("S", 12f), ("M", 20f), ("L", 32f), ("XL", 48f) };
 
                 for (int i = 0; i < fontSizes.Length; i++)
                 {

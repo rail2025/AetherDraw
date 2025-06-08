@@ -3,15 +3,16 @@ using System;
 using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
-using ImGuiNET; // For ImDrawListPtr in existing Draw method
-using Dalamud.Interface.Utility; // For ImGuiHelpers
+using ImGuiNET;
+using Dalamud.Interface.Utility;
+using System.Drawing; // Required for RectangleF
 
 // ImageSharp using statements
-using SixLabors.ImageSharp; // For PointF, Color
-using SixLabors.ImageSharp.PixelFormats; // For Rgba32 if needed directly
-using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
-using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens, IPath
-using SixLabors.ImageSharp.Drawing.Processing; // For Draw extension methods
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -165,11 +166,11 @@ namespace AetherDraw.DrawingLogic
             for (int i = 0; i < PointsRelative.Count - 1; i++)
             {
                 // Transform logical points to image coordinates
-                PointF p1 = new PointF(
+                var p1 = new SixLabors.ImageSharp.PointF(
                     (PointsRelative[i].X * currentGlobalScale) + canvasOriginInOutputImage.X,
                     (PointsRelative[i].Y * currentGlobalScale) + canvasOriginInOutputImage.Y
                 );
-                PointF p2 = new PointF(
+                var p2 = new SixLabors.ImageSharp.PointF(
                     (PointsRelative[i + 1].X * currentGlobalScale) + canvasOriginInOutputImage.X,
                     (PointsRelative[i + 1].Y * currentGlobalScale) + canvasOriginInOutputImage.Y
                 );
@@ -189,11 +190,11 @@ namespace AetherDraw.DrawingLogic
                         float remainingLengthInCurrentDash = currentScaledDashLength - currentDistanceIntoPatternElement;
                         float lengthToDrawForThisDashPart = MathF.Min(remainingLengthInCurrentDash, segmentLength - distanceCoveredOnSegment);
 
-                        PointF dashPartStart = new PointF(
+                        var dashPartStart = new SixLabors.ImageSharp.PointF(
                             p1.X + segmentDirection.X * distanceCoveredOnSegment,
                             p1.Y + segmentDirection.Y * distanceCoveredOnSegment
                         );
-                        PointF dashPartEnd = new PointF(
+                        var dashPartEnd = new SixLabors.ImageSharp.PointF(
                             dashPartStart.X + segmentDirection.X * lengthToDrawForThisDashPart,
                             dashPartStart.Y + segmentDirection.Y * lengthToDrawForThisDashPart
                         );
@@ -230,6 +231,22 @@ namespace AetherDraw.DrawingLogic
             }
         }
 
+        /// <summary>
+        /// Calculates the axis-aligned bounding box for this dashed path.
+        /// </summary>
+        /// <returns>A RectangleF representing the bounding box.</returns>
+        public override System.Drawing.RectangleF GetBoundingBox()
+        {
+            if (this.PointsRelative.Count == 0) return System.Drawing.RectangleF.Empty;
+
+            float minX = this.PointsRelative.Min(p => p.X);
+            float minY = this.PointsRelative.Min(p => p.Y);
+            float maxX = this.PointsRelative.Max(p => p.X);
+            float maxY = this.PointsRelative.Max(p => p.Y);
+
+            return new System.Drawing.RectangleF(minX, minY, maxX - minX, maxY - minY);
+        }
+
         // Performs hit detection for the dashed line in logical (unscaled) coordinates.
         public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
         {
@@ -253,7 +270,7 @@ namespace AetherDraw.DrawingLogic
             var newDash = new DrawableDash(PointsRelative.FirstOrDefault(), this.Color, this.Thickness)
             {
                 PointsRelative = new List<Vector2>(this.PointsRelative),
-                DashLength = this.DashLength, // Ensure these are copied too
+                DashLength = this.DashLength,
                 GapLength = this.GapLength
             };
             CopyBasePropertiesTo(newDash);

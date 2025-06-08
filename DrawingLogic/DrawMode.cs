@@ -39,6 +39,16 @@ namespace AetherDraw.DrawingLogic
         RoleMeleeImage,
         RoleRangedImage,
 
+        TriangleImage,
+        SquareImage,
+        PlusImage,
+        CircleMarkImage,
+
+        Party1Image,
+        Party2Image,
+        Party3Image,
+        Party4Image,
+
         TextTool,
 
         // Potentially other specific icons if they behave like placeable images

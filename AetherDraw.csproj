@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>1.2.0.0</AssemblyVersion>
+        <AssemblyVersion>1.3.0.0</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
@@ -11,8 +11,43 @@
         <Description>A plugin to draw encounter strategies.</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>1.2.0.0</Version>
+        <Version>1.3.0.0</Version>
     </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\A.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\B.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\C.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\D.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\CircleMark.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\Plus.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Square.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Triangle.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\1_waymark.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\2_waymark.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\3_waymark.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\4_waymark.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party3.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party4.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party5.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party6.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party7.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\Party8.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\Party1.png" />
+    </ItemGroup>
 
     <ItemGroup>
       <EmbeddedResource Include="PluginImages\aoes\boss.JPG" />
@@ -22,31 +57,17 @@
       <EmbeddedResource Include="PluginImages\aoes\line_stack.JPG" />
       <EmbeddedResource Include="PluginImages\aoes\spread.JPG" />
       <EmbeddedResource Include="PluginImages\aoes\stack.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\1 chain marker.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\1 dont attack marker.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\1_marker.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\1_waymark.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\2 chain marker.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\2 dont attack marker.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\2_marker.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\2_waymark.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\3_marker.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\3_waymark.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\4_marker.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\4_waymark.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\A.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\B.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\C.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\circle_marker.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\D.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\Healer.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\Melee.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\plus_marker.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\Ranged.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\square_marker.JPG" />
       <EmbeddedResource Include="PluginImages\toolbar\Tank.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\toolbar.JPG" />
-      <EmbeddedResource Include="PluginImages\toolbar\triangle_marker.JPG" />
     </ItemGroup>
 
     <ItemGroup>

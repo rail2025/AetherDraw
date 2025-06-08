@@ -34,6 +34,7 @@ namespace AetherDraw.Core
     {
         private List<PageData> pages = new List<PageData>();
         private int currentPageIndex = 0;
+        private PageData? pageClipboard = null;
 
         // Fallback for when there are no drawables on the current page, to avoid null references.
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
@@ -147,14 +148,14 @@ namespace AetherDraw.Core
             Vector4 waymarkTint = Vector4.One;
 
             var waymarksToPreload = new[] {
-                new { Mode = DrawMode.WaymarkAImage, Path = "PluginImages.toolbar.A.JPG", Angle = 3 * MathF.PI / 2 },
-                new { Mode = DrawMode.WaymarkBImage, Path = "PluginImages.toolbar.B.JPG", Angle = 0f },
-                new { Mode = DrawMode.WaymarkCImage, Path = "PluginImages.toolbar.C.JPG", Angle = MathF.PI / 2 },
-                new { Mode = DrawMode.WaymarkDImage, Path = "PluginImages.toolbar.D.JPG", Angle = MathF.PI },
-                new { Mode = DrawMode.Waymark1Image, Path = "PluginImages.toolbar.1_waymark.JPG", Angle = 5 * MathF.PI / 4 },
-                new { Mode = DrawMode.Waymark2Image, Path = "PluginImages.toolbar.2_waymark.JPG", Angle = 7 * MathF.PI / 4 },
-                new { Mode = DrawMode.Waymark3Image, Path = "PluginImages.toolbar.3_waymark.JPG", Angle = MathF.PI / 4 },
-                new { Mode = DrawMode.Waymark4Image, Path = "PluginImages.toolbar.4_waymark.JPG", Angle = 3 * MathF.PI / 4 }
+                new { Mode = DrawMode.WaymarkAImage, Path = "PluginImages.toolbar.A.png", Angle = 3 * MathF.PI / 2 },
+                new { Mode = DrawMode.WaymarkBImage, Path = "PluginImages.toolbar.B.png", Angle = 0f },
+                new { Mode = DrawMode.WaymarkCImage, Path = "PluginImages.toolbar.C.png", Angle = MathF.PI / 2 },
+                new { Mode = DrawMode.WaymarkDImage, Path = "PluginImages.toolbar.D.png", Angle = MathF.PI },
+                new { Mode = DrawMode.Waymark1Image, Path = "PluginImages.toolbar.1_waymark.png", Angle = 5 * MathF.PI / 4 },
+                new { Mode = DrawMode.Waymark2Image, Path = "PluginImages.toolbar.2_waymark.png", Angle = 7 * MathF.PI / 4 },
+                new { Mode = DrawMode.Waymark3Image, Path = "PluginImages.toolbar.3_waymark.png", Angle = MathF.PI / 4 },
+                new { Mode = DrawMode.Waymark4Image, Path = "PluginImages.toolbar.4_waymark.png", Angle = 3 * MathF.PI / 4 }
             };
             foreach (var wmInfo in waymarksToPreload)
             {
@@ -195,6 +196,61 @@ namespace AetherDraw.Core
             // It's implied MainWindow will call SwitchToPage on its end after this.
             // For now, this method just modifies the internal state.
             // MainWindow will call SwitchToPage(this.currentPageIndex, true) which clears undo.
+            return true;
+        }
+
+        /// <summary>
+        /// Checks if there is a page stored in the clipboard.
+        /// </summary>
+        /// <returns>True if a page has been copied, false otherwise.</returns>
+        public bool HasCopiedPage()
+        {
+            return this.pageClipboard != null;
+        }
+
+        /// <summary>
+        /// Creates a deep clone of the current page and stores it in the internal clipboard.
+        /// </summary>
+        public void CopyCurrentPageToClipboard()
+        {
+            if (pages.Count == 0 || currentPageIndex < 0 || currentPageIndex >= pages.Count) return;
+
+            var sourcePage = pages[currentPageIndex];
+
+            // Create a new PageData object and deep clone all drawables into it.
+            this.pageClipboard = new PageData
+            {
+                Name = sourcePage.Name, // We'll rename it on paste.
+                Drawables = sourcePage.Drawables.Select(d => d.Clone()).ToList()
+            };
+
+            AetherDraw.Plugin.Log?.Info($"[PageManager] Copied page '{sourcePage.Name}' to clipboard.");
+        }
+
+        /// <summary>
+        /// Clears the current page and pastes the contents from the clipboard onto it.
+        /// </summary>
+        /// <returns>True if the paste and overwrite was successful, false otherwise.</returns>
+        public bool PastePageFromClipboard()
+        {
+            // Do nothing if the clipboard is empty or the current page is invalid.
+            if (this.pageClipboard == null || pages.Count == 0 || currentPageIndex < 0 || currentPageIndex >= pages.Count)
+            {
+                AetherDraw.Plugin.Log?.Warning("[PageManager] Paste attempted but clipboard is empty or page index is invalid.");
+                return false;
+            }
+
+            // Get the current page that will be overwritten.
+            var targetPage = pages[currentPageIndex];
+
+            // Clear the existing contents.
+            targetPage.Drawables.Clear();
+
+            // Add a deep copy of each drawable from the clipboard to the target page.
+            // Cloning is essential so the clipboard can be used for multiple pastes.
+            targetPage.Drawables.AddRange(this.pageClipboard.Drawables.Select(d => d.Clone()));
+
+            AetherDraw.Plugin.Log?.Info($"[PageManager] Pasted clipboard onto page '{targetPage.Name}'.");
             return true;
         }
 

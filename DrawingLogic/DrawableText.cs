@@ -12,6 +12,7 @@ using SixLabors.ImageSharp.Drawing;
 using SixLabors.ImageSharp.Drawing.Processing;
 using SixLabors.Fonts;
 using System.Linq;
+using System.Drawing; // Required for RectangleF
 
 namespace AetherDraw.DrawingLogic
 {
@@ -180,14 +181,20 @@ namespace AetherDraw.DrawingLogic
             {
                 AetherDraw.Plugin.Log?.Error("[DrawableText.DrawToImage] Font not loaded, cannot draw text to image.");
                 float fallbackWidth = (RawText.Length * scaledFontSizePoints * 0.6f); float fallbackHeight = scaledFontSizePoints;
-                PointF fallbackPos = new PointF((this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X, (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y);
+                var fallbackPos = new SixLabors.ImageSharp.PointF((this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X, (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y);
                 var fallbackRect = new RectangularPolygon(fallbackPos.X, fallbackPos.Y, fallbackWidth, fallbackHeight);
                 context.Fill(SixLabors.ImageSharp.Color.DarkRed, fallbackRect);
                 return;
             }
-            PointF textOrigin = new PointF((this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X, (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y);
+            var textOrigin = new SixLabors.ImageSharp.PointF((this.PositionRelative.X * currentGlobalScale) + canvasOriginInOutputImage.X, (this.PositionRelative.Y * currentGlobalScale) + canvasOriginInOutputImage.Y);
             var textOptions = new RichTextOptions(font) { Origin = textOrigin, WrappingLength = (this.WrappingWidth > 0.01f) ? (this.WrappingWidth * currentGlobalScale) : 0, HorizontalAlignment = SixLabors.Fonts.HorizontalAlignment.Left, VerticalAlignment = SixLabors.Fonts.VerticalAlignment.Top, };
             context.DrawText(textOptions, RawText, imageSharpColor);
+        }
+
+        public override System.Drawing.RectangleF GetBoundingBox()
+        {
+            // The bounding box for a text object is its top-left position and its calculated size.
+            return new System.Drawing.RectangleF(this.PositionRelative.X, this.PositionRelative.Y, this.CurrentBoundingBoxSize.X, this.CurrentBoundingBoxSize.Y);
         }
 
         public override bool IsHit(Vector2 queryPointCanvasRelative, float unscaledHitThreshold = 5.0f)
@@ -209,6 +216,6 @@ namespace AetherDraw.DrawingLogic
         public override void Translate(Vector2 deltaCanvasRelative) { PositionRelative += deltaCanvasRelative; }
         public override void UpdatePreview(Vector2 currentPointRelative) { /* No standard preview update for text */ }
         public string GetHashCodeShort() => Math.Abs(this.GetHashCode()).ToString().Substring(0, Math.Min(10, Math.Abs(this.GetHashCode()).ToString().Length));
-        
+
     }
 }

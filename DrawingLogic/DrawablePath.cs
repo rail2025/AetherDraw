@@ -1,16 +1,16 @@
+// AetherDraw/DrawingLogic/DrawablePath.cs
 using System.Numerics;
-using System.Collections.Generic; // For List
-using System.Linq; // For FirstOrDefault
+using System.Collections.Generic;
+using System.Linq;
 using ImGuiNET;
-using Dalamud.Interface.Utility; // For ImGuiHelpers
-using System; // For MathF
+using Dalamud.Interface.Utility;
+using System;
+using System.Drawing; // Required for RectangleF
 
-// ImageSharp using statements
-using SixLabors.ImageSharp; // For PointF, Color
-using SixLabors.ImageSharp.PixelFormats; // If Rgba32 is used directly
-using SixLabors.ImageSharp.Processing; // For IImageProcessingContext
-using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens
-using SixLabors.ImageSharp.Drawing.Processing; // For Draw extension method
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -55,7 +55,7 @@ namespace AetherDraw.DrawingLogic
             float displayScaledThickness = baseScaledThickness + highlightThicknessAddition;
             displayScaledThickness = Math.Max(1f * ImGuiHelpers.GlobalScale, displayScaledThickness);
 
-            Vector2[] screenPoints = PointsRelative.Select(p => p * ImGuiHelpers.GlobalScale + canvasOriginScreen).ToArray(); // Apply scale
+            Vector2[] screenPoints = PointsRelative.Select(p => p * ImGuiHelpers.GlobalScale + canvasOriginScreen).ToArray();
 
             if (screenPoints.Length > 1)
             {
@@ -75,28 +75,33 @@ namespace AetherDraw.DrawingLogic
             );
             float scaledThickness = Math.Max(1f, this.Thickness * currentGlobalScale);
 
-            var pathBuilder = new PathBuilder();
-            var firstPoint = PointsRelative[0];
+            // Convert our list of points into the format the graphics library needs.
+            var imageSharpPoints = this.PointsRelative.Select(p => new SixLabors.ImageSharp.PointF(
+                (p.X * currentGlobalScale) + canvasOriginInOutputImage.X,
+                (p.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
+                )).ToArray();
 
-            // Corrected MoveTo: Use new PointF
-            pathBuilder.MoveTo(new PointF(
-                (firstPoint.X * currentGlobalScale) + canvasOriginInOutputImage.X,
-                (firstPoint.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
-            ));
+            // Build a single "Path" object from the list of points.
+            var path = new PathBuilder().AddLines(imageSharpPoints).Build();
 
-            for (int i = 1; i < PointsRelative.Count; i++)
-            {
-                var currentPoint = PointsRelative[i];
-                // Corrected LineTo: Use new PointF
-                pathBuilder.LineTo(new PointF(
-                    (currentPoint.X * currentGlobalScale) + canvasOriginInOutputImage.X,
-                    (currentPoint.Y * currentGlobalScale) + canvasOriginInOutputImage.Y
-                ));
-            }
+            // Draw the generated path onto the image.
+            context.Draw(imageSharpColor, scaledThickness, path);
+        }
 
-            IPath path = pathBuilder.Build();
-            // Corrected Pen instantiation: Use Pens.Solid()
-            context.Draw(Pens.Solid(imageSharpColor, scaledThickness), path);
+        /// <summary>
+        /// Calculates the axis-aligned bounding box for this path.
+        /// </summary>
+        /// <returns>A RectangleF representing the bounding box.</returns>
+        public override System.Drawing.RectangleF GetBoundingBox()
+        {
+            if (this.PointsRelative.Count == 0) return System.Drawing.RectangleF.Empty;
+
+            float minX = this.PointsRelative.Min(p => p.X);
+            float minY = this.PointsRelative.Min(p => p.Y);
+            float maxX = this.PointsRelative.Max(p => p.X);
+            float maxY = this.PointsRelative.Max(p => p.Y);
+
+            return new System.Drawing.RectangleF(minX, minY, maxX - minX, maxY - minY);
         }
 
         public override bool IsHit(Vector2 queryPointRelative, float unscaledHitThreshold = 5.0f)
