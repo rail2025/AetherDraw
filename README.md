@@ -1,9 +1,16 @@
 ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/rail2025/AetherDraw/total?logoColor=brightgreen)
 <br>
-![aetherdraw1 1 0 0](https://github.com/user-attachments/assets/9dfa0722-6a5a-461e-aae6-9027fe6608b5) <br>
+![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)
+ <br>
+
 <br>
+![draw area example](https://github.com/user-attachments/assets/85fa34e4-aa57-494c-8f58-34ffd09c4101)
+
 <br>
+![draw example small](https://github.com/user-attachments/assets/497a7529-5933-4ce4-9881-3418497e2a7d)
+
 <br>
+![export example](https://github.com/user-attachments/assets/b78d5b1e-19e2-41da-b15d-4f79882d2ca0)
 
 
 open with /aetherdraw  <br>
