@@ -1,9 +1,10 @@
+// AetherDraw/Serialization/DrawableSerializer.cs
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
-using AetherDraw.DrawingLogic; 
+using AetherDraw.DrawingLogic;
 
 namespace AetherDraw.Serialization
 {
@@ -51,31 +52,41 @@ namespace AetherDraw.Serialization
         /// <returns>A list of deserialized BaseDrawable objects.</returns>
         public static List<BaseDrawable> DeserializePageFromBytes(byte[] data)
         {
-            if (data == null) throw new ArgumentNullException(nameof(data));
+            if (data == null || data.Length == 0) return new List<BaseDrawable>();
 
             var deserializedDrawables = new List<BaseDrawable>();
             using (var memoryStream = new MemoryStream(data))
             using (var reader = new BinaryReader(memoryStream))
             {
-                // Read and check the serialization version
-                int version = reader.ReadInt32();
-                if (version != SERIALIZATION_VERSION)
+                try
                 {
-                    // Log error or throw exception for version mismatch
-                    // For simplicity, returning empty list or throwing.
-                    AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Deserialization version mismatch. Expected {SERIALIZATION_VERSION}, got {version}.");
-                    // Depending on desired behavior, you might attempt an upgrade path or simply fail.
-                    throw new InvalidDataException($"Serialization version mismatch. Expected {SERIALIZATION_VERSION}, got {version}.");
-                }
-
-                int drawableCount = reader.ReadInt32();
-                for (int i = 0; i < drawableCount; i++)
-                {
-                    BaseDrawable? drawable = DeserializeSingleDrawable(reader);
-                    if (drawable != null)
+                    if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return deserializedDrawables;
+                    int version = reader.ReadInt32();
+                    if (version != SERIALIZATION_VERSION)
                     {
-                        deserializedDrawables.Add(drawable);
+                        AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Deserialization version mismatch. Expected {SERIALIZATION_VERSION}, got {version}.");
+                        return deserializedDrawables;
                     }
+
+                    if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return deserializedDrawables;
+                    int drawableCount = reader.ReadInt32();
+
+                    for (int i = 0; i < drawableCount; i++)
+                    {
+                        BaseDrawable? drawable = DeserializeSingleDrawable(reader);
+                        if (drawable != null)
+                        {
+                            deserializedDrawables.Add(drawable);
+                        }
+                    }
+                }
+                catch (EndOfStreamException e)
+                {
+                    AetherDraw.Plugin.Log?.Error(e, "Deserialization failed due to end of stream. The data may be corrupt or incomplete.");
+                }
+                catch (Exception e)
+                {
+                    AetherDraw.Plugin.Log?.Error(e, "An unexpected error occurred during deserialization.");
                 }
             }
             return deserializedDrawables;
@@ -96,7 +107,7 @@ namespace AetherDraw.Serialization
             writer.Write(drawable.Color.Z); writer.Write(drawable.Color.W);
             writer.Write(drawable.Thickness); // This is unscaled
             writer.Write(drawable.IsFilled);
-            // IsPreview, IsSelected, IsHovered are runtime states, not typically serialized.
+            writer.Write(drawable.UniqueId.ToByteArray()); // Serialize the UniqueId for network identification
 
             // 3. Write Type-Specific Properties
             switch (drawable.ObjectDrawMode)
@@ -118,6 +129,7 @@ namespace AetherDraw.Serialization
                     writer.Write(rect.RotationAngle);
                     break;
                 case DrawMode.Circle:
+                case DrawMode.Donut:
                     var circle = (DrawableCircle)drawable;
                     writer.Write(circle.CenterRelative.X); writer.Write(circle.CenterRelative.Y);
                     writer.Write(circle.Radius);
@@ -143,7 +155,6 @@ namespace AetherDraw.Serialization
                     writer.Write(dash.DashLength);
                     writer.Write(dash.GapLength);
                     break;
-                // Generic handling for all image types that use DrawableImage
                 case DrawMode.BossImage:
                 case DrawMode.CircleAoEImage:
                 case DrawMode.DonutAoEImage:
@@ -163,35 +174,34 @@ namespace AetherDraw.Serialization
                 case DrawMode.RoleHealerImage:
                 case DrawMode.RoleMeleeImage:
                 case DrawMode.RoleRangedImage:
+                case DrawMode.Party1Image:
+                case DrawMode.Party2Image:
+                case DrawMode.Party3Image:
+                case DrawMode.Party4Image:
+                case DrawMode.SquareImage:
+                case DrawMode.CircleMarkImage:
+                case DrawMode.TriangleImage:
+                case DrawMode.PlusImage:
                 case DrawMode.StackIcon:
                 case DrawMode.SpreadIcon:
                 case DrawMode.TetherIcon:
                 case DrawMode.BossIconPlaceholder:
                 case DrawMode.AddMobIcon:
                     var image = (DrawableImage)drawable;
-                    writer.Write(image.ImageResourcePath ?? string.Empty); // Handle potential null path
+                    writer.Write(image.ImageResourcePath ?? string.Empty);
                     writer.Write(image.PositionRelative.X); writer.Write(image.PositionRelative.Y);
-                    writer.Write(image.DrawSize.X); writer.Write(image.DrawSize.Y); // Unscaled
+                    writer.Write(image.DrawSize.X); writer.Write(image.DrawSize.Y);
                     writer.Write(image.RotationAngle);
-                    // Tint is BaseDrawable.Color
                     break;
                 case DrawMode.TextTool:
                     var text = (DrawableText)drawable;
                     writer.Write(text.RawText ?? string.Empty);
                     writer.Write(text.PositionRelative.X); writer.Write(text.PositionRelative.Y);
-                    writer.Write(text.FontSize); // Unscaled
-                    writer.Write(text.WrappingWidth); // Unscaled
-                    // Color is BaseDrawable.Color
-                    break;
-                case DrawMode.Donut:
-                    // Assuming Donut might be a shape in the future.
-                    // If it has specific properties, serialize them here.
-                    // For now, if it's just a DrawMode without a specific class/props beyond base:
-                    AetherDraw.Plugin.Log?.Debug($"[DrawableSerializer] Serializing DrawMode.Donut (currently no specific properties beyond base).");
+                    writer.Write(text.FontSize);
+                    writer.Write(text.WrappingWidth);
                     break;
                 default:
                     AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Unhandled DrawMode during serialization: {drawable.ObjectDrawMode}");
-                    // Consider throwing an error or writing a placeholder if this state is unexpected.
                     break;
             }
         }
@@ -201,85 +211,79 @@ namespace AetherDraw.Serialization
         /// </summary>
         private static BaseDrawable? DeserializeSingleDrawable(BinaryReader reader)
         {
-            // 1. Read Type Discriminator
+            if (reader.BaseStream.Position >= reader.BaseStream.Length) return null;
             DrawMode mode = (DrawMode)reader.ReadByte();
 
-            // 2. Read Common BaseDrawable Properties
+            // Perform safety checks before reading each block of data
+            if (reader.BaseStream.Position + sizeof(float) * 4 + sizeof(float) + sizeof(bool) + 16 > reader.BaseStream.Length) return null;
             Vector4 color = new Vector4(reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle(), reader.ReadSingle());
             float thickness = reader.ReadSingle();
             bool isFilled = reader.ReadBoolean();
-
+            Guid uniqueId = new Guid(reader.ReadBytes(16));
             BaseDrawable? drawable = null;
 
-            // 3. Construct object and Read Type-Specific Properties
-            // Note: Constructors of DrawableX classes are used here. Ensure they match.
-            // Properties not set by constructor are set afterwards.
             switch (mode)
             {
                 case DrawMode.Pen:
+                    if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return null;
                     int pathPointCount = reader.ReadInt32();
+                    if (reader.BaseStream.Position + sizeof(float) * 2 * pathPointCount > reader.BaseStream.Length) return null;
                     var pathPoints = new List<Vector2>(pathPointCount);
                     for (int i = 0; i < pathPointCount; i++) pathPoints.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
-                    var path = new DrawablePath(pathPoints.FirstOrDefault(), color, thickness); // Constructor uses first point, color, thickness
-                    path.PointsRelative.Clear(); // Clear point added by constructor if it's based on the passed startPoint
-                    path.PointsRelative.AddRange(pathPoints); // Add all deserialized points
+                    var path = new DrawablePath(pathPoints.FirstOrDefault(), color, thickness);
+                    path.PointsRelative.Clear(); path.PointsRelative.AddRange(pathPoints);
                     drawable = path;
                     break;
                 case DrawMode.StraightLine:
+                    if (reader.BaseStream.Position + sizeof(float) * 4 > reader.BaseStream.Length) return null;
                     Vector2 lineStart = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     Vector2 lineEnd = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                    var line = new DrawableStraightLine(lineStart, color, thickness) { EndPointRelative = lineEnd };
-                    drawable = line;
+                    drawable = new DrawableStraightLine(lineStart, color, thickness) { EndPointRelative = lineEnd };
                     break;
                 case DrawMode.Rectangle:
+                    if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 rectStart = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     Vector2 rectEnd = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     float rectRotation = reader.ReadSingle();
-                    var rect = new DrawableRectangle(rectStart, color, thickness, isFilled)
-                    { EndPointRelative = rectEnd, RotationAngle = rectRotation };
-                    drawable = rect;
+                    drawable = new DrawableRectangle(rectStart, color, thickness, isFilled) { EndPointRelative = rectEnd, RotationAngle = rectRotation };
                     break;
                 case DrawMode.Circle:
+                case DrawMode.Donut:
+                    if (reader.BaseStream.Position + sizeof(float) * 3 > reader.BaseStream.Length) return null;
                     Vector2 circleCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     float circleRadius = reader.ReadSingle();
-                    var circle = new DrawableCircle(circleCenter, color, thickness, isFilled) { Radius = circleRadius };
-                    drawable = circle;
+                    drawable = new DrawableCircle(circleCenter, color, thickness, isFilled) { Radius = circleRadius, ObjectDrawMode = mode };
                     break;
                 case DrawMode.Arrow:
+                    if (reader.BaseStream.Position + sizeof(float) * 7 > reader.BaseStream.Length) return null;
                     Vector2 arrowStart = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     Vector2 arrowEnd = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     float arrowRotation = reader.ReadSingle();
                     float arrowLengthOffset = reader.ReadSingle();
                     float arrowWidthScale = reader.ReadSingle();
-                    var arrow = new DrawableArrow(arrowStart, color, thickness)
-                    {
-                        EndPointRelative = arrowEnd, RotationAngle = arrowRotation,
-                        ArrowheadLengthOffset = arrowLengthOffset, ArrowheadWidthScale = arrowWidthScale
-                    };
-                    drawable = arrow;
+                    drawable = new DrawableArrow(arrowStart, color, thickness) { EndPointRelative = arrowEnd, RotationAngle = arrowRotation, ArrowheadLengthOffset = arrowLengthOffset, ArrowheadWidthScale = arrowWidthScale };
                     break;
                 case DrawMode.Cone:
+                    if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 coneApex = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     Vector2 coneBase = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     float coneRotation = reader.ReadSingle();
-                    var cone = new DrawableCone(coneApex, color, thickness, isFilled)
-                    { BaseCenterRelative = coneBase, RotationAngle = coneRotation };
-                    drawable = cone;
+                    drawable = new DrawableCone(coneApex, color, thickness, isFilled) { BaseCenterRelative = coneBase, RotationAngle = coneRotation };
                     break;
                 case DrawMode.Dash:
+                    if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return null;
                     int dashPointCount = reader.ReadInt32();
+                    if (reader.BaseStream.Position + sizeof(float) * 2 * dashPointCount + sizeof(float) * 2 > reader.BaseStream.Length) return null;
                     var dashPoints = new List<Vector2>(dashPointCount);
                     for (int i = 0; i < dashPointCount; i++) dashPoints.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
                     float dashLength = reader.ReadSingle();
                     float gapLength = reader.ReadSingle();
                     var dash = new DrawableDash(dashPoints.FirstOrDefault(), color, thickness);
-                    dash.PointsRelative.Clear();
-                    dash.PointsRelative.AddRange(dashPoints);
+                    dash.PointsRelative.Clear(); dash.PointsRelative.AddRange(dashPoints);
                     dash.DashLength = dashLength;
                     dash.GapLength = gapLength;
                     drawable = dash;
                     break;
-                // Generic handling for all image types
                 case DrawMode.BossImage:
                 case DrawMode.CircleAoEImage:
                 case DrawMode.DonutAoEImage:
@@ -299,59 +303,46 @@ namespace AetherDraw.Serialization
                 case DrawMode.RoleHealerImage:
                 case DrawMode.RoleMeleeImage:
                 case DrawMode.RoleRangedImage:
+                case DrawMode.Party1Image:
+                case DrawMode.Party2Image:
+                case DrawMode.Party3Image:
+                case DrawMode.Party4Image:
+                case DrawMode.SquareImage:
+                case DrawMode.CircleMarkImage:
+                case DrawMode.TriangleImage:
+                case DrawMode.PlusImage:
                 case DrawMode.StackIcon:
                 case DrawMode.SpreadIcon:
                 case DrawMode.TetherIcon:
                 case DrawMode.BossIconPlaceholder:
                 case DrawMode.AddMobIcon:
                     string imgPath = reader.ReadString();
+                    if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 imgPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                    Vector2 imgSize = new Vector2(reader.ReadSingle(), reader.ReadSingle()); // Unscaled
+                    Vector2 imgSize = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     float imgRotation = reader.ReadSingle();
-                    // DrawableImage constructor: DrawMode drawMode, string imageResourcePath, Vector2 positionRelative, 
-                    //                          Vector2 unscaledDrawSize, Vector4 tint, float rotation = 0f
-                    // The 'mode' variable here is the specific ObjectDrawMode.
-                    // The 'color' variable read earlier is the Tint.
-                    var image = new DrawableImage(mode, imgPath, imgPos, imgSize, color, imgRotation);
-                    drawable = image;
+                    drawable = new DrawableImage(mode, imgPath, imgPos, imgSize, color, imgRotation);
                     break;
                 case DrawMode.TextTool:
                     string rawText = reader.ReadString();
+                    if (reader.BaseStream.Position + sizeof(float) * 4 > reader.BaseStream.Length) return null;
                     Vector2 textPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());
-                    float fontSize = reader.ReadSingle(); // Unscaled
-                    float wrapWidth = reader.ReadSingle(); // Unscaled
-                    // DrawableText constructor: Vector2 positionRelative, string rawText, Vector4 color, 
-                    //                           float fontSize, float wrappingWidth = 0f
-                    var text = new DrawableText(textPos, rawText, color, fontSize, wrapWidth);
-                    drawable = text;
-                    break;
-                case DrawMode.Donut:
-                    // If DrawMode.Donut corresponds to a specific class with properties:
-                    // var donut = new DrawableDonut(color, thickness, isFilled);
-                    // ... read specific donut properties ...
-                    // drawable = donut;
-                    // For now, assuming it might just use base properties if no specific class exists.
-                    AetherDraw.Plugin.Log?.Debug($"[DrawableSerializer] Deserializing DrawMode.Donut (currently no specific properties beyond base).");
-                    // If it should be a generic placeholder or error:
-                    // drawable = new BasePlaceholderDrawable(mode, color, thickness, isFilled); // Requires such a class
+                    float fontSize = reader.ReadSingle();
+                    float wrapWidth = reader.ReadSingle();
+                    drawable = new DrawableText(textPos, rawText, color, fontSize, wrapWidth);
                     break;
                 default:
                     AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Unhandled DrawMode during deserialization: {mode}");
-                    // Skip any potential data for this unknown type if possible, or throw.
-                    // This requires knowing the size of data for an unknown type, which is hard.
-                    // Best to ensure all serializable types are handled.
                     break;
             }
 
             if (drawable != null)
             {
-                // Ensure common properties are correctly set if not fully handled by constructor
-                // (Constructors in the provided code generally do take color, thickness, isFilled)
-                // drawable.ObjectDrawMode = mode; // Crucial: Set the read mode
+                drawable.UniqueId = uniqueId;
                 drawable.Color = color;
                 drawable.Thickness = thickness;
                 drawable.IsFilled = isFilled;
-                drawable.IsPreview = false; // Deserialized objects are not previews
+                drawable.IsPreview = false;
             }
             return drawable;
         }

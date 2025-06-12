@@ -18,12 +18,13 @@ namespace AetherDraw.Core
         // --- Injected Dependencies & Delegates ---
         private readonly UndoManager undoManager;
         private readonly PageManager pageManager;
+        private readonly Plugin plugin;
         private readonly Func<DrawMode> getCurrentDrawMode;
         private readonly Action<DrawMode> setCurrentDrawMode;
         private readonly Func<Vector4> getCurrentBrushColor;
         private readonly Func<float> getCurrentBrushThickness; // Unscaled
         private readonly Func<bool> getCurrentShapeFilled;
-        private readonly List<BaseDrawable> selectedDrawablesListRef; // Direct reference to MainWindow's selection list
+        private readonly List<BaseDrawable> selectedDrawablesListRef;
         private readonly Func<BaseDrawable?> getHoveredDrawableFunc;
         private readonly Action<BaseDrawable?> setHoveredDrawableAction;
         private readonly ShapeInteractionHandler shapeInteractionHandler;
@@ -32,14 +33,17 @@ namespace AetherDraw.Core
 
         // --- Internal State ---
         private bool isDrawingOnCanvas = false;
-        private BaseDrawable? currentDrawingObjectInternal = null; // The live preview object being drawn
-        private double lastEraseTime = 0; // Timestamp for eraser cooldown to prevent rapid-fire erasing
+        private BaseDrawable? currentDrawingObjectInternal = null;
+        private double lastEraseTime = 0;
 
-        // --- Constants for Object Defaults ---
+        // --- Constants ---
         private const float DefaultUnscaledFontSize = 16f;
         private const float DefaultUnscaledTextWrapWidth = 200f;
         private static readonly Vector2 DefaultUnscaledImageSize = new Vector2(30f, 30f);
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CanvasController"/> class.
+        /// </summary>
         public CanvasController(
             UndoManager undoManagerInstance,
             PageManager pageManagerInstance,
@@ -53,7 +57,8 @@ namespace AetherDraw.Core
             Action<BaseDrawable?> setHoveredDrawableDelegate,
             ShapeInteractionHandler siHandler,
             DrawingLogic.InPlaceTextEditor itEditor,
-            Configuration config)
+            Configuration config,
+            Plugin pluginInstance)
         {
             this.undoManager = undoManagerInstance ?? throw new ArgumentNullException(nameof(undoManagerInstance));
             this.pageManager = pageManagerInstance ?? throw new ArgumentNullException(nameof(pageManagerInstance));
@@ -68,10 +73,18 @@ namespace AetherDraw.Core
             this.shapeInteractionHandler = siHandler ?? throw new ArgumentNullException(nameof(siHandler));
             this.inPlaceTextEditor = itEditor ?? throw new ArgumentNullException(nameof(itEditor));
             this.configuration = config ?? throw new ArgumentNullException(nameof(config));
+            this.plugin = pluginInstance ?? throw new ArgumentNullException(nameof(pluginInstance));
         }
 
+        /// <summary>
+        /// Gets the current drawable object being created for preview rendering.
+        /// </summary>
+        /// <returns>The current in-progress <see cref="BaseDrawable"/>, or null.</returns>
         public BaseDrawable? GetCurrentDrawingObjectForPreview() => currentDrawingObjectInternal;
 
+        /// <summary>
+        /// The main entry point for processing all user interactions on the canvas.
+        /// </summary>
         public void ProcessCanvasInteraction(
             Vector2 mousePosLogical, Vector2 mousePosScreen, Vector2 canvasOriginScreen, ImDrawListPtr drawList,
             bool isLMBDown, bool isLMBClickedOnCanvas, bool isLMBReleased, bool isLMBDoubleClickedOnCanvas,
@@ -118,6 +131,7 @@ namespace AetherDraw.Core
             }
         }
 
+        // In AetherDraw/Core/CanvasController.cs
         private void HandleEraserInput(Vector2 mousePosLogical, Vector2 mousePosScreen, ImDrawListPtr drawList, bool isLMBDown, List<BaseDrawable> currentDrawablesOnPage)
         {
             float scaledEraserVisualRadius = 5f * ImGuiHelpers.GlobalScale;
@@ -132,39 +146,26 @@ namespace AetherDraw.Core
             for (int i = currentDrawablesOnPage.Count - 1; i >= 0; i--)
             {
                 var d = currentDrawablesOnPage[i];
-                if (d is DrawablePath path)
+                if (d.IsHit(mousePosLogical, logicalEraserRadius))
                 {
-                    int originalCount = path.PointsRelative.Count;
-                    path.PointsRelative.RemoveAll(pt => Vector2.Distance(pt, mousePosLogical) < logicalEraserRadius);
-                    if (path.PointsRelative.Count != originalCount)
+                    if (pageManager.IsLiveMode)
                     {
-                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Eraser Action (Path)");
-                        actionTakenThisFrame = true;
-                        if (path.PointsRelative.Count < 2 && originalCount >= 2)
-                            currentDrawablesOnPage.RemoveAt(i);
+                        // In live mode, send a delete message instead of modifying locally
+                        byte[] payload = d.UniqueId.ToByteArray();
+                        _ = plugin.NetworkManager.SendMessageAsync(Networking.MessageType.DELETE_OBJECT, payload);
                     }
-                }
-                else if (d is DrawableDash dashPath)
-                {
-                    int originalCount = dashPath.PointsRelative.Count;
-                    dashPath.PointsRelative.RemoveAll(pt => Vector2.Distance(pt, mousePosLogical) < logicalEraserRadius);
-                    if (dashPath.PointsRelative.Count != originalCount)
+                    else
                     {
-                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Eraser Action (Dash)");
-                        actionTakenThisFrame = true;
-                        if (dashPath.PointsRelative.Count < 2 && originalCount >= 2)
-                            currentDrawablesOnPage.RemoveAt(i);
+                        // In local mode, perform the action immediately with undo
+                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Eraser Action (Object)");
+                        currentDrawablesOnPage.RemoveAt(i);
+                        if (selectedDrawablesListRef.Contains(d)) selectedDrawablesListRef.Remove(d);
+                        if (getHoveredDrawableFunc() != null && getHoveredDrawableFunc()!.Equals(d))
+                            setHoveredDrawableAction(null);
                     }
-                }
-                else if (d.IsHit(mousePosLogical, logicalEraserRadius))
-                {
-                    undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Eraser Action (Object)");
-                    currentDrawablesOnPage.RemoveAt(i);
-                    if (selectedDrawablesListRef.Contains(d)) selectedDrawablesListRef.Remove(d);
-                    if (getHoveredDrawableFunc() != null && getHoveredDrawableFunc()!.Equals(d))
-                        setHoveredDrawableAction(null);
                     actionTakenThisFrame = true;
                 }
+
                 if (actionTakenThisFrame)
                 {
                     lastEraseTime = ImGui.GetTime();
@@ -200,7 +201,6 @@ namespace AetherDraw.Core
                 DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or
                 DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.StackIcon or
                 DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon or
-                // Add the new modes here to recognize them as placeable images
                 DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or
                 DrawMode.TriangleImage or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.PlusImage
                 => true,
@@ -227,8 +227,6 @@ namespace AetherDraw.Core
                     case DrawMode.LineStackImage: imagePath = "PluginImages.svg.line_stack.svg"; imageUnscaledSize = new Vector2(30f, 60f); break;
                     case DrawMode.SpreadImage: imagePath = "PluginImages.svg.spread.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
                     case DrawMode.StackImage: imagePath = "PluginImages.svg.stack.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
-
-                    // Note: Update these paths once the new transparent SVGs/PNGs are finalized
                     case DrawMode.Waymark1Image: imagePath = "PluginImages.toolbar.1_waymark.png"; break;
                     case DrawMode.Waymark2Image: imagePath = "PluginImages.toolbar.2_waymark.png"; break;
                     case DrawMode.Waymark3Image: imagePath = "PluginImages.toolbar.3_waymark.png"; break;
@@ -237,13 +235,10 @@ namespace AetherDraw.Core
                     case DrawMode.WaymarkBImage: imagePath = "PluginImages.toolbar.B.png"; break;
                     case DrawMode.WaymarkCImage: imagePath = "PluginImages.toolbar.C.png"; break;
                     case DrawMode.WaymarkDImage: imagePath = "PluginImages.toolbar.D.png"; break;
-
                     case DrawMode.RoleTankImage: imagePath = "PluginImages.toolbar.Tank.JPG"; break;
                     case DrawMode.RoleHealerImage: imagePath = "PluginImages.toolbar.Healer.JPG"; break;
                     case DrawMode.RoleMeleeImage: imagePath = "PluginImages.toolbar.Melee.JPG"; break;
                     case DrawMode.RoleRangedImage: imagePath = "PluginImages.toolbar.Ranged.JPG"; break;
-
-                    // Add cases for the new icons
                     case DrawMode.Party1Image: imagePath = "PluginImages.toolbar.Party1.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party2Image: imagePath = "PluginImages.toolbar.Party2.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party3Image: imagePath = "PluginImages.toolbar.Party3.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
@@ -252,7 +247,6 @@ namespace AetherDraw.Core
                     case DrawMode.CircleMarkImage: imagePath = "PluginImages.toolbar.CircleMark.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.TriangleImage: imagePath = "PluginImages.toolbar.Triangle.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.PlusImage: imagePath = "PluginImages.toolbar.Plus.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
-
                     case DrawMode.StackIcon: imagePath = "PluginImages.svg.stack.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.SpreadIcon: imagePath = "PluginImages.svg.spread.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.TetherIcon: imagePath = "PluginImages.svg.placeholder.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
@@ -328,7 +322,16 @@ namespace AetherDraw.Core
 
             if (isValidObject)
             {
-                pageManager.GetCurrentPageDrawables().Add(currentDrawingObjectInternal);
+                if (pageManager.IsLiveMode)
+                {
+                    var objectList = new List<BaseDrawable> { currentDrawingObjectInternal };
+                    byte[] payload = Serialization.DrawableSerializer.SerializePageToBytes(objectList);
+                    _ = plugin.NetworkManager.SendMessageAsync(Networking.MessageType.ADD_OBJECTS, payload);
+                }
+                else
+                {
+                    pageManager.GetCurrentPageDrawables().Add(currentDrawingObjectInternal);
+                }
             }
             else
             {
@@ -338,6 +341,7 @@ namespace AetherDraw.Core
                     pageManager.SetCurrentPageDrawables(undoneState);
                 }
             }
+
             currentDrawingObjectInternal = null;
             isDrawingOnCanvas = false;
         }

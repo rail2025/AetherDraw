@@ -10,12 +10,12 @@ namespace AetherDraw.DrawingLogic
     public abstract class BaseDrawable
     {
         /// <summary>
-        /// Gets the Unique Identifier for this drawable object.
-        /// It is assigned once upon creation.
+        /// Gets or sets the Unique Identifier for this drawable object.
+        /// It is assigned once upon creation but can be overwritten during deserialization.
         /// </summary>
-        public Guid UniqueId { get; private set; }
+        public Guid UniqueId { get; set; }
 
-        public DrawMode ObjectDrawMode { get; protected set; }
+        public DrawMode ObjectDrawMode { get; set; } // Changed from protected set
         public Vector4 Color { get; set; }
         public float Thickness { get; set; }
         public bool IsFilled { get; set; }

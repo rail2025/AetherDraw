@@ -32,9 +32,12 @@ namespace AetherDraw.Core
     /// </summary>
     public class PageManager
     {
-        private List<PageData> pages = new List<PageData>();
+        private List<PageData> localPages = new List<PageData>();
+        private List<PageData> livePages = new List<PageData>();
         private int currentPageIndex = 0;
         private PageData? pageClipboard = null;
+        public bool IsLiveMode { get; set; } = false;
+
 
         // Fallback for when there are no drawables on the current page, to avoid null references.
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
@@ -54,7 +57,7 @@ namespace AetherDraw.Core
         /// </summary>
         private void InitializeDefaultPage()
         {
-            if (!pages.Any())
+            if (!localPages.Any())
             {
                 AddNewPageInternal(false); // Add a new page but don't trigger a "switch" event from MainWindow's perspective
                 currentPageIndex = 0;
@@ -64,7 +67,7 @@ namespace AetherDraw.Core
         /// <summary>
         /// Gets the list of all pages.
         /// </summary>
-        public List<PageData> GetAllPages() => pages;
+        public List<PageData> GetAllPages() => IsLiveMode ? livePages : localPages;
 
         /// <summary>
         /// Gets the index of the currently active page.
@@ -77,6 +80,7 @@ namespace AetherDraw.Core
         /// </summary>
         public List<BaseDrawable> GetCurrentPageDrawables()
         {
+            var pages = GetAllPages();
             if (pages.Count > 0 && currentPageIndex >= 0 && currentPageIndex < pages.Count)
             {
                 return pages[currentPageIndex].Drawables;
@@ -92,6 +96,7 @@ namespace AetherDraw.Core
         /// <param name="drawables">The list of drawables to set for the current page.</param>
         public void SetCurrentPageDrawables(List<BaseDrawable> drawables)
         {
+            var pages = GetAllPages();
             if (pages.Count > 0 && currentPageIndex >= 0 && currentPageIndex < pages.Count)
             {
                 pages[currentPageIndex].Drawables = drawables;
@@ -107,6 +112,7 @@ namespace AetherDraw.Core
         /// </summary>
         public void ClearCurrentPageDrawables()
         {
+            var pages = GetAllPages();
             if (pages.Count > 0 && currentPageIndex >= 0 && currentPageIndex < pages.Count)
             {
                 GetCurrentPageDrawables().Clear();
@@ -135,7 +141,8 @@ namespace AetherDraw.Core
         /// </summary>
         private bool AddNewPageInternal(bool switchToPage)
         {
-            AetherDraw.Plugin.Log?.Info("[PageManager] Adding new page.");
+            var pages = GetAllPages();
+            AetherDraw.Plugin.Log?.Info($"[PageManager] Adding new page to {(IsLiveMode ? "Live" : "Local")} mode.");
             int newPageNumber = pages.Any() ? pages.Select(p => int.TryParse(p.Name, out int num) ? num : 0).DefaultIfEmpty(0).Max() + 1 : 1;
             var newPage = new PageData { Name = newPageNumber.ToString() };
 
@@ -180,7 +187,8 @@ namespace AetherDraw.Core
         /// <returns>True if the page was deleted, false otherwise.</returns>
         public bool DeleteCurrentPage()
         {
-            AetherDraw.Plugin.Log?.Info("[PageManager] Deleting current page.");
+            var pages = GetAllPages();
+            AetherDraw.Plugin.Log?.Info($"[PageManager] Deleting current page from {(IsLiveMode ? "Live" : "Local")} mode.");
             if (pages.Count <= 1)
             {
                 AetherDraw.Plugin.Log?.Warning("[PageManager] Cannot delete the last page.");
@@ -213,6 +221,7 @@ namespace AetherDraw.Core
         /// </summary>
         public void CopyCurrentPageToClipboard()
         {
+            var pages = GetAllPages();
             if (pages.Count == 0 || currentPageIndex < 0 || currentPageIndex >= pages.Count) return;
 
             var sourcePage = pages[currentPageIndex];
@@ -233,6 +242,7 @@ namespace AetherDraw.Core
         /// <returns>True if the paste and overwrite was successful, false otherwise.</returns>
         public bool PastePageFromClipboard()
         {
+            var pages = GetAllPages();
             // Do nothing if the clipboard is empty or the current page is invalid.
             if (this.pageClipboard == null || pages.Count == 0 || currentPageIndex < 0 || currentPageIndex >= pages.Count)
             {
@@ -262,6 +272,7 @@ namespace AetherDraw.Core
         /// <returns>True if the switch was successful, false otherwise.</returns>
         public bool SwitchToPage(int newPageIndex, bool forceSwitch = false)
         {
+            var pages = GetAllPages();
             AetherDraw.Plugin.Log?.Info($"[PageManager] Attempting to switch to page index {newPageIndex}. Current: {currentPageIndex}, Total: {pages.Count}");
             if (newPageIndex < 0 || newPageIndex >= pages.Count)
             {
@@ -287,7 +298,8 @@ namespace AetherDraw.Core
         /// <param name="loadedPagesData">The list of PageData objects to load.</param>
         public void LoadPages(List<PageData> loadedPagesData)
         {
-            AetherDraw.Plugin.Log?.Info($"[PageManager] Loading {loadedPagesData.Count} pages.");
+            var pages = GetAllPages();
+            AetherDraw.Plugin.Log?.Info($"[PageManager] Loading {loadedPagesData.Count} pages into {(IsLiveMode ? "Live" : "Local")} mode.");
             pages.Clear();
             foreach (var loadedPage in loadedPagesData)
             {

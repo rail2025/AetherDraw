@@ -5,6 +5,7 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using AetherDraw.Windows;
 using AetherDraw.DrawingLogic;
+using AetherDraw.Networking;
 
 namespace AetherDraw
 {
@@ -23,26 +24,30 @@ namespace AetherDraw
         public Configuration Configuration { get; init; }
         public readonly WindowSystem WindowSystem = new("AetherDraw");
 
+        // Windows
         private ConfigWindow ConfigWindow { get; init; }
         private MainWindow MainWindow { get; init; }
+        private LiveSessionWindow LiveSessionWindow { get; init; }
+
+        /// <summary>
+        /// Gets the manager for handling WebSocket network connections.
+        /// </summary>
+        public NetworkManager NetworkManager { get; init; }
 
         public Plugin()
         {
             this.Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-            // It's good practice to also pass PluginInterface to Configuration if it needs to save itself,
-            // or handle saving within the Plugin class.
-            // Your current Configuration.cs expects Initialize to be called.
             this.Configuration.Initialize(PluginInterface);
 
-
-            // Pass 'this' (the Plugin instance) to MainWindow if it needs access to non-static plugin members
-            // However, for TextureProvider and Log, we made them static, so direct access like Plugin.TextureProvider is okay.
-            // For configuration, MainWindow already gets it.
-            this.ConfigWindow = new ConfigWindow(this); // Pass 'this' if ConfigWindow needs the Plugin instance
-            this.MainWindow = new MainWindow(this);   // Pass 'this' if MainWindow needs the Plugin instance
+            // Initialize core components and windows
+            this.NetworkManager = new NetworkManager();
+            this.ConfigWindow = new ConfigWindow(this);
+            this.MainWindow = new MainWindow(this);
+            this.LiveSessionWindow = new LiveSessionWindow(this);
 
             this.WindowSystem.AddWindow(this.ConfigWindow);
             this.WindowSystem.AddWindow(this.MainWindow);
+            this.WindowSystem.AddWindow(this.LiveSessionWindow);
 
             CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
@@ -51,7 +56,7 @@ namespace AetherDraw
 
             PluginInterface.UiBuilder.Draw += DrawUI;
             PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
-            PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI; 
+            PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
 
             Log.Information("AetherDraw loaded successfully.");
         }
@@ -64,13 +69,13 @@ namespace AetherDraw
 
             this.WindowSystem.RemoveAllWindows();
 
-            // If your windows implement IDisposable and need to dispose resources (like textures they manage themselves)
-            // For TextureManager, we'll call its Dispose method.
-            this.MainWindow.Dispose(); // Ensure MainWindow has a Dispose method if it holds disposable resources
+            // Dispose of managed resources
+            this.NetworkManager.Dispose();
+            this.MainWindow.Dispose();
             this.ConfigWindow.Dispose();
+            this.LiveSessionWindow.Dispose();
 
-
-            TextureManager.Dispose(); // Dispose all loaded images
+            TextureManager.Dispose();
 
             CommandManager.RemoveHandler(CommandName);
 
@@ -79,6 +84,7 @@ namespace AetherDraw
 
         private void OnCommand(string command, string args)
         {
+            // This toggles the main window
             this.MainWindow.IsOpen = !this.MainWindow.IsOpen;
         }
 
@@ -89,5 +95,6 @@ namespace AetherDraw
 
         public void ToggleConfigUI() => this.ConfigWindow.IsOpen = !this.ConfigWindow.IsOpen;
         public void ToggleMainUI() => this.MainWindow.IsOpen = !this.MainWindow.IsOpen;
+        public void ToggleLiveSessionUI() => this.LiveSessionWindow.IsOpen = !this.LiveSessionWindow.IsOpen;
     }
 }
