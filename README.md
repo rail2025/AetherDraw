@@ -46,8 +46,6 @@ Enter /xlplugins in the chat window and look for AetherDraw and install.
 ## >>>>for party quick sync, you must be in a party, and in a duty. For passphrase, there is no such restriction.
                                                                                                                   
 <br>
-- If you save as image file into the PluginImages folder for WDIGViewer, when you use the open WDIG button and rescan/reload all images, the raid plan images will appear there so you can use it right away! WDIGViewer is here: https://github.com/rail2025/WDIGViewer
-
 
 <br> The passphrase is a random FFXIV themed sentence that should be safe to paste in chat with plausible deniability. You may use your own passphrase, 123abc123, hotdogsaresandwiches, Lalafels are potatoes in disguise, etc. The plugin just makes it more convenient to share in game. 
 <br>
