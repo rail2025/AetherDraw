@@ -1,24 +1,24 @@
 [
- {
-    "Author": "rail",
-    "Name": "AetherDraw",
-    "Punchline": "Whiteboard planner",
-    "Description": "Draw strategy images for encounters. Use /aetherdraw to open",
-    "Changelog": "added undo, fixed text resizing/input, fixed eraser, refactor mainwindow",
-    "IsHide": false,
-    "InternalName": "AetherDraw",
-    "AssemblyVersion": "1.4.0.0",
-    "TestingAssemblyVersion": "1.4.0.0",
-    "IsTestingExclusive": false,
-    "RepoUrl": "https://github.com/rail2025/AetherDraw",
-    "ApplicableVersion": "any",
-    "DalamudApiLevel": 12,
-    "TestingDalamudApiLevel": 12,
-    "LoadPriority": 0,
-    "DownloadLinkInstall": "https://github.com/rail2025/AetherDraw/releases/download/v1.4.0.0/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/rail2025/AetherDraw/releases/download/v1.4.0.0/latest.zip",
-    "DownloadLinkTesting": "",
-    "SupportsProfiles": true,
-    "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/icon.png"
-  }
+    {
+        "Author": "rail",
+        "Name": "AetherDraw",
+        "Punchline": "Whiteboard planner",
+        "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
+        "Changelog": "v2.0.0.0: Major networking refactor for live sessions. Fixed object duplication, snap-back, and text synchronization bugs.",
+        "IsHide": false,
+        "InternalName": "AetherDraw",
+        "AssemblyVersion": "2.0.0.0",
+        "TestingAssemblyVersion": "2.0.0.0",
+        "IsTestingExclusive": false,
+        "RepoUrl": "https://github.com/rail2025/AetherDraw",
+        "ApplicableVersion": "any",
+        "DalamudApiLevel": 12,
+        "TestingDalamudApiLevel": 12,
+        "LoadPriority": 0,
+        "DownloadLinkInstall": "https://github.com/rail2025/AetherDraw/releases/download/v2.0.0.0/latest.zip",
+        "DownloadLinkUpdate": "https://github.com/rail2025/AetherDraw/releases/download/v2.0.0.0/latest.zip",
+        "DownloadLinkTesting": "",
+        "SupportsProfiles": true,
+        "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/icon.png"
+    }
 ]

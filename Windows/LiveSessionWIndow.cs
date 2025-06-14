@@ -1,5 +1,7 @@
 // AetherDraw/Windows/LiveSessionWindow.cs
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
@@ -25,13 +27,11 @@ namespace AetherDraw.Windows
         private enum LiveSessionState { Choice, PassphraseEntry, Loading }
         private LiveSessionState currentState = LiveSessionState.Choice;
 
-        // Fields to store user input for connection
         private string serverAddress = "wss://aetherdraw-server.onrender.com/ws";
         private string inputPassphrase = "";
         private string generatedPassphrase = "";
         private string statusMessage = "Disconnected";
 
-        // --- Passphrase Generation Word Lists (Expanded for Security) ---
         private static readonly Random Random = new();
         private static readonly string[] OpinionVerbs = { "I like", "I hate", "I want", "I need", "Craving", "Seeking", "Avoiding", "Serving", "Finding", "Cooking", "Tasting", "I found", "I lost", "I traded", "He stole", "She sold", "They want", "Remembering", "Forgetting", "Questioning", "Analyzing", "Ignoring", "Praising", "Chasing", "Selling" };
         private static readonly string[] Adjectives = { "spicy", "creamy", "sultry", "glimmering", "ancient", "crispy", "zesty", "hearty", "fluffy", "savory", "frozen", "bubbling", "forbidden", "radiant", "somber", "dented", "gilded", "rusted", "glowing", "cracked", "smelly", "aromatic", "stale", "fresh", "bitter", "sweet", "silken", "spiky" };
@@ -72,14 +72,12 @@ namespace AetherDraw.Windows
             this.generatedPassphrase = "";
         }
 
-        // Handles cleanup and state changes when a network connection is successfully established.
         private void OnNetworkConnect()
         {
             this.statusMessage = "Connected";
             this.IsOpen = false;
         }
 
-        // Handles cleanup and state changes when the network connection is lost.
         private void OnNetworkDisconnect()
         {
             if (this.currentState == LiveSessionState.Loading)
@@ -115,11 +113,10 @@ namespace AetherDraw.Windows
             }
         }
 
-        // Renders the loading view while connecting.
         private void DrawLoadingView()
         {
             ImGui.Text(statusMessage);
-            ImGui.Text("Please wait...");
+            ImGui.Text("Please wait, may take up to a minute as server boots from inactivity. 24/7 uptime servers aren't free sadly.");
             ImGui.Spacing();
             if (ImGui.Button("Cancel"))
             {
@@ -128,7 +125,6 @@ namespace AetherDraw.Windows
             }
         }
 
-        // Renders the initial view with two side-by-side connection choices.
         private void DrawChoiceView()
         {
             ImGui.Text("Choose Connection Method");
@@ -142,22 +138,31 @@ namespace AetherDraw.Windows
                 ImGui.TextWrapped("Quick Sync (Party)");
                 ImGui.Separator();
                 ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + paneWidth - 10);
-                ImGui.TextWrapped("Creates a secure room for your party using a hash of your current Party ID.");
+                ImGui.TextWrapped("Creates a secure room for your current party using a hash of your Party ID. All party members must click this to be in the same quick sync room.");
                 ImGui.PopTextWrapPos();
                 ImGui.Spacing();
-                if (ImGui.Button("Quick Sync##QuickSyncButton", new Vector2(paneWidth, 0)))
+
+                bool inParty = Plugin.PartyList != null && Plugin.PartyList.Length > 0;
+                using (ImRaii.Disabled(!inParty))
                 {
-                    string partyPassphrase = GetPartyIdHash();
-                    if (string.IsNullOrEmpty(partyPassphrase))
+                    if (ImGui.Button("Quick Sync##QuickSyncButton", new Vector2(paneWidth, 0)))
                     {
-                        statusMessage = "Could not get Party ID. Are you in a party?";
+                        string partyPassphrase = GetPartyIdHash();
+                        if (string.IsNullOrEmpty(partyPassphrase))
+                        {
+                            statusMessage = "Could not get Party ID. Are you in a party?";
+                        }
+                        else
+                        {
+                            statusMessage = "Connecting via Party ID, may take up to a minute.";
+                            currentState = LiveSessionState.Loading;
+                            _ = plugin.NetworkManager.ConnectAsync(serverAddress, partyPassphrase);
+                        }
                     }
-                    else
-                    {
-                        statusMessage = "Connecting via Party ID...";
-                        currentState = LiveSessionState.Loading;
-                        _ = plugin.NetworkManager.ConnectAsync(serverAddress, partyPassphrase);
-                    }
+                }
+                if (!inParty && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip("You must be in a party to use this option.");
                 }
             }
 
@@ -168,7 +173,7 @@ namespace AetherDraw.Windows
                 ImGui.TextWrapped("Passphrase Connect");
                 ImGui.Separator();
                 ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + paneWidth - 10);
-                ImGui.TextWrapped("Create or join a session using a shared passphrase. For cross-world groups.");
+                ImGui.TextWrapped("Create or join a session using a shared passphrase. For cross-world/alliance groups. The generated passphrase should give you plausible deniability if accidentaly typed in open chat. Or make up your own code/phrase.");
                 ImGui.PopTextWrapPos();
                 ImGui.Spacing();
                 if (ImGui.Button("Use Passphrase##PassphraseButton", new Vector2(paneWidth, 0)))
@@ -186,7 +191,6 @@ namespace AetherDraw.Windows
             if (ImGui.Button("Cancel", new Vector2(120, 0))) this.IsOpen = false;
         }
 
-        // Renders the view for creating or joining a session with a passphrase.
         private void DrawPassphraseEntryView()
         {
             ImGui.Text("Connect with Passphrase");
@@ -221,7 +225,7 @@ namespace AetherDraw.Windows
             {
                 if (ImGui.Button("Connect"))
                 {
-                    statusMessage = $"Connecting with passphrase...";
+                    statusMessage = $"Connecting with passphrase. May take up to a minute.";
                     currentState = LiveSessionState.Loading;
                     _ = plugin.NetworkManager.ConnectAsync(serverAddress, inputPassphrase);
                 }
@@ -232,15 +236,18 @@ namespace AetherDraw.Windows
 
         private string GetPartyIdHash()
         {
-            // Placeholder: In the future, we will get the real Party ID from the game state.
-            // For now, we'll use a static string to simulate being in a party.
-            string partyId = "STATIC_PARTY_ID_FOR_TESTING";
-            if (string.IsNullOrEmpty(partyId)) return "";
+            if (Plugin.PartyList == null || Plugin.PartyList.Length == 0)
+            {
+                return "";
+            }
 
-            // Create a SHA256 hash of the party ID to use as a secure passphrase
+            var contentIds = Plugin.PartyList.Select(p => p.ContentId).ToList();
+            contentIds.Sort();
+            var combinedIdString = string.Join(",", contentIds);
+
             using (SHA256 sha256 = SHA256.Create())
             {
-                byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(partyId));
+                byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(combinedIdString));
                 StringBuilder builder = new StringBuilder();
                 for (int i = 0; i < bytes.Length; i++)
                 {

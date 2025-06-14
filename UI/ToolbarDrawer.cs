@@ -276,21 +276,50 @@ namespace AetherDraw.UI
                     ImGui.GetForegroundDrawList().AddRect(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), ImGui.GetColorU32(new Vector4(1, 1, 0, 1)), 0, ImDrawFlags.None, 2f);
             }
 
-            // --- Ko-Fi Button (at the very bottom) ---
-            float buttonHeight = ImGui.GetFrameHeight();
+            // --- Footer Buttons ---
             float availableHeight = ImGui.GetContentRegionAvail().Y;
-            if (availableHeight > buttonHeight)
+
+            // **FIX**: More robust height calculation for the footer buttons.
+            float bugReportButtonHeight = ImGui.CalcTextSize("Bug report/\nFeature request").Y + ImGui.GetStyle().FramePadding.Y * 2.0f;
+            float kofiButtonHeight = ImGui.GetFrameHeight();
+            float footerButtonsTotalHeight = bugReportButtonHeight + kofiButtonHeight + ImGui.GetStyle().ItemSpacing.Y;
+
+            if (availableHeight > footerButtonsTotalHeight)
             {
-                ImGui.SetCursorPosY(ImGui.GetCursorPosY() + availableHeight - buttonHeight);
+                ImGui.SetCursorPosY(ImGui.GetCursorPosY() + availableHeight - footerButtonsTotalHeight);
             }
 
-            string buttonText = "Support on Ko-Fi";
-            uint buttonColor = 0xFF312B;
-            ImGui.PushStyleColor(ImGuiCol.Button, 0xFF000000 | buttonColor);
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, 0xDD000000 | buttonColor);
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0xAA000000 | buttonColor);
-            if (ImGui.Button(buttonText, new Vector2(btnWidthFull, 0))) Util.OpenLink("https://ko-fi.com/rail2025");
-            ImGui.PopStyleColor(3);
+            // GitHub Issues Button
+            using (ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.1f, 0.4f, 0.1f, 1.0f)))
+            using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(0.1f, 0.5f, 0.1f, 1.0f)))
+            using (ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(0.2f, 0.6f, 0.2f, 1.0f)))
+            {
+                if (ImGui.Button("Bug report/\nFeature request", new Vector2(btnWidthFull, bugReportButtonHeight)))
+                {
+                    Util.OpenLink("https://github.com/rail2025/AetherDraw/issues");
+                }
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Opens the GitHub Issues page in your browser.");
+            }
+
+            // Ko-fi Button
+            string kofiButtonText = "Support on Ko-Fi";
+            uint kofiButtonColor = 0xFF312B;
+            using (ImRaii.PushColor(ImGuiCol.Button, 0xFF000000 | kofiButtonColor))
+            using (ImRaii.PushColor(ImGuiCol.ButtonActive, 0xDD000000 | kofiButtonColor))
+            using (ImRaii.PushColor(ImGuiCol.ButtonHovered, 0xAA000000 | kofiButtonColor))
+            {
+                if (ImGui.Button(kofiButtonText, new Vector2(btnWidthFull, 0)))
+                {
+                    Util.OpenLink("https://ko-fi.com/rail2025");
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip("Buy me a coffee if this plugin drew a smile on your screen!");
+                }
+            }
         }
 
         private void DrawFillOutlineToggle()

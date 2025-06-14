@@ -2,32 +2,57 @@
 using System;
 using System.IO;
 using System.Net.WebSockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AetherDraw.Serialization;
 
 namespace AetherDraw.Networking
 {
+    /// <summary>
+    /// Manages the WebSocket connection to the server, including sending and receiving messages
+    /// using the new page-aware, single-message-type protocol.
+    /// </summary>
     public class NetworkManager : IDisposable
     {
         private ClientWebSocket? webSocket;
         private CancellationTokenSource? cancellationTokenSource;
 
-        // General connection events
+        /// <summary>
+        /// Occurs when the client successfully connects to the server.
+        /// </summary>
         public event Action? OnConnected;
+
+        /// <summary>
+        /// Occurs when the client disconnects from the server.
+        /// </summary>
         public event Action? OnDisconnected;
+
+        /// <summary>
+        /// Occurs when a network error is encountered. The string parameter contains the error message.
+        /// </summary>
         public event Action<string>? OnError;
 
-        // Specific message-driven events with binary payloads
-        public event Action<byte[]>? OnAddObjectsReceived;
-        public event Action<byte[]>? OnDeleteObjectReceived;
-        public event Action<byte[]>? OnMoveObjectReceived;
-        public event Action? OnClearPageReceived;
-        public event Action<byte[]>? OnReplaceFullPageReceived;
+        /// <summary>
+        /// Occurs when a STATE_UPDATE message is received from the server.
+        /// The NetworkPayload contains all necessary context, including page index and action type.
+        /// </summary>
+        public event Action<NetworkPayload>? OnStateUpdateReceived;
 
+        /// <summary>
+        /// Occurs when the server sends a warning that the room is about to close.
+        /// </summary>
+        public event Action? OnRoomClosingWarning;
+
+        /// <summary>
+        /// Gets a value indicating whether the WebSocket is currently connected.
+        /// </summary>
         public bool IsConnected => webSocket?.State == WebSocketState.Open;
 
+        /// <summary>
+        /// Asynchronously connects to the specified server with a given passphrase.
+        /// </summary>
+        /// <param name="serverUri">The WebSocket server URI.</param>
+        /// <param name="passphrase">The passphrase for the room.</param>
         public async Task ConnectAsync(string serverUri, string passphrase)
         {
             if (IsConnected) return;
@@ -38,46 +63,39 @@ namespace AetherDraw.Networking
                 cancellationTokenSource = new CancellationTokenSource();
                 Uri connectUri = new Uri($"{serverUri}?passphrase={Uri.EscapeDataString(passphrase)}");
 
-                AetherDraw.Plugin.Log?.Info($"[NetworkManager] Connecting to {connectUri}...");
                 await webSocket.ConnectAsync(connectUri, cancellationTokenSource.Token);
-                AetherDraw.Plugin.Log?.Info("[NetworkManager] WebSocket connection established.");
 
                 OnConnected?.Invoke();
                 _ = Task.Run(() => StartListening(cancellationTokenSource.Token));
             }
             catch (Exception ex)
             {
-                AetherDraw.Plugin.Log?.Error(ex, "[NetworkManager] Failed to connect.");
                 OnError?.Invoke($"Connection failed: {ex.Message}");
                 await DisconnectAsync();
             }
         }
 
+        /// <summary>
+        /// Asynchronously disconnects from the server.
+        /// </summary>
         public async Task DisconnectAsync()
         {
             if (webSocket == null) return;
 
-            // Cancel any pending operations like the listening loop.
             if (cancellationTokenSource != null && !cancellationTokenSource.IsCancellationRequested)
             {
                 cancellationTokenSource.Cancel();
             }
 
-            // Only attempt a graceful close if the socket is actually in an open state.
             if (webSocket.State == WebSocketState.Open)
             {
                 try
                 {
-                    // Use a timeout for the close operation to prevent it from hanging.
+                    // Use a timeout for closing the connection gracefully.
                     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                     await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnecting", cts.Token);
                 }
-                catch (Exception ex)
-                {
-                    // This is expected if the connection was abruptly terminated.
-                    // We can log it as a lower-level message instead of an error.
-                    AetherDraw.Plugin.Log?.Debug(ex, "[NetworkManager] Exception during graceful disconnection attempt.");
-                }
+                catch (Exception) { /* This is expected if the connection was abruptly terminated. */ }
             }
 
             webSocket?.Dispose();
@@ -88,10 +106,14 @@ namespace AetherDraw.Networking
             OnDisconnected?.Invoke();
         }
 
+        /// <summary>
+        /// Starts a long-running task to listen for incoming messages from the WebSocket server.
+        /// </summary>
+        /// <param name="cancellationToken">The token to monitor for cancellation requests.</param>
         private async Task StartListening(CancellationToken cancellationToken)
         {
+            // A larger buffer can be more efficient for receiving potentially large messages.
             var buffer = new byte[8192];
-
             try
             {
                 while (webSocket?.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
@@ -115,62 +137,73 @@ namespace AetherDraw.Networking
                     }
                 }
             }
-            catch (OperationCanceledException)
-            {
-                AetherDraw.Plugin.Log?.Info("[NetworkManager] Listening task cancelled.");
-            }
+            catch (OperationCanceledException) { /* Expected when disconnecting. */ }
             catch (Exception ex)
             {
-                AetherDraw.Plugin.Log?.Error(ex, "[NetworkManager] Error in listening loop.");
                 OnError?.Invoke($"Network error: {ex.Message}");
                 await DisconnectAsync();
             }
         }
 
+        /// <summary>
+        /// Handles a fully received message, parsing its type and invoking the appropriate event.
+        /// </summary>
+        /// <param name="messageBytes">The complete binary message received from the server.</param>
         private void HandleReceivedMessage(byte[] messageBytes)
         {
             if (messageBytes.Length < 1) return;
 
             MessageType type = (MessageType)messageBytes[0];
-            byte[] payload = new byte[messageBytes.Length - 1];
-            Array.Copy(messageBytes, 1, payload, 0, payload.Length);
+            byte[] payloadBytes = new byte[messageBytes.Length - 1];
+            Array.Copy(messageBytes, 1, payloadBytes, 0, payloadBytes.Length);
 
             switch (type)
             {
-                case MessageType.ADD_OBJECTS: OnAddObjectsReceived?.Invoke(payload); break;
-                case MessageType.DELETE_OBJECT: OnDeleteObjectReceived?.Invoke(payload); break;
-                case MessageType.MOVE_OBJECT: OnMoveObjectReceived?.Invoke(payload); break;
-                case MessageType.CLEAR_PAGE: OnClearPageReceived?.Invoke(); break;
-                case MessageType.REPLACE_FULL_PAGE_STATE: OnReplaceFullPageReceived?.Invoke(payload); break;
+                case MessageType.STATE_UPDATE:
+                    var payload = PayloadSerializer.Deserialize(payloadBytes);
+                    if (payload != null)
+                    {
+                        OnStateUpdateReceived?.Invoke(payload);
+                    }
+                    break;
+
+                case MessageType.ROOM_CLOSING_IMMINENTLY:
+                    OnRoomClosingWarning?.Invoke();
+                    break;
             }
         }
 
-        public async Task SendMessageAsync(MessageType type, byte[]? payload)
+        /// <summary>
+        /// Asynchronously sends a state update to the server.
+        /// </summary>
+        /// <param name="payload">The NetworkPayload object containing the action and data.</param>
+        public async Task SendStateUpdateAsync(NetworkPayload payload)
         {
-            if (!IsConnected || webSocket == null) return;
+            if (!IsConnected || webSocket == null || cancellationTokenSource == null) return;
 
             try
             {
-                int payloadLength = payload?.Length ?? 0;
-                byte[] messageToSend = new byte[1 + payloadLength];
-                messageToSend[0] = (byte)type;
-                if (payloadLength > 0 && payload != null) // Added "&& payload != null" to fix warning
-                {
-                    Array.Copy(payload, 0, messageToSend, 1, payloadLength);
-                }
+                // Serialize the high-level payload object into a byte array.
+                byte[] payloadBytes = PayloadSerializer.Serialize(payload);
 
-                await webSocket.SendAsync(new ArraySegment<byte>(messageToSend), WebSocketMessageType.Binary, true, cancellationTokenSource!.Token);
+                // Prepend the message type byte to the payload.
+                byte[] messageToSend = new byte[1 + payloadBytes.Length];
+                messageToSend[0] = (byte)MessageType.STATE_UPDATE;
+                Array.Copy(payloadBytes, 0, messageToSend, 1, payloadBytes.Length);
+
+                await webSocket.SendAsync(new ArraySegment<byte>(messageToSend), WebSocketMessageType.Binary, true, cancellationTokenSource.Token);
             }
             catch (Exception ex)
             {
-                AetherDraw.Plugin.Log?.Error(ex, "[NetworkManager] Failed to send message.");
                 OnError?.Invoke($"Failed to send message: {ex.Message}");
                 await DisconnectAsync();
             }
         }
 
+        /// <inheritdoc/>
         public void Dispose()
         {
+            // Ensure disconnection is awaited to prevent resource leaks.
             DisconnectAsync().GetAwaiter().GetResult();
         }
     }

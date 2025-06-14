@@ -5,15 +5,15 @@ using System.Numerics;
 using ImGuiNET;
 using System.Linq;
 using AetherDraw.Core;
-using Dalamud.Interface.Utility;
+using AetherDraw.Networking;
 using AetherDraw.Serialization;
+using Dalamud.Interface.Utility;
 
 namespace AetherDraw.DrawingLogic
 {
     /// <summary>
-    /// Manages the state and coordinates all user interactions with shapes on the canvas,
-    /// such as selection, movement, and manipulation via handles.
-    /// It delegates shape-specific logic to the InteractionHandlerHelpers class.
+    /// Manages user interactions with shapes on the canvas, such as selection, movement, and manipulation.
+    /// This version uses a simplified networking model, sending a single update on action completion.
     /// </summary>
     public class ShapeInteractionHandler
     {
@@ -27,11 +27,17 @@ namespace AetherDraw.DrawingLogic
         public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize }
 
         /// <summary>
-        /// This holds the current state of the user's drag action.
+        /// The current drag operation state.
         /// </summary>
         public ActiveDragType currentDragType = ActiveDragType.None;
 
-        #region Public State for Helpers
+        /// <summary>
+        /// Gets a list of the unique IDs of the objects currently being dragged by this client.
+        /// This is used to prevent the client from processing its own reflected network messages.
+        /// </summary>
+        public List<Guid> DraggedObjectIds { get; } = new List<Guid>();
+
+        #region Public State for Drag Operations
         public Vector2 dragStartMousePosLogical;
         public Vector2 dragStartObjectPivotLogical;
         public float dragStartRotationAngle;
@@ -54,9 +60,9 @@ namespace AetherDraw.DrawingLogic
         /// <summary>
         /// Initializes a new instance of the <see cref="ShapeInteractionHandler"/> class.
         /// </summary>
-        /// <param name="plugin">The main plugin instance for accessing networking.</param>
-        /// <param name="undoManagerInstance">The UndoManager instance.</param>
-        /// <param name="pageManagerInstance">The PageManager instance.</param>
+        /// <param name="plugin">The main plugin instance.</param>
+        /// <param name="undoManagerInstance">The application's UndoManager.</param>
+        /// <param name="pageManagerInstance">The application's PageManager.</param>
         public ShapeInteractionHandler(Plugin plugin, UndoManager undoManagerInstance, PageManager pageManagerInstance)
         {
             this.plugin = plugin;
@@ -74,8 +80,7 @@ namespace AetherDraw.DrawingLogic
         }
 
         /// <summary>
-        /// The main entry point called every frame to process interactions.
-        /// It acts as a coordinator, calling smaller methods to handle specific tasks.
+        /// Processes all user interactions related to selecting, moving, and manipulating shapes.
         /// </summary>
         public void ProcessInteractions(
             BaseDrawable? singleSelectedItem, List<BaseDrawable> selectedDrawables, List<BaseDrawable> allDrawablesOnPage,
@@ -97,7 +102,7 @@ namespace AetherDraw.DrawingLogic
             if (isLMBDown)
             {
                 if (currentDragType != ActiveDragType.None && currentDragType != ActiveDragType.MarqueeSelection)
-                    UpdateDrag(singleSelectedItem, mousePosLogical);
+                    UpdateDrag(singleSelectedItem, selectedDrawables, mousePosLogical);
 
                 if (currentDragType == ActiveDragType.MarqueeSelection)
                     DrawMarqueeVisuals(mousePosLogical, mousePosScreen, canvasOriginScreen, drawList);
@@ -105,10 +110,16 @@ namespace AetherDraw.DrawingLogic
 
             if (isLMBReleased)
             {
-                // If we were dragging/resizing a single selected object in live mode, send the update.
-                if (pageManager.IsLiveMode && singleSelectedItem != null && currentDragType != ActiveDragType.None && currentDragType != ActiveDragType.MarqueeSelection)
+                // When the mouse is released, send one final, definitive update.
+                if (pageManager.IsLiveMode && currentDragType != ActiveDragType.None && currentDragType != ActiveDragType.MarqueeSelection)
                 {
-                    SendObjectUpdate(singleSelectedItem);
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.UpdateObjects,
+                        Data = DrawableSerializer.SerializePageToBytes(selectedDrawables)
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
 
                 if (currentDragType == ActiveDragType.MarqueeSelection)
@@ -119,16 +130,17 @@ namespace AetherDraw.DrawingLogic
         }
 
         /// <summary>
-        /// Resets the drag state to None.
+        /// Resets the drag state to None and clears temporary drag data.
         /// </summary>
         public void ResetDragState()
         {
             currentDragType = ActiveDragType.None;
             draggedHandleIndex = -1;
+            DraggedObjectIds.Clear();
         }
 
         /// <summary>
-        /// A generic helper to draw a single circular handle and check if the mouse is over it.
+        /// Draws a single circular handle and checks if the mouse is over it.
         /// </summary>
         public bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalPos, Vector2 canvasOrigin, Vector2 mousePos, ref bool mouseOverAny, uint color, uint hoverColor)
         {
@@ -141,7 +153,7 @@ namespace AetherDraw.DrawingLogic
         }
 
         /// <summary>
-        /// Overload for DrawAndCheckHandle that also sets the mouse cursor style.
+        /// Draws a single circular handle, checks for hover, and sets the mouse cursor style.
         /// </summary>
         public bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalPos, Vector2 canvasOrigin, Vector2 mousePos, ref bool mouseOverAny, ImGuiMouseCursor cursor, uint color, uint hoverColor)
         {
@@ -151,13 +163,6 @@ namespace AetherDraw.DrawingLogic
                 return true;
             }
             return false;
-        }
-
-        private void SendObjectUpdate(BaseDrawable obj)
-        {
-            var objectList = new List<BaseDrawable> { obj };
-            byte[] payload = DrawableSerializer.SerializePageToBytes(objectList);
-            _ = plugin.NetworkManager.SendMessageAsync(Networking.MessageType.MOVE_OBJECT, payload);
         }
 
         private void DrawMarqueeVisuals(Vector2 mousePosLogical, Vector2 mousePosScreen, Vector2 canvasOriginScreen, ImDrawListPtr drawList)
@@ -255,7 +260,11 @@ namespace AetherDraw.DrawingLogic
                     if (selectedList.Contains(hovered)) { hovered.IsSelected = false; selectedList.Remove(hovered); }
                     else { hovered.IsSelected = true; selectedList.Add(hovered); }
                 }
-                if (selectedList.Count > 0) StartDrag(ActiveDragType.GeneralSelection, mousePos);
+
+                if (selectedList.Count > 0)
+                {
+                    StartDrag(ActiveDragType.GeneralSelection, mousePos);
+                }
             }
             else
             {
@@ -274,6 +283,7 @@ namespace AetherDraw.DrawingLogic
         private void StartHandleDrag(BaseDrawable item, Vector2 mousePos)
         {
             var initialType = ActiveDragType.None;
+            // Record initial state for absolute calculations
             switch (item)
             {
                 case DrawableImage dImg when draggedHandleIndex == 4: initialType = ActiveDragType.ImageRotate; dragStartObjectPivotLogical = dImg.PositionRelative; dragStartRotationAngle = dImg.RotationAngle; break;
@@ -299,44 +309,49 @@ namespace AetherDraw.DrawingLogic
             }
 
             if (initialType != ActiveDragType.None)
+            {
                 StartDrag(initialType, mousePos);
+                DraggedObjectIds.Clear();
+                DraggedObjectIds.Add(item.UniqueId);
+            }
         }
 
-        private void UpdateDrag(BaseDrawable? item, Vector2 mousePos)
+        private void UpdateDrag(BaseDrawable? singleSelectedItem, List<BaseDrawable> selectedList, Vector2 mousePos)
         {
             if (currentDragType == ActiveDragType.GeneralSelection)
             {
-                var selectedDrawablesOnPage = pageManager.GetCurrentPageDrawables().Where(d => d.IsSelected);
-                if (selectedDrawablesOnPage.Any())
+                if (selectedList.Any())
                 {
                     Vector2 dragDelta = mousePos - dragStartMousePosLogical;
                     if (dragDelta.LengthSquared() > 0)
                     {
-                        foreach (var selected in selectedDrawablesOnPage)
+                        foreach (var selected in selectedList)
+                        {
                             selected.Translate(dragDelta);
-
+                        }
+                        // This update is crucial for incremental dragging
                         dragStartMousePosLogical = mousePos;
                     }
                 }
-                return;
             }
-
-            if (item == null) return;
-
-            switch (currentDragType)
+            else if (singleSelectedItem != null)
             {
-                case ActiveDragType.ImageResize: InteractionHandlerHelpers.UpdateImageDrag((DrawableImage)item, mousePos, this); break;
-                case ActiveDragType.ImageRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
-                case ActiveDragType.RectResize: InteractionHandlerHelpers.UpdateRectangleDrag((DrawableRectangle)item, mousePos, this); break;
-                case ActiveDragType.RectRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
-                case ActiveDragType.TextResize: InteractionHandlerHelpers.UpdateTextResizeDrag((DrawableText)item, mousePos, this); break;
-                case ActiveDragType.ArrowStartPoint: InteractionHandlerHelpers.UpdateArrowStartDrag((DrawableArrow)item, mousePos, this); break;
-                case ActiveDragType.ArrowEndPoint: InteractionHandlerHelpers.UpdateArrowEndDrag((DrawableArrow)item, mousePos); break;
-                case ActiveDragType.ArrowRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
-                case ActiveDragType.ArrowThickness: InteractionHandlerHelpers.UpdateArrowThicknessDrag((DrawableArrow)item, mousePos, this); break;
-                case ActiveDragType.ConeApex: InteractionHandlerHelpers.UpdateConeApexDrag((DrawableCone)item, mousePos, this); break;
-                case ActiveDragType.ConeBase: InteractionHandlerHelpers.UpdateConeBaseDrag((DrawableCone)item, mousePos); break;
-                case ActiveDragType.ConeRotate: InteractionHandlerHelpers.UpdateRotationDrag(item, mousePos, this); break;
+                // For resize/rotate, the transformation is absolute based on the start of the drag
+                switch (currentDragType)
+                {
+                    case ActiveDragType.ImageResize: InteractionHandlerHelpers.UpdateImageDrag((DrawableImage)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.ImageRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.RectResize: InteractionHandlerHelpers.UpdateRectangleDrag((DrawableRectangle)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.RectRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.TextResize: InteractionHandlerHelpers.UpdateTextResizeDrag((DrawableText)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.ArrowStartPoint: InteractionHandlerHelpers.UpdateArrowStartDrag((DrawableArrow)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.ArrowEndPoint: InteractionHandlerHelpers.UpdateArrowEndDrag((DrawableArrow)singleSelectedItem, mousePos); break;
+                    case ActiveDragType.ArrowRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.ArrowThickness: InteractionHandlerHelpers.UpdateArrowThicknessDrag((DrawableArrow)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.ConeApex: InteractionHandlerHelpers.UpdateConeApexDrag((DrawableCone)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.ConeBase: InteractionHandlerHelpers.UpdateConeBaseDrag((DrawableCone)singleSelectedItem, mousePos); break;
+                    case ActiveDragType.ConeRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
+                }
             }
         }
     }

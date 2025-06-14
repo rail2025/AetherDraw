@@ -1,9 +1,11 @@
 // AetherDraw/Core/CanvasController.cs
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using AetherDraw.DrawingLogic;
+using AetherDraw.Networking;
 using Dalamud.Interface.Utility;
 using ImGuiNET;
 
@@ -131,7 +133,6 @@ namespace AetherDraw.Core
             }
         }
 
-        // In AetherDraw/Core/CanvasController.cs
         private void HandleEraserInput(Vector2 mousePosLogical, Vector2 mousePosScreen, ImDrawListPtr drawList, bool isLMBDown, List<BaseDrawable> currentDrawablesOnPage)
         {
             float scaledEraserVisualRadius = 5f * ImGuiHelpers.GlobalScale;
@@ -141,36 +142,48 @@ namespace AetherDraw.Core
             if (ImGui.GetTime() < lastEraseTime + 0.1) return;
 
             float logicalEraserRadius = 10f;
-            bool actionTakenThisFrame = false;
+            var objectsToDelete = new List<Guid>();
 
-            for (int i = currentDrawablesOnPage.Count - 1; i >= 0; i--)
+            // Find all objects hit by the eraser
+            foreach (var d in currentDrawablesOnPage)
             {
-                var d = currentDrawablesOnPage[i];
                 if (d.IsHit(mousePosLogical, logicalEraserRadius))
                 {
-                    if (pageManager.IsLiveMode)
-                    {
-                        // In live mode, send a delete message instead of modifying locally
-                        byte[] payload = d.UniqueId.ToByteArray();
-                        _ = plugin.NetworkManager.SendMessageAsync(Networking.MessageType.DELETE_OBJECT, payload);
-                    }
-                    else
-                    {
-                        // In local mode, perform the action immediately with undo
-                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Eraser Action (Object)");
-                        currentDrawablesOnPage.RemoveAt(i);
-                        if (selectedDrawablesListRef.Contains(d)) selectedDrawablesListRef.Remove(d);
-                        if (getHoveredDrawableFunc() != null && getHoveredDrawableFunc()!.Equals(d))
-                            setHoveredDrawableAction(null);
-                    }
-                    actionTakenThisFrame = true;
+                    objectsToDelete.Add(d.UniqueId);
                 }
+            }
 
-                if (actionTakenThisFrame)
+            if (objectsToDelete.Any())
+            {
+                if (pageManager.IsLiveMode)
                 {
-                    lastEraseTime = ImGui.GetTime();
-                    break;
+                    // In live mode, send a delete message with all Guids
+                    using var ms = new MemoryStream();
+                    using var writer = new BinaryWriter(ms);
+                    writer.Write(objectsToDelete.Count);
+                    foreach (var guid in objectsToDelete)
+                    {
+                        writer.Write(guid.ToByteArray());
+                    }
+
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.DeleteObjects,
+                        Data = ms.ToArray()
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
+                else
+                {
+                    // In local mode, record undo and remove locally
+                    undoManager.RecordAction(currentDrawablesOnPage, "Eraser Action");
+                    currentDrawablesOnPage.RemoveAll(d => objectsToDelete.Contains(d.UniqueId));
+                    selectedDrawablesListRef.RemoveAll(d => objectsToDelete.Contains(d.UniqueId));
+                    if (getHoveredDrawableFunc() != null && objectsToDelete.Contains(getHoveredDrawableFunc()!.UniqueId))
+                        setHoveredDrawableAction(null);
+                }
+                lastEraseTime = ImGui.GetTime();
             }
         }
 
@@ -178,9 +191,28 @@ namespace AetherDraw.Core
         {
             if (isLMBClickedOnCanvas)
             {
-                undoManager.RecordAction(currentDrawablesOnPage, "Add Text");
                 var newText = new DrawableText(mousePosLogical, "New Text", getCurrentBrushColor(), DefaultUnscaledFontSize, DefaultUnscaledTextWrapWidth);
-                currentDrawablesOnPage.Add(newText);
+
+                if (pageManager.IsLiveMode)
+                {
+                    // In live mode, only send the network message. Do not add locally.
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.AddObjects,
+                        Data = Serialization.DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { newText })
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                }
+                else
+                {
+                    // In local mode, add to canvas and record undo.
+                    undoManager.RecordAction(currentDrawablesOnPage, "Add Text");
+                    currentDrawablesOnPage.Add(newText);
+                }
+
+                // Select the new text and open the editor. This works because the object will be
+                // added via network broadcast before the next frame, or was added locally.
                 foreach (var sel in selectedDrawablesListRef) sel.IsSelected = false;
                 selectedDrawablesListRef.Clear();
                 newText.IsSelected = true;
@@ -215,7 +247,6 @@ namespace AetherDraw.Core
 
             if (isLMBClickedOnCanvas)
             {
-                undoManager.RecordAction(currentDrawablesOnPage, $"Place Image ({currentMode})");
                 string imagePath = "";
                 Vector2 imageUnscaledSize = DefaultUnscaledImageSize;
                 switch (currentMode)
@@ -257,7 +288,22 @@ namespace AetherDraw.Core
                 if (!string.IsNullOrEmpty(imagePath))
                 {
                     var newImage = new DrawableImage(currentMode, imagePath, mousePosLogical, imageUnscaledSize, Vector4.One);
-                    currentDrawablesOnPage.Add(newImage);
+
+                    if (pageManager.IsLiveMode)
+                    {
+                        var payload = new NetworkPayload
+                        {
+                            PageIndex = pageManager.GetCurrentPageIndex(),
+                            Action = PayloadActionType.AddObjects,
+                            Data = Serialization.DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { newImage })
+                        };
+                        _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                    }
+                    else
+                    {
+                        undoManager.RecordAction(currentDrawablesOnPage, $"Place Image ({currentMode})");
+                        currentDrawablesOnPage.Add(newImage);
+                    }
                 }
             }
         }
@@ -324,12 +370,18 @@ namespace AetherDraw.Core
             {
                 if (pageManager.IsLiveMode)
                 {
-                    var objectList = new List<BaseDrawable> { currentDrawingObjectInternal };
-                    byte[] payload = Serialization.DrawableSerializer.SerializePageToBytes(objectList);
-                    _ = plugin.NetworkManager.SendMessageAsync(Networking.MessageType.ADD_OBJECTS, payload);
+                    // In live mode, only send the network message.
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.AddObjects,
+                        Data = Serialization.DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { currentDrawingObjectInternal })
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
                 else
                 {
+                    // In local mode, add directly to the canvas.
                     pageManager.GetCurrentPageDrawables().Add(currentDrawingObjectInternal);
                 }
             }

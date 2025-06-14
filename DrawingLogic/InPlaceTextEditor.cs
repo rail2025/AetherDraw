@@ -1,16 +1,22 @@
 // AetherDraw/DrawingLogic/InPlaceTextEditor.cs
 using System;
-using System.Numerics;
-using ImGuiNET;
-using Dalamud.Interface.Utility;
-using AetherDraw.Core;
 using System.Collections.Generic;
+using System.Numerics;
+using AetherDraw.Core;
+using AetherDraw.Networking;
+using AetherDraw.Serialization;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using ImGuiNET;
 
 namespace AetherDraw.DrawingLogic
 {
+    /// <summary>
+    /// Manages the UI and logic for editing a DrawableText object directly on the canvas.
+    /// </summary>
     public class InPlaceTextEditor
     {
+        private readonly Plugin plugin;
         private readonly UndoManager undoManager;
         private readonly PageManager pageManager;
 
@@ -20,18 +26,30 @@ namespace AetherDraw.DrawingLogic
         private float originalFontSize_;
         private string editTextBuffer_ = string.Empty;
         private Vector2 editorWindowPosition_;
-        //private Vector2 editorWindowSize_;
         private bool shouldSetFocus_ = false;
-        //private bool initialAutoSelectDone_ = false;
 
         private const int MaxBufferSize = 2048;
+        private bool p_open = true;
 
-        public InPlaceTextEditor(UndoManager undoManagerInstance, PageManager pageManagerInstance)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="InPlaceTextEditor"/> class.
+        /// </summary>
+        /// <param name="pluginInstance">The main plugin instance, used for network access.</param>
+        /// <param name="undoManagerInstance">The undo manager for recording text changes.</param>
+        /// <param name="pageManagerInstance">The page manager for context.</param>
+        public InPlaceTextEditor(Plugin pluginInstance, UndoManager undoManagerInstance, PageManager pageManagerInstance)
         {
+            this.plugin = pluginInstance ?? throw new ArgumentNullException(nameof(pluginInstance));
             this.undoManager = undoManagerInstance ?? throw new ArgumentNullException(nameof(undoManagerInstance));
             this.pageManager = pageManagerInstance ?? throw new ArgumentNullException(nameof(pageManagerInstance));
         }
 
+        /// <summary>
+        /// Begins an edit session for a specific text object.
+        /// </summary>
+        /// <param name="textObject">The text object to edit.</param>
+        /// <param name="canvasOriginScreen">The screen coordinate of the canvas origin.</param>
+        /// <param name="currentGlobalScale">The current ImGui global scale factor.</param>
         public void BeginEdit(DrawableText textObject, Vector2 canvasOriginScreen, float currentGlobalScale)
         {
             if (textObject == null) return;
@@ -46,17 +64,23 @@ namespace AetherDraw.DrawingLogic
                 editTextBuffer_ = editTextBuffer_.Substring(0, MaxBufferSize);
 
             shouldSetFocus_ = true;
-            // initialAutoSelectDone_ = false;
             RecalculateEditorBounds(canvasOriginScreen, currentGlobalScale);
         }
 
+        /// <summary>
+        /// Recalculates the on-screen position for the editor window based on the text object's location.
+        /// </summary>
+        /// <param name="canvasOriginScreen">The screen coordinate of the canvas origin.</param>
+        /// <param name="currentGlobalScale">The current ImGui global scale factor.</param>
         public void RecalculateEditorBounds(Vector2 canvasOriginScreen, float currentGlobalScale)
         {
             if (targetTextObject_ == null) return;
-            // Directly calculate the screen position. This is the correct and simpler way.
             editorWindowPosition_ = (targetTextObject_.PositionRelative * currentGlobalScale) + canvasOriginScreen;
         }
 
+        /// <summary>
+        /// Draws the editor UI window.
+        /// </summary>
         public void DrawEditorUI()
         {
             if (!IsEditing || targetTextObject_ == null) return;
@@ -73,7 +97,6 @@ namespace AetherDraw.DrawingLogic
 
             if (ImGui.Begin(windowId, ref p_open, editorFlags))
             {
-                // Font Size Buttons
                 var activeColor = ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive];
                 var fontSizes = new[] { ("S", 12f), ("M", 20f), ("L", 32f), ("XL", 48f) };
 
@@ -89,15 +112,10 @@ namespace AetherDraw.DrawingLogic
                             targetTextObject_.FontSize = size;
                         }
                     }
-
-                    if (i < fontSizes.Length - 1)
-                    {
-                        ImGui.SameLine();
-                    }
+                    if (i < fontSizes.Length - 1) ImGui.SameLine();
                 }
                 ImGui.Separator();
 
-                // Text Input
                 ImGui.InputTextMultiline("##EditText", ref editTextBuffer_, MaxBufferSize, new Vector2(ImGui.GetContentRegionAvail().X, ImGui.GetTextLineHeight() * 5));
 
                 if (shouldSetFocus_)
@@ -106,7 +124,6 @@ namespace AetherDraw.DrawingLogic
                     shouldSetFocus_ = false;
                 }
 
-                // OK/Cancel Buttons
                 bool committed = false;
                 bool canceled = false;
                 if (ImGui.Button("OK")) committed = true; ImGui.SameLine();
@@ -120,8 +137,9 @@ namespace AetherDraw.DrawingLogic
             ImGui.PopStyleVar();
         }
 
-        private bool p_open = true;
-
+        /// <summary>
+        /// Commits the changes made in the editor to the text object and sends a network update.
+        /// </summary>
         public void CommitAndEndEdit()
         {
             if (!IsEditing || targetTextObject_ == null) return;
@@ -129,31 +147,33 @@ namespace AetherDraw.DrawingLogic
             bool textChanged = originalText_ != editTextBuffer_;
             bool fontChanged = Math.Abs(originalFontSize_ - targetTextObject_.FontSize) > 0.01f;
 
+            // Update the local object first
+            targetTextObject_.RawText = editTextBuffer_;
+
             if (textChanged || fontChanged)
             {
-                var currentDrawables = pageManager.GetCurrentPageDrawables();
-                if (currentDrawables != null)
-                {
-                    // Create a clone representing the "before" state for the undo stack
-                    var originalStateClone = (DrawableText)targetTextObject_.Clone();
-                    originalStateClone.RawText = originalText_;
-                    originalStateClone.FontSize = originalFontSize_;
-                    originalStateClone.PerformLayout();
+                // Record the action for local undo
+                undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Edit Text");
 
-                    // Find and replace the object in a temporary list to record the action
-                    var listForUndo = new List<BaseDrawable>();
-                    foreach (var d in currentDrawables)
+                // If in a live session, send the update to other clients
+                if (pageManager.IsLiveMode)
+                {
+                    var payload = new NetworkPayload
                     {
-                        listForUndo.Add(ReferenceEquals(d, targetTextObject_) ? originalStateClone : d.Clone());
-                    }
-                    undoManager.RecordAction(listForUndo, "Edit Text");
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.UpdateObjects,
+                        Data = DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { targetTextObject_ })
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
             }
 
-            targetTextObject_.RawText = editTextBuffer_;
             CleanUpEditSession();
         }
 
+        /// <summary>
+        /// Cancels the edit session and reverts any changes.
+        /// </summary>
         public void CancelAndEndEdit()
         {
             if (!IsEditing || targetTextObject_ == null) return;
@@ -163,12 +183,20 @@ namespace AetherDraw.DrawingLogic
             CleanUpEditSession();
         }
 
+        /// <summary>
+        /// Resets the editor state.
+        /// </summary>
         private void CleanUpEditSession()
         {
             IsEditing = false;
             targetTextObject_ = null;
         }
 
+        /// <summary>
+        /// Checks if the editor is currently targeting a specific drawable object.
+        /// </summary>
+        /// <param name="drawable">The drawable to check.</param>
+        /// <returns>True if the drawable is being edited, false otherwise.</returns>
         public bool IsCurrentlyEditing(BaseDrawable? drawable)
         {
             return IsEditing && targetTextObject_ != null && ReferenceEquals(targetTextObject_, drawable);

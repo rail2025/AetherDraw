@@ -10,18 +10,16 @@ using AetherDraw.Core;
 using AetherDraw.UI;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
-using Dalamud.Utility;
 using AetherDraw.Serialization;
 using AetherDraw.Networking;
+using System.IO;
 
 namespace AetherDraw.Windows
 {
     /// <summary>
     /// Represents the main window for the AetherDraw plugin.
-    /// This window orchestrates UI components like toolbars and the drawing canvas,
-    /// and delegates core functionalities such as page management, file operations,
-    /// undo logic, and canvas interactions to specialized manager and controller classes.
-    /// Its primary role is UI presentation and coordination of backend services.
+    /// This window orchestrates UI components and delegates core functionalities.
+    /// It has been updated to use the new page-aware networking protocol.
     /// </summary>
     public class MainWindow : Window, IDisposable
     {
@@ -47,20 +45,23 @@ namespace AetherDraw.Windows
         // State flags for managing popups
         private bool openClearConfirmPopup = false;
         private bool openDeletePageConfirmPopup = false;
+        private bool openRoomClosingPopup = false;
         private string clearConfirmText = "";
 
         /// <summary>
         /// Initializes a new instance of the <see cref="MainWindow"/> class.
         /// </summary>
-        public MainWindow(Plugin plugin) : base("AetherDraw Whiteboard###AetherDrawMainWindow")
+        /// <param name="plugin">The main plugin instance.</param>
+        /// <param name="id">An optional unique ID to append to the window name for creating multiple instances.</param>
+        public MainWindow(Plugin plugin, string id = "") : base($"AetherDraw Whiteboard{id}###AetherDrawMainWindow{id}")
         {
             this.plugin = plugin;
             this.configuration = plugin.Configuration;
             this.undoManager = new UndoManager();
             this.pageManager = new PageManager();
-            this.inPlaceTextEditor = new InPlaceTextEditor(this.undoManager, this.pageManager);
+            this.inPlaceTextEditor = new InPlaceTextEditor(this.plugin, this.undoManager, this.pageManager);
             this.shapeInteractionHandler = new ShapeInteractionHandler(this.plugin, this.undoManager, this.pageManager);
-            this.planIOManager = new PlanIOManager(this.pageManager, this.inPlaceTextEditor, Plugin.PluginInterface, () => this.ScaledCanvasGridSize, this.GetLayerPriority, () => this.pageManager.GetCurrentPageIndex());
+            this.planIOManager = new PlanIOManager(this.pageManager, this.inPlaceTextEditor, Plugin.PluginInterface, () => this.ScaledCanvasGridSize, this.GetLayerPriority, this.pageManager.GetCurrentPageIndex);
             this.planIOManager.OnPlanLoadSuccess += HandleSuccessfulPlanLoad;
             this.toolbarDrawer = new ToolbarDrawer(() => this.currentDrawMode, (newMode) => this.currentDrawMode = newMode, this.shapeInteractionHandler, this.inPlaceTextEditor, this.PerformCopySelected, this.PerformPasteCopied, this.PerformClearAll, this.PerformUndo, () => this.currentShapeFilled, (isFilled) => this.currentShapeFilled = isFilled, this.undoManager, () => this.currentBrushThickness, (newThickness) => this.currentBrushThickness = newThickness, () => this.currentBrushColor, (newColor) => this.currentBrushColor = newColor);
             this.canvasController = new CanvasController(this.undoManager, this.pageManager, () => currentDrawMode, (newMode) => currentDrawMode = newMode, () => currentBrushColor, () => currentBrushThickness, () => currentShapeFilled, selectedDrawables, () => hoveredDrawable, (newHovered) => hoveredDrawable = newHovered, this.shapeInteractionHandler, this.inPlaceTextEditor, this.configuration, this.plugin);
@@ -70,13 +71,12 @@ namespace AetherDraw.Windows
             var initialThicknessPresets = new float[] { 1.5f, 4f, 7f, 10f };
             this.currentBrushThickness = initialThicknessPresets.Contains(this.configuration.DefaultBrushThickness) ? this.configuration.DefaultBrushThickness : initialThicknessPresets[1];
             undoManager.ClearHistory();
+
+            // Subscribe to network events
             plugin.NetworkManager.OnConnected += HandleNetworkConnect;
             plugin.NetworkManager.OnDisconnected += HandleNetworkDisconnect;
-            plugin.NetworkManager.OnAddObjectsReceived += HandleAddObjectsReceived;
-            plugin.NetworkManager.OnDeleteObjectReceived += HandleDeleteObjectReceived;
-            plugin.NetworkManager.OnMoveObjectReceived += HandleMoveObjectReceived;
-            plugin.NetworkManager.OnClearPageReceived += HandleClearPageReceived;
-            plugin.NetworkManager.OnReplaceFullPageReceived += HandleReplaceFullPageReceived;
+            plugin.NetworkManager.OnStateUpdateReceived += HandleStateUpdateReceived;
+            plugin.NetworkManager.OnRoomClosingWarning += HandleRoomClosingWarning;
         }
 
         /// <summary>
@@ -85,72 +85,101 @@ namespace AetherDraw.Windows
         public void Dispose()
         {
             if (this.planIOManager != null) this.planIOManager.OnPlanLoadSuccess -= HandleSuccessfulPlanLoad;
+
+            // Unsubscribe from network events
             plugin.NetworkManager.OnConnected -= HandleNetworkConnect;
             plugin.NetworkManager.OnDisconnected -= HandleNetworkDisconnect;
-            plugin.NetworkManager.OnAddObjectsReceived -= HandleAddObjectsReceived;
-            plugin.NetworkManager.OnDeleteObjectReceived -= HandleDeleteObjectReceived;
-            plugin.NetworkManager.OnMoveObjectReceived -= HandleMoveObjectReceived;
-            plugin.NetworkManager.OnClearPageReceived -= HandleClearPageReceived;
-            plugin.NetworkManager.OnReplaceFullPageReceived -= HandleReplaceFullPageReceived;
+            plugin.NetworkManager.OnStateUpdateReceived -= HandleStateUpdateReceived;
+            plugin.NetworkManager.OnRoomClosingWarning -= HandleRoomClosingWarning;
         }
 
         #region Network Event Handlers
-        private void HandleNetworkConnect() => pageManager.IsLiveMode = true;
-        private void HandleNetworkDisconnect() => pageManager.IsLiveMode = false;
+        private void HandleNetworkConnect() => pageManager.EnterLiveMode();
+        private void HandleNetworkDisconnect() => pageManager.ExitLiveMode();
+        private void HandleRoomClosingWarning() => openRoomClosingPopup = true;
 
-        private void HandleAddObjectsReceived(byte[] payload)
+        /// <summary>
+        /// Main handler for all incoming state updates from the server. It is page-aware.
+        /// </summary>
+        /// <param name="payload">The network payload containing the page index, action, and data.</param>
+        private void HandleStateUpdateReceived(NetworkPayload payload)
         {
             if (!pageManager.IsLiveMode) return;
+
+            var allPages = pageManager.GetAllPages();
+            if (payload.PageIndex < 0 || payload.PageIndex >= allPages.Count)
+            {
+                Plugin.Log?.Warning($"Received state update for invalid page index: {payload.PageIndex}");
+                return;
+            }
+
+            // A user should not process updates for objects they are currently dragging.
+            if (payload.Action == PayloadActionType.UpdateObjects)
+            {
+                if (shapeInteractionHandler.DraggedObjectIds.Any())
+                {
+                    return; // Simplified: if we are dragging anything, ignore incoming updates.
+                }
+            }
+
+            var targetPageDrawables = allPages[payload.PageIndex].Drawables;
+
             try
             {
-                var receivedObjects = DrawableSerializer.DeserializePageFromBytes(payload);
-                pageManager.GetCurrentPageDrawables().AddRange(receivedObjects);
-            }
-            catch (Exception ex) { AetherDraw.Plugin.Log?.Error(ex, "Failed to process received objects from network."); }
-        }
+                switch (payload.Action)
+                {
+                    case PayloadActionType.AddObjects:
+                        if (payload.Data == null) return;
+                        var receivedObjects = DrawableSerializer.DeserializePageFromBytes(payload.Data);
+                        targetPageDrawables.AddRange(receivedObjects);
+                        break;
 
-        private void HandleDeleteObjectReceived(byte[] payload)
-        {
-            if (!pageManager.IsLiveMode) return;
-            try
+                    case PayloadActionType.DeleteObjects:
+                        if (payload.Data == null) return;
+                        using (var ms = new MemoryStream(payload.Data))
+                        using (var reader = new BinaryReader(ms))
+                        {
+                            int count = reader.ReadInt32();
+                            for (int i = 0; i < count; i++)
+                            {
+                                var objectId = new Guid(reader.ReadBytes(16));
+                                targetPageDrawables.RemoveAll(d => d.UniqueId == objectId);
+                            }
+                        }
+                        break;
+
+                    case PayloadActionType.UpdateObjects:
+                        if (payload.Data == null) return;
+                        var updatedObjects = DrawableSerializer.DeserializePageFromBytes(payload.Data);
+                        foreach (var updatedObject in updatedObjects)
+                        {
+                            int index = targetPageDrawables.FindIndex(d => d.UniqueId == updatedObject.UniqueId);
+                            if (index != -1)
+                            {
+                                targetPageDrawables[index] = updatedObject;
+                            }
+                            else
+                            {
+                                targetPageDrawables.Add(updatedObject); // Add if not found, for robustness
+                            }
+                        }
+                        break;
+
+                    case PayloadActionType.ClearPage:
+                        targetPageDrawables.Clear();
+                        break;
+
+                    case PayloadActionType.ReplacePage:
+                        if (payload.Data == null) return;
+                        var fullPageState = DrawableSerializer.DeserializePageFromBytes(payload.Data);
+                        allPages[payload.PageIndex].Drawables = fullPageState;
+                        break;
+                }
+            }
+            catch (Exception ex)
             {
-                var objectId = new Guid(payload);
-                pageManager.GetCurrentPageDrawables().RemoveAll(d => d.UniqueId == objectId);
+                Plugin.Log?.Error(ex, $"Failed to process received network payload action: {payload.Action}");
             }
-            catch (Exception ex) { AetherDraw.Plugin.Log?.Error(ex, "Failed to process delete object message."); }
-        }
-
-        private void HandleMoveObjectReceived(byte[] payload)
-        {
-            if (!pageManager.IsLiveMode) return;
-            try
-            {
-                var updatedObjects = DrawableSerializer.DeserializePageFromBytes(payload);
-                if (updatedObjects.Count == 0) return;
-                var updatedObject = updatedObjects[0];
-                var drawables = pageManager.GetCurrentPageDrawables();
-                int index = drawables.FindIndex(d => d.UniqueId == updatedObject.UniqueId);
-                if (index != -1) drawables[index] = updatedObject;
-                else drawables.Add(updatedObject);
-            }
-            catch (Exception ex) { AetherDraw.Plugin.Log?.Error(ex, "Failed to process move object message."); }
-        }
-
-        private void HandleClearPageReceived()
-        {
-            if (!pageManager.IsLiveMode) return;
-            pageManager.ClearCurrentPageDrawables();
-        }
-
-        private void HandleReplaceFullPageReceived(byte[] payload)
-        {
-            if (!pageManager.IsLiveMode) return;
-            try
-            {
-                var fullPageState = DrawableSerializer.DeserializePageFromBytes(payload);
-                pageManager.SetCurrentPageDrawables(fullPageState);
-            }
-            catch (Exception ex) { AetherDraw.Plugin.Log?.Error(ex, "Failed to process full page state message."); }
         }
         #endregion
 
@@ -158,29 +187,38 @@ namespace AetherDraw.Windows
         {
             ResetInteractionStates();
             undoManager.ClearHistory();
+
+            // If in a live session, broadcast the new state of the CURRENT page to other clients.
+            if (pageManager.IsLiveMode)
+            {
+                var payloadData = DrawableSerializer.SerializePageToBytes(pageManager.GetCurrentPageDrawables());
+                var payload = new NetworkPayload
+                {
+                    PageIndex = pageManager.GetCurrentPageIndex(),
+                    Action = PayloadActionType.ReplacePage,
+                    Data = payloadData
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+            }
         }
 
+        /// <inheritdoc/>
         public override void PreDraw() => Flags = configuration.IsMainWindowMovable ? ImGuiWindowFlags.None : ImGuiWindowFlags.NoMove;
 
+        /// <inheritdoc/>
         public override void Draw()
         {
-            // Use flags to trigger popups reliably
-            if (openClearConfirmPopup)
-            {
-                ImGui.OpenPopup("Confirm Clear All");
-                openClearConfirmPopup = false;
-            }
-            if (openDeletePageConfirmPopup)
-            {
-                ImGui.OpenPopup("Confirm Delete Page");
-                openDeletePageConfirmPopup = false;
-            }
+            if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
+            if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
+            if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
 
             using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(125f * ImGuiHelpers.GlobalScale, 0), true, ImGuiWindowFlags.None))
             {
                 if (toolbarRaii) this.toolbarDrawer.DrawLeftToolbar();
             }
+
             ImGui.SameLine();
+
             using (var rightPaneRaii = ImRaii.Child("RightPane", Vector2.Zero, false, ImGuiWindowFlags.None))
             {
                 if (rightPaneRaii)
@@ -188,6 +226,7 @@ namespace AetherDraw.Windows
                     float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y;
                     float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsHeight - ImGui.GetStyle().ItemSpacing.Y;
                     canvasAvailableHeight = Math.Max(canvasAvailableHeight, 50f * ImGuiHelpers.GlobalScale);
+
                     if (ImGui.BeginChild("CanvasDrawingArea", new Vector2(0, canvasAvailableHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
                     {
                         currentCanvasDrawSize = ImGui.GetContentRegionAvail();
@@ -197,6 +236,7 @@ namespace AetherDraw.Windows
                     DrawBottomControlsBar(bottomControlsHeight);
                 }
             }
+
             planIOManager.DrawFileDialogs();
             DrawConfirmationPopups();
         }
@@ -206,6 +246,7 @@ namespace AetherDraw.Windows
         {
             var currentDrawables = pageManager.GetCurrentPageDrawables();
             undoManager.RecordAction(currentDrawables, "Paste Drawables");
+            var pastedItems = new List<BaseDrawable>();
             if (clipboard.Any())
             {
                 foreach (var dsel in selectedDrawables) dsel.IsSelected = false;
@@ -217,7 +258,18 @@ namespace AetherDraw.Windows
                     newItemClone.IsSelected = true;
                     currentDrawables.Add(newItemClone);
                     selectedDrawables.Add(newItemClone);
+                    pastedItems.Add(newItemClone);
                 }
+            }
+            if (pageManager.IsLiveMode && pastedItems.Any())
+            {
+                var payload = new NetworkPayload
+                {
+                    PageIndex = pageManager.GetCurrentPageIndex(),
+                    Action = PayloadActionType.AddObjects,
+                    Data = DrawableSerializer.SerializePageToBytes(pastedItems)
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
             }
         }
         private void PerformClearAll()
@@ -245,8 +297,13 @@ namespace AetherDraw.Windows
             ResetInteractionStates();
             if (pageManager.IsLiveMode)
             {
-                var payload = DrawableSerializer.SerializePageToBytes(undoneState);
-                _ = plugin.NetworkManager.SendMessageAsync(MessageType.REPLACE_FULL_PAGE_STATE, payload);
+                var payload = new NetworkPayload
+                {
+                    PageIndex = pageManager.GetCurrentPageIndex(),
+                    Action = PayloadActionType.ReplacePage,
+                    Data = DrawableSerializer.SerializePageToBytes(undoneState)
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
             }
         }
 
@@ -257,6 +314,7 @@ namespace AetherDraw.Windows
             DrawPageTabs();
             DrawActionButtons();
         }
+
         private void DrawPageTabs()
         {
             using var pageTabsChild = ImRaii.Child("PageTabsSubRegion", new Vector2(0, ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y), false, ImGuiWindowFlags.HorizontalScrollbar);
@@ -269,8 +327,8 @@ namespace AetherDraw.Windows
                 Vector4 normalColor, activeColor;
                 if (pageManager.IsLiveMode)
                 {
-                    normalColor = new Vector4(0.2f, 0.6f, 0.3f, 1.0f); // Green
-                    activeColor = new Vector4(1.0f, 0.84f, 0.0f, 1.0f); // Yellow
+                    normalColor = new Vector4(0.2f, 0.6f, 0.3f, 1.0f);
+                    activeColor = new Vector4(1.0f, 0.84f, 0.0f, 1.0f);
                 }
                 else
                 {
@@ -307,6 +365,7 @@ namespace AetherDraw.Windows
                 }
             }
         }
+
         private void DrawActionButtons()
         {
             float availableWidth = ImGui.GetContentRegionAvail().X;
@@ -319,7 +378,7 @@ namespace AetherDraw.Windows
             ImGui.SameLine();
             if (ImGui.Button("Save as Image##SaveAsImageButton", new Vector2(actionButtonWidth, 0))) planIOManager.RequestSaveImage(this.currentCanvasDrawSize);
             ImGui.SameLine();
-            if (ImGui.Button("Open WDIG##OpenWDIGButton", new Vector2(actionButtonWidth, 0))) { try { Plugin.CommandManager.ProcessCommand("/wdig"); } catch (Exception ex) { AetherDraw.Plugin.Log?.Error(ex, "Error processing /wdig command."); } }
+            if (ImGui.Button("Open WDIG##OpenWDIGButton", new Vector2(actionButtonWidth, 0))) { try { Plugin.CommandManager.ProcessCommand("/wdig"); } catch (Exception ex) { Plugin.Log?.Error(ex, "Error processing /wdig command."); } }
             ImGui.SameLine();
             using (ImRaii.PushColor(ImGuiCol.Button, pageManager.IsLiveMode ? new Vector4(0.8f, 0.2f, 0.2f, 1.0f) : ImGui.GetStyle().Colors[(int)ImGuiCol.Button]))
             {
@@ -332,6 +391,7 @@ namespace AetherDraw.Windows
             var fileError = planIOManager.LastFileDialogError;
             if (!string.IsNullOrEmpty(fileError)) { ImGui.Spacing(); ImGui.TextColored(new Vector4(1.0f, 0.3f, 0.3f, 1.0f), fileError); }
         }
+
         private void DrawConfirmationPopups()
         {
             bool popupOpen = true;
@@ -345,7 +405,14 @@ namespace AetherDraw.Windows
                 {
                     if (ImGui.Button("Confirm Clear", new Vector2(120 * ImGuiHelpers.GlobalScale, 0)))
                     {
-                        _ = plugin.NetworkManager.SendMessageAsync(MessageType.CLEAR_PAGE, null);
+                        var payload = new NetworkPayload
+                        {
+                            PageIndex = pageManager.GetCurrentPageIndex(),
+                            Action = PayloadActionType.ClearPage,
+                            Data = null
+                        };
+                        _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+
                         pageManager.ClearCurrentPageDrawables();
                         clearConfirmText = "";
                         ImGui.CloseCurrentPopup();
@@ -380,7 +447,19 @@ namespace AetherDraw.Windows
                 }
                 ImGui.EndPopup();
             }
+            if (ImGui.BeginPopupModal("Room Closing", ref popupOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.Text("This live session is closing due to inactivity or because it has expired.");
+                ImGui.Text("You will be disconnected shortly.");
+                ImGui.Separator();
+                if (ImGui.Button("OK", new Vector2(120 * ImGuiHelpers.GlobalScale, 0)))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
+            }
         }
+
         private void ResetInteractionStates()
         {
             selectedDrawables.Clear();
@@ -388,14 +467,17 @@ namespace AetherDraw.Windows
             shapeInteractionHandler.ResetDragState();
             if (inPlaceTextEditor.IsEditing) inPlaceTextEditor.CancelAndEndEdit();
         }
+
         private void DrawCanvas()
         {
             Vector2 canvasSizeForImGuiDrawing = ImGui.GetContentRegionAvail();
             currentCanvasDrawSize = canvasSizeForImGuiDrawing;
             if (canvasSizeForImGuiDrawing.X < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.X = 50f * ImGuiHelpers.GlobalScale;
             if (canvasSizeForImGuiDrawing.Y < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.Y = 50f * ImGuiHelpers.GlobalScale;
+
             ImDrawListPtr drawList = ImGui.GetWindowDrawList();
             Vector2 canvasOriginScreen = ImGui.GetCursorScreenPos();
+
             drawList.AddRectFilled(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, ImGui.GetColorU32(new Vector4(0.15f, 0.15f, 0.17f, 1.0f)));
             float scaledGridCellSize = ScaledCanvasGridSize;
             if (scaledGridCellSize > 0)
@@ -404,7 +486,9 @@ namespace AetherDraw.Windows
                 for (float y = scaledGridCellSize; y < canvasSizeForImGuiDrawing.Y; y += scaledGridCellSize) drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSizeForImGuiDrawing.X, canvasOriginScreen.Y + y), ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f)), Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
             }
             drawList.AddRect(canvasOriginScreen - Vector2.One, canvasOriginScreen + canvasSizeForImGuiDrawing + Vector2.One, ImGui.GetColorU32(new Vector4(0.4f, 0.4f, 0.45f, 1f)), 0f, ImDrawFlags.None, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+
             if (inPlaceTextEditor.IsEditing) { inPlaceTextEditor.RecalculateEditorBounds(canvasOriginScreen, ImGuiHelpers.GlobalScale); inPlaceTextEditor.DrawEditorUI(); }
+
             ImGui.SetCursorScreenPos(canvasOriginScreen);
             ImGui.InvisibleButton("##AetherDrawCanvasInteractionLayer", canvasSizeForImGuiDrawing);
             Vector2 mousePosLogical = (ImGui.GetMousePos() - canvasOriginScreen) / ImGuiHelpers.GlobalScale;
@@ -412,6 +496,7 @@ namespace AetherDraw.Windows
             {
                 canvasController.ProcessCanvasInteraction(mousePosLogical, ImGui.GetMousePos(), canvasOriginScreen, drawList, ImGui.IsMouseDown(ImGuiMouseButton.Left), ImGui.IsMouseClicked(ImGuiMouseButton.Left), ImGui.IsMouseReleased(ImGuiMouseButton.Left), ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left), GetLayerPriority);
             }
+
             ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
             var drawablesToRender = pageManager.GetCurrentPageDrawables();
             if (drawablesToRender != null && drawablesToRender.Any())
@@ -426,6 +511,7 @@ namespace AetherDraw.Windows
             canvasController.GetCurrentDrawingObjectForPreview()?.Draw(drawList, canvasOriginScreen);
             ImGui.PopClipRect();
         }
+
         private void RequestAddNewPage()
         {
             if (pageManager.IsLiveMode && pageManager.GetAllPages().Count >= 5) return;
@@ -450,8 +536,13 @@ namespace AetherDraw.Windows
             {
                 if (pageManager.IsLiveMode)
                 {
-                    var payload = DrawableSerializer.SerializePageToBytes(pageManager.GetCurrentPageDrawables());
-                    _ = plugin.NetworkManager.SendMessageAsync(MessageType.REPLACE_FULL_PAGE_STATE, payload);
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.ReplacePage,
+                        Data = DrawableSerializer.SerializePageToBytes(pageManager.GetCurrentPageDrawables())
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
                 ResetInteractionStates();
             }
@@ -468,6 +559,7 @@ namespace AetherDraw.Windows
                 undoManager.ClearHistory();
             }
         }
+
         private void CopySelected()
         {
             if (selectedDrawables.Any())
@@ -476,6 +568,7 @@ namespace AetherDraw.Windows
                 foreach (var sel in selectedDrawables) { clipboard.Add(sel.Clone()); }
             }
         }
+
         private int GetLayerPriority(DrawMode mode)
         {
             return mode switch

@@ -7,18 +7,17 @@ namespace AetherDraw.Networking
     /// </summary>
     public enum MessageType : byte
     {
-        // Object-related messages
-        ADD_OBJECTS,
-        DELETE_OBJECT,
-        MOVE_OBJECT,
+        /// <summary>
+        /// A comprehensive state update. This single message type replaces the older, granular
+        /// messages like ADD, DELETE, and CLEAR. The payload for this message will contain
+        /// all the necessary information, including the page index and the specific action.
+        /// </summary>
+        STATE_UPDATE,
 
-        // Page-state messages
-        CLEAR_PAGE,
-        REPLACE_FULL_PAGE_STATE,
-
-        // Session management messages (to be implemented)
-        AUTHENTICATE,
-        AUTHENTICATION_SUCCESS,
-        AUTHENTICATION_FAILURE,
+        /// <summary>
+        /// A session management message sent from the server to the client indicating
+        /// that the room is about to close due to inactivity or expiration.
+        /// </summary>
+        ROOM_CLOSING_IMMINENTLY,
     }
 }

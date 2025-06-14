@@ -1,11 +1,11 @@
-// AetherDraw.json
 {
     "Author": "rail",
     "Name": "AetherDraw",
     "Punchline": "Whiteboard planner",
-    "Description": "Draw strategy images for encounters. Use /aetherdraw to open.",
+    "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
+    "Changelog": "v2.0.0.0: Major networking refactor for live sessions. Fixed object duplication, snap-back, and text synchronization bugs.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "1.4.0.0",
+    "AssemblyVersion": "2.0.0.0",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [
@@ -20,5 +20,6 @@
     "DownloadLinkInstall": "",
     "DownloadLinkUpdate": "",
     "DownloadLinkTesting": "",
-    "ImageUrls": []
+    "ImageUrls": [],
+    "IconUrl": "https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/icon.png"
 }
