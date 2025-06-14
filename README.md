@@ -61,3 +61,96 @@ WDIGViewer is here:<br>
 https://github.com/rail2025/WDIGViewer
 <br>
 <br>
+
+# 🔐 Privacy & Security
+
+AetherDraw is designed around user privacy, anonymity, and plausible deniability. It does not collect or expose any identifying information about the user, their character, or their connection.
+<br>
+
+🚫 What AetherDraw Does Not Do
+
+    ❌ Does not transmit your character name, world, content ID, or any in-game identifier.
+
+    ❌ Does not embed metadata or source identifiers in drawing data.
+
+    ❌ Does not store any data persistently (no disk writes, no database).
+
+    ❌ Does not provide a list of connected users to others in the room.
+
+    ❌ Does not log or inspect IP addresses or client origins.
+
+    ❌ Does not send or receive any communication outside the room scope.
+
+✅ What AetherDraw Does
+
+    ✅ Sends drawing strokes as binary messages to a relay-only WebSocket server.
+
+    ✅ Relays messages only to other clients in the same room (by hash or passphrase).
+
+    ✅ Provides two modes of connection:
+
+        Party Sync: Uses a SHA-256 hash of sorted Party member IDs (for in-party sessions).
+
+        Passphrase Mode: Uses a readable sentence as a room key (for cross-world or anonymous sessions). Or make your own generic phrase "123abc123", "TacoTuesday", "Tomestone cap is too low", etc.
+
+    ✅ Uses WebSocket over TLS (WSS) for encrypted communication.
+
+    ✅ Implements strict room expiry and automatic cleanup:
+
+        ⏱️ Rooms expire after 2 hours, or after 3 minutes alone.
+
+        🧹 Room data is never stored beyond process memory.
+
+🌐 Relay Server Design
+
+The official server (wss://aetherdraw-server.onrender.com/ws) is open source:
+
+    🧠 Stateless by design — acts as a dumb relay.
+
+    🗑️ Deletes rooms on timeout or when empty.
+
+    ❌ No persistent storage, no logs, no user tracking.
+
+    📜 No session tokens, cookies, or identifiers.
+
+    🛑 No awareness of user identities or origins.
+
+    ✅ You can self-host the server if desired.
+
+#### 🧅 Threat Model
+
+|Scenario |	What Happens?	| Notes|
+|---|---|---|
+|Passphrase guessed |	Attacker joins your room	|Use unique/generated phrases for private syncs.
+|Packet sniffing	| Can see binary draw data	|No user-identifying metadata present.
+| Client impersonation |	Can send drawing data	|All clients are anonymous by design — spoofing ≈ regular use.
+| Room abuse (e.g. griefing in public)	| No protection|	No moderation due to intentional lack of user identifiers.
+
+#### ⚙️ Configuration & Behavior
+|Feature |	Behavior |
+|---|---|
+Room caps | 8 users for Party Sync, 48 for passphrase-based rooms
+Client list	 |  Not exposed or tracked
+Drawing data	| Binary-only, no tags, no user linkage
+Moderation |	Not implemented — would compromise anonymity
+Room control |	None — anyone with the phrase or hash can draw
+
+#### ❓ Why No Moderation or Visibility?
+
+AetherDraw is designed for:
+
+    Anonymity: No one can tell who is using the plugin.
+
+    Deniability: Passphrases read like in-character phrases.
+
+    Utility: Enables real-time collaborative drawing across any world or data center.
+
+This means:
+
+    No usernames or "ownership" of rooms.
+
+    No in-room kicking or reporting features.
+
+    No global directories or room listings.
+
+If your use case requires tracking, user control, or session auditing, this plugin is intentionally not built for that.
