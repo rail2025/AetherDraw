@@ -48,6 +48,10 @@ namespace AetherDraw.DrawingLogic
         Party2Image,
         Party3Image,
         Party4Image,
+        Party5Image,
+        Party6Image,
+        Party7Image,
+        Party8Image,
 
         TextTool,
 

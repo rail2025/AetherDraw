@@ -16,6 +16,17 @@ namespace AetherDraw.Serialization
         // Versioning for the serialization format. Increment if the format changes.
         private const int SERIALIZATION_VERSION = 1;
 
+        /// <summary>
+        /// A reasonable upper limit for the number of drawable objects on a single page to prevent malicious data from crashing the client.
+        /// </summary>
+        private const int MAX_DRAWABLES_PER_PAGE = 10000;
+
+        /// <summary>
+        /// A reasonable upper limit for the number of points in a single path or dash object.
+        /// </summary>
+        private const int MAX_POINTS_PER_OBJECT = 50000;
+
+
         // --- Public API ---
 
         /// <summary>
@@ -70,6 +81,13 @@ namespace AetherDraw.Serialization
 
                     if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return deserializedDrawables;
                     int drawableCount = reader.ReadInt32();
+
+                    // SANITY CHECK: Add a reasonable limit to how many objects can be on a single page.
+                    if (drawableCount < 0 || drawableCount > MAX_DRAWABLES_PER_PAGE)
+                    {
+                        AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Invalid drawable count in data: {drawableCount}. Halting deserialization for this page.");
+                        return deserializedDrawables; // Return empty list instead of crashing
+                    }
 
                     for (int i = 0; i < drawableCount; i++)
                     {
@@ -178,6 +196,10 @@ namespace AetherDraw.Serialization
                 case DrawMode.Party2Image:
                 case DrawMode.Party3Image:
                 case DrawMode.Party4Image:
+                case DrawMode.Party5Image:
+                case DrawMode.Party6Image:
+                case DrawMode.Party7Image:
+                case DrawMode.Party8Image:
                 case DrawMode.SquareImage:
                 case DrawMode.CircleMarkImage:
                 case DrawMode.TriangleImage:
@@ -227,6 +249,12 @@ namespace AetherDraw.Serialization
                 case DrawMode.Pen:
                     if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return null;
                     int pathPointCount = reader.ReadInt32();
+                    // SANITY CHECK: Protect against malicious data with an impossibly large number of points.
+                    if (pathPointCount < 0 || pathPointCount > MAX_POINTS_PER_OBJECT)
+                    {
+                        AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Invalid path point count: {pathPointCount}. Skipping this drawable.");
+                        return null;
+                    }
                     if (reader.BaseStream.Position + sizeof(float) * 2 * pathPointCount > reader.BaseStream.Length) return null;
                     var pathPoints = new List<Vector2>(pathPointCount);
                     for (int i = 0; i < pathPointCount; i++) pathPoints.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
@@ -273,6 +301,12 @@ namespace AetherDraw.Serialization
                 case DrawMode.Dash:
                     if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return null;
                     int dashPointCount = reader.ReadInt32();
+                    // SANITY CHECK: Protect against malicious data with an impossibly large number of points.
+                    if (dashPointCount < 0 || dashPointCount > MAX_POINTS_PER_OBJECT)
+                    {
+                        AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Invalid dash point count: {dashPointCount}. Skipping this drawable.");
+                        return null;
+                    }
                     if (reader.BaseStream.Position + sizeof(float) * 2 * dashPointCount + sizeof(float) * 2 > reader.BaseStream.Length) return null;
                     var dashPoints = new List<Vector2>(dashPointCount);
                     for (int i = 0; i < dashPointCount; i++) dashPoints.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
@@ -307,6 +341,10 @@ namespace AetherDraw.Serialization
                 case DrawMode.Party2Image:
                 case DrawMode.Party3Image:
                 case DrawMode.Party4Image:
+                case DrawMode.Party5Image:
+                case DrawMode.Party6Image:
+                case DrawMode.Party7Image:
+                case DrawMode.Party8Image:
                 case DrawMode.SquareImage:
                 case DrawMode.CircleMarkImage:
                 case DrawMode.TriangleImage:

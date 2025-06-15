@@ -3,9 +3,9 @@
     "Name": "AetherDraw",
     "Punchline": "Whiteboard planner",
     "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
-    "Changelog": "v2.0.0.0: Major networking refactor for live sessions. Fixed object duplication, snap-back, and text synchronization bugs.",
+    "Changelog": "v2.1.0.0: Added full 1-8 party icons. Added plan sharing via clipboard. Refactored UI buttons.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.0.0.0",
+    "AssemblyVersion": "2.1.0.0",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [

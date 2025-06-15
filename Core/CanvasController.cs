@@ -233,7 +233,8 @@ namespace AetherDraw.Core
                 DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or
                 DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.StackIcon or
                 DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon or
-                DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or
+                DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or 
+                DrawMode.Party5Image or DrawMode.Party6Image or DrawMode.Party7Image or DrawMode.Party8Image or
                 DrawMode.TriangleImage or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.PlusImage
                 => true,
                 _ => false,
@@ -274,6 +275,10 @@ namespace AetherDraw.Core
                     case DrawMode.Party2Image: imagePath = "PluginImages.toolbar.Party2.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party3Image: imagePath = "PluginImages.toolbar.Party3.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party4Image: imagePath = "PluginImages.toolbar.Party4.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Party5Image: imagePath = "PluginImages.toolbar.Party5.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Party6Image: imagePath = "PluginImages.toolbar.Party6.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Party7Image: imagePath = "PluginImages.toolbar.Party7.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Party8Image: imagePath = "PluginImages.toolbar.Party8.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.SquareImage: imagePath = "PluginImages.toolbar.Square.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.CircleMarkImage: imagePath = "PluginImages.toolbar.CircleMark.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.TriangleImage: imagePath = "PluginImages.toolbar.Triangle.png"; imageUnscaledSize = new Vector2(25f, 25f); break;

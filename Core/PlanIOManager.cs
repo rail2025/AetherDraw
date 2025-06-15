@@ -1,22 +1,27 @@
 // AetherDraw/Core/PlanIOManager.cs
 using System;
 using System.Collections.Generic;
-using System.IO; // Specifically for System.IO.Path, Directory, File
+using System.IO;
 using System.Linq;
 using System.Numerics;
-using AetherDraw.DrawingLogic; // For BaseDrawable, DrawMode, and InPlaceTextEditor
-using AetherDraw.Serialization; // For PlanSerializer
-using Dalamud.Interface.ImGuiFileDialog; // For FileDialogManager
-using Dalamud.Plugin; // For IDalamudPluginInterface
-using Dalamud.Interface.Utility; // For ImGuiHelpers
-
-// ImageSharp specific usings for image manipulation and saving
+using AetherDraw.DrawingLogic;
+using AetherDraw.Serialization;
+using Dalamud.Interface.ImGuiFileDialog;
+using Dalamud.Plugin;
+using Dalamud.Interface.Utility;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats; // For Rgba32
-using SixLabors.ImageSharp.Processing; // For Mutate, Resize, Rotate etc.
-using SixLabors.ImageSharp.Drawing; // For PathBuilder, Pens etc.
-using SixLabors.ImageSharp.Drawing.Processing; // For Fill, Draw extension methods
-using SixLabors.Fonts; // For Font, FontFamily, RichTextOptions etc.
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.Fonts;
+
+// New using statements required for compression, networking, and regex.
+using System.IO.Compression;
+using System.Net.Http;
+using System.Text.RegularExpressions;
+using ImGuiNET;
+
 
 namespace AetherDraw.Core
 {
@@ -38,6 +43,11 @@ namespace AetherDraw.Core
         private readonly Func<float> getScaledCanvasGridSizeFunc;
         private readonly Func<DrawMode, int> getLayerPriorityFunc;
         private readonly Func<int> getCurrentPageIndexFunc;
+
+        /// <summary>
+        /// A static HttpClient is used for performance and proper socket management when making web requests.
+        /// </summary>
+        private static readonly HttpClient HttpClient = new HttpClient();
 
         /// <summary>
         /// Event triggered when a plan is successfully loaded from a file.
@@ -146,6 +156,139 @@ namespace AetherDraw.Core
         }
 
         /// <summary>
+        /// Serializes, compresses, and copies the current plan to the clipboard as a Base64 string.
+        /// This is used for sharing plans via text (e.g., Pastebin).
+        /// </summary>
+        public void CopyCurrentPlanToClipboardCompressed()
+        {
+            LastFileDialogError = string.Empty;
+            try
+            {
+#pragma warning disable CS8600
+                byte[] planBytes = PlanSerializer.SerializePlanToBytes(pageManager.GetAllPages(), "clipboard_plan");
+#pragma warning restore CS8600
+                if (planBytes == null || planBytes.Length == 0)
+                {
+                    LastFileDialogError = "Nothing to copy.";
+                    return;
+                }
+
+                using var outputStream = new MemoryStream();
+                using (var gzipStream = new GZipStream(outputStream, CompressionMode.Compress))
+                {
+                    gzipStream.Write(planBytes, 0, planBytes.Length);
+                }
+                byte[] compressedBytes = outputStream.ToArray();
+
+                string base64String = Convert.ToBase64String(compressedBytes);
+
+                ImGui.SetClipboardText(base64String);
+                LastFileDialogError = "Compressed plan data copied to clipboard!";
+            }
+            catch (Exception ex)
+            {
+                LastFileDialogError = "Failed to copy plan to clipboard.";
+                AetherDraw.Plugin.Log?.Error(ex, "[PlanIOManager] Error during CopyCurrentPlanToClipboardCompressed.");
+            }
+        }
+
+        /// <summary>
+        /// Attempts to load a plan from a Base64 string, handling decompression.
+        /// </summary>
+        /// <param name="base64Text">The string containing the Base64 plan data.</param>
+        public void RequestLoadPlanFromText(string base64Text)
+        {
+            LastFileDialogError = string.Empty;
+            if (string.IsNullOrWhiteSpace(base64Text))
+            {
+                LastFileDialogError = "Pasted text is empty.";
+                return;
+            }
+
+            try
+            {
+                // Step 1: Decode the Base64 string back into bytes
+                byte[] receivedBytes = Convert.FromBase64String(base64Text);
+                byte[] decompressedBytes;
+
+                // Step 2: Try to decompress the data
+                try
+                {
+                    using var inputStream = new MemoryStream(receivedBytes);
+                    using var outputStream = new MemoryStream();
+                    using (var gzipStream = new GZipStream(inputStream, CompressionMode.Decompress))
+                    {
+                        gzipStream.CopyTo(outputStream);
+                    }
+                    decompressedBytes = outputStream.ToArray();
+                }
+                catch (InvalidDataException)
+                {
+                    // If decompression fails, assume it's uncompressed data (for legacy support)
+                    AetherDraw.Plugin.Log?.Warning("[PlanIOManager] Pasted data was not GZip compressed. Loading as uncompressed.");
+                    decompressedBytes = receivedBytes;
+                }
+
+                // Step 3: Deserialize the plan from the final bytes
+                PlanSerializer.DeserializedPlan? loadedPlan = PlanSerializer.DeserializePlanFromBytes(decompressedBytes);
+
+                if (loadedPlan == null || loadedPlan.Pages == null)
+                {
+                    LastFileDialogError = "Failed to read plan data. It might be corrupt or invalid.";
+                    return;
+                }
+
+                pageManager.LoadPages(loadedPlan.Pages);
+                LastFileDialogError = "Plan loaded successfully from text.";
+                OnPlanLoadSuccess?.Invoke();
+            }
+            catch (FormatException)
+            {
+                LastFileDialogError = "Invalid format. Data must be a Base64 string.";
+            }
+            catch (Exception ex)
+            {
+                LastFileDialogError = "An error occurred while loading the data.";
+                AetherDraw.Plugin.Log?.Error(ex, "[PlanIOManager] Error in RequestLoadPlanFromText.");
+            }
+        }
+
+        /// <summary>
+        /// Attempts to load a plan from a URL pointing to raw, Base64 text.
+        /// </summary>
+        /// <param name="url">The URL to fetch plan data from.</param>
+        public async void RequestLoadPlanFromUrl(string url)
+        {
+            LastFileDialogError = string.Empty;
+            string correctedUrl = url.Trim();
+
+            // Automatically convert a standard Pastebin link to its raw equivalent.
+            if (Regex.IsMatch(correctedUrl, @"^https?://pastebin\.com/([a-zA-Z0-9]+)$"))
+            {
+                correctedUrl = $"https://pastebin.com/raw/{Regex.Match(correctedUrl, @"^https?://pastebin\.com/([a-zA-Z0-9]+)$").Groups[1].Value}";
+                AetherDraw.Plugin.Log?.Info($"[PlanIOManager] Converted Pastebin URL to raw link: {correctedUrl}");
+            }
+
+            if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out _))
+            {
+                LastFileDialogError = "Invalid or unsupported URL format.";
+                return;
+            }
+
+            try
+            {
+                string base64TextData = await HttpClient.GetStringAsync(correctedUrl);
+                // Once we have the text, reuse the text loading logic.
+                RequestLoadPlanFromText(base64TextData);
+            }
+            catch (Exception ex)
+            {
+                LastFileDialogError = "Could not retrieve data from URL.";
+                AetherDraw.Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading from URL {correctedUrl}.");
+            }
+        }
+
+        /// <summary>
         /// Determines the initial path for file dialogs.
         /// Prefers the plugin's configuration directory, falling back to "My Documents".
         /// </summary>
@@ -212,9 +355,17 @@ namespace AetherDraw.Core
             AetherDraw.Plugin.Log?.Debug($"[PlanIOManager] HandleSaveImageDialogResult: Success - {success}, Base Path - '{baseFilePathFromDialog ?? "null"}', CanvasSize: {canvasVisualSize}");
             if (success && !string.IsNullOrEmpty(baseFilePathFromDialog))
             {
-                string directory = System.IO.Path.GetDirectoryName(baseFilePathFromDialog) ?? "";
-                string baseNameOnly = System.IO.Path.GetFileNameWithoutExtension(baseFilePathFromDialog);
-                string targetExtension = ".png"; // Ensure PNG format
+                // --- NEW, EXPLICIT NULL-HANDLING APPROACH ---
+                // Get path components into nullable strings first.
+                string? directoryNullable = System.IO.Path.GetDirectoryName(baseFilePathFromDialog);
+                string? baseNameNullable = System.IO.Path.GetFileNameWithoutExtension(baseFilePathFromDialog);
+
+                // Now, assign to non-nullable strings with fallback values.
+                // This makes the null handling very clear to the compiler.
+                string directory = directoryNullable ?? "";
+                string baseNameOnly = baseNameNullable ?? "MyAetherDrawImage";
+
+                string targetExtension = ".png";
 
                 var currentPages = pageManager.GetAllPages();
                 if (currentPages.Count == 0)
@@ -253,7 +404,7 @@ namespace AetherDraw.Core
                 // Provide feedback to the user
                 if (failureCount > 0) LastFileDialogError = $"Saved {successCount} page(s). Failed to save {failureCount} page(s). Check log.";
                 else if (successCount > 0) LastFileDialogError = $"Successfully saved: {string.Join(", ", savedFiles)}";
-                else LastFileDialogError = "No pages were processed or saved."; // Should not happen if currentPages.Count > 0
+                else LastFileDialogError = "No pages were processed or saved.";
             }
             else if (!success)
             {
@@ -317,7 +468,6 @@ namespace AetherDraw.Core
             AetherDraw.Plugin.Log?.Info($"[PlanIOManager] Attempting to save current plan ({currentPages.Count} pages) to: {filePath}");
             LastFileDialogError = string.Empty;
 
-            // Check if there's anything to save
             if (!currentPages.Any() || !currentPages.Any(p => p.Drawables.Any()))
             {
                 AetherDraw.Plugin.Log?.Warning("[PlanIOManager] No content to save. Plan is empty.");
@@ -325,11 +475,18 @@ namespace AetherDraw.Core
                 return;
             }
 
-            string planName = System.IO.Path.GetFileNameWithoutExtension(filePath);
+            // This is the corrected line for the CS8600 warning
+            string? tempName = System.IO.Path.GetFileNameWithoutExtension(filePath);
+#pragma warning disable CS8600
+            string planName = "MyAetherDrawPlan";
+            if (!string.IsNullOrEmpty(tempName))
+            {
+                planName = tempName;
+            }
+#pragma warning restore CS8600
 
             try
             {
-                // Ensure the directory exists before writing the file
                 string? directory = System.IO.Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory) && !System.IO.Directory.Exists(directory))
                 {
@@ -337,7 +494,6 @@ namespace AetherDraw.Core
                     AetherDraw.Plugin.Log?.Info($"[PlanIOManager] Created directory for saving: {directory}");
                 }
 
-                // Define application version for serialization (could be dynamic in a real app)
                 ushort appVersionMajor = 1;
                 ushort appVersionMinor = 1;
                 ushort appVersionPatch = 0;
