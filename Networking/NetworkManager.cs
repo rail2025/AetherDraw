@@ -61,7 +61,7 @@ namespace AetherDraw.Networking
             {
                 webSocket = new ClientWebSocket();
                 cancellationTokenSource = new CancellationTokenSource();
-                Uri connectUri = new Uri($"{serverUri}?passphrase={Uri.EscapeDataString(passphrase)}");
+                Uri connectUri = new Uri($"{serverUri}?passphrase={Uri.EscapeDataString(passphrase)}&client=ad");
 
                 await webSocket.ConnectAsync(connectUri, cancellationTokenSource.Token);
 
