@@ -28,12 +28,10 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 open with /aetherdraw  <br>
 # Installation
 Enter /xlsettings in the chat window and go to the Experimental tab in the opening window.
-Skip below the DevPlugins section to the Custom Plugin Repositories section.
-Copy and paste the repo.json link into the first free text input field.
-https://raw.githubusercontent.com/rail2025/AetherDraw/refs/heads/master/repo.json
-Click on the + button and make sure the checkmark beside the new field is set afterwards.
+click the get testing builds:
+![testing builds](https://github.com/user-attachments/assets/5fc52921-06d0-4545-9038-86f0f93f8a98)
 Click on the Save-icon in the bottom right.
-Enter /xlplugins in the chat window and look for AetherDraw and install. 
+Enter /xlplugins in the chat window and look for AetherDraw under the Testing Available and install. 
 <br>
 ## Bottom bar buttons:
 <br>
