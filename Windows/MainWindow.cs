@@ -45,6 +45,8 @@ namespace AetherDraw.Windows
         /// A buffer to hold the pasted text for loading a plan.
         /// </summary>
         private string textToLoad = "";
+        // New field to hold the RaidPlan.io URL
+        private string raidPlanUrlToLoad = "";
 
         // State flags for managing popups
         private bool openClearConfirmPopup = false;
@@ -54,6 +56,8 @@ namespace AetherDraw.Windows
         /// A flag used to reliably trigger the opening of the text import modal.
         /// </summary>
         private bool openImportTextModal = false;
+        // New flag for the RaidPlan URL import modal
+        private bool openRaidPlanImportModal = false;
         private string clearConfirmText = "";
 
         /// <summary>
@@ -240,6 +244,7 @@ namespace AetherDraw.Windows
             if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
             if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
+            if (openRaidPlanImportModal) { ImGui.OpenPopup("Import from RaidPlan.io"); openRaidPlanImportModal = false; }
 
             using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(125f * ImGuiHelpers.GlobalScale, 0), true, ImGuiWindowFlags.None))
             {
@@ -420,11 +425,17 @@ namespace AetherDraw.Windows
                 {
                     planIOManager.RequestLoadPlan();
                 }
-                // Updated menu item to be more specific.
                 if (ImGui.MenuItem("Load from Text..."))
                 {
                     textToLoad = "";
                     openImportTextModal = true;
+                }
+                // Add the new menu item here
+                if (ImGui.MenuItem("Import from RaidPlan.io URL..."))
+                {
+                    raidPlanUrlToLoad = ""; // Clear previous URL
+                    openRaidPlanImportModal = true;
+                    Plugin.Log?.Info("[UI] 'Import from RaidPlan.io URL...' clicked. Flag 'openRaidPlanImportModal' set to true.");
                 }
                 ImGui.EndPopup();
             }
@@ -435,26 +446,45 @@ namespace AetherDraw.Windows
                 openImportTextModal = false;
             }
 
+            if (openRaidPlanImportModal)
+            {
+                ImGui.OpenPopup("Import from RaidPlan.io");
+                openRaidPlanImportModal = false;
+            }
+
             // --- Modal Popup for Text Input ---
             bool pOpen = true;
             if (ImGui.BeginPopupModal("Import From Text", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
             {
-                // Updated description to remove mention of URLs.
                 ImGui.Text("Paste the plan's Base64 text below.");
-
                 ImGui.InputTextMultiline("##TextToLoad", ref textToLoad, 100000, new Vector2(400 * ImGuiHelpers.GlobalScale, 200 * ImGuiHelpers.GlobalScale));
-
                 if (ImGui.Button("Import", new Vector2(120, 0)))
                 {
                     if (!string.IsNullOrWhiteSpace(textToLoad))
-                    {
-                        // Simplified logic to only call the text loading function.
                         planIOManager.RequestLoadPlanFromText(textToLoad);
-                    }
                     ImGui.CloseCurrentPopup();
                 }
                 ImGui.SameLine();
                 if (ImGui.Button("Cancel"))
+                    ImGui.CloseCurrentPopup();
+                ImGui.EndPopup();
+            }
+
+            // --- New Modal for RaidPlan URL ---
+            
+            if (ImGui.BeginPopupModal("Import from RaidPlan.io", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                Plugin.Log?.Info("[UI] Rendering 'Import from RaidPlan.io' modal content.");
+                ImGui.Text("Enter the RaidPlan.io URL below.");
+                ImGui.InputText("##RaidPlanUrl", ref raidPlanUrlToLoad, 256);
+                if (ImGui.Button("Import##RaidPlanImport", new Vector2(120, 0)))
+                {
+                    // Placeholder for now. Eventually this will call a method in PlanIOManager.
+                    Plugin.Log?.Info($"Attempting to import from RaidPlan URL: {raidPlanUrlToLoad}");
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Cancel##RaidPlanCancel"))
                 {
                     ImGui.CloseCurrentPopup();
                 }
