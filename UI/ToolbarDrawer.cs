@@ -89,13 +89,15 @@ namespace AetherDraw.UI
             this.mainToolbarButtons = new List<ToolbarButton>
             {
                 new() { Primary = DrawMode.Pen, SubModes = new List<DrawMode> { DrawMode.Pen, DrawMode.StraightLine, DrawMode.Dash }, Tooltip = "Drawing Tools" },
-                new() { Primary = DrawMode.Rectangle, SubModes = new List<DrawMode> { DrawMode.Rectangle, DrawMode.Circle, DrawMode.Arrow, DrawMode.Cone }, Tooltip = "Shape Tools" },
+                new() { Primary = DrawMode.Rectangle, SubModes = new List<DrawMode> { DrawMode.Rectangle, DrawMode.Circle, DrawMode.Arrow, DrawMode.Cone, DrawMode.Triangle }, Tooltip = "Shape Tools" },
                 new() { Primary = DrawMode.SquareImage, SubModes = new List<DrawMode> { DrawMode.SquareImage, DrawMode.CircleMarkImage, DrawMode.TriangleImage, DrawMode.PlusImage }, Tooltip = "Placeable Shapes" },
                 new() { Primary = DrawMode.RoleTankImage, SubModes = new List<DrawMode> { DrawMode.RoleTankImage, DrawMode.RoleHealerImage, DrawMode.RoleMeleeImage, DrawMode.RoleRangedImage }, Tooltip = "Role Icons" },
                 new() { Primary = DrawMode.Party1Image, SubModes = new List<DrawMode> { DrawMode.Party1Image, DrawMode.Party2Image, DrawMode.Party3Image, DrawMode.Party4Image, DrawMode.Party5Image, DrawMode.Party6Image, DrawMode.Party7Image, DrawMode.Party8Image }, Tooltip = "Party Number Icons" },
                 new() { Primary = DrawMode.WaymarkAImage, SubModes = new List<DrawMode> { DrawMode.WaymarkAImage, DrawMode.WaymarkBImage, DrawMode.WaymarkCImage, DrawMode.WaymarkDImage }, Tooltip = "Waymarks A-D" },
                 new() { Primary = DrawMode.Waymark1Image, SubModes = new List<DrawMode> { DrawMode.Waymark1Image, DrawMode.Waymark2Image, DrawMode.Waymark3Image, DrawMode.Waymark4Image }, Tooltip = "Waymarks 1-4" },
                 new() { Primary = DrawMode.StackImage, SubModes = new List<DrawMode> { DrawMode.StackImage, DrawMode.SpreadImage, DrawMode.LineStackImage, DrawMode.FlareImage, DrawMode.DonutAoEImage, DrawMode.CircleAoEImage, DrawMode.BossImage }, Tooltip = "Mechanic Icons" },
+                new() { Primary = DrawMode.TextTool, SubModes = new List<DrawMode>(), Tooltip = "Text Tool" },
+                new() { Primary = DrawMode.Dot1Image, SubModes = new List<DrawMode> { DrawMode.Dot1Image, DrawMode.Dot2Image, DrawMode.Dot3Image, DrawMode.Dot4Image, DrawMode.Dot5Image, DrawMode.Dot6Image, DrawMode.Dot7Image, DrawMode.Dot8Image }, Tooltip = "Colored Dots" }
             };
 
             this.activeSubModeMap = new Dictionary<DrawMode, DrawMode>();
@@ -107,7 +109,7 @@ namespace AetherDraw.UI
             this.iconPaths = new Dictionary<DrawMode, string>
             {
                 { DrawMode.Pen, "" }, { DrawMode.StraightLine, "" }, { DrawMode.Dash, "" },
-                { DrawMode.Rectangle, "" }, { DrawMode.Circle, "" }, { DrawMode.Arrow, "" }, { DrawMode.Cone, "" },
+                { DrawMode.Rectangle, "" }, { DrawMode.Circle, "" }, { DrawMode.Arrow, "" }, { DrawMode.Cone, "" }, { DrawMode.Triangle, ""},
                 { DrawMode.SquareImage, "PluginImages.toolbar.Square.png" },
                 { DrawMode.CircleMarkImage, "PluginImages.toolbar.CircleMark.png" },
                 { DrawMode.TriangleImage, "PluginImages.toolbar.Triangle.png" },
@@ -138,13 +140,24 @@ namespace AetherDraw.UI
                 { DrawMode.FlareImage, "PluginImages.svg.flare.svg" },
                 { DrawMode.DonutAoEImage, "PluginImages.svg.donut.svg" },
                 { DrawMode.CircleAoEImage, "PluginImages.svg.prox_aoe.svg" },
-                { DrawMode.BossImage, "PluginImages.svg.boss.svg" }
+                { DrawMode.BossImage, "PluginImages.svg.boss.svg" },
+                { DrawMode.Dot1Image, "PluginImages.svg.1dot.svg" },
+                { DrawMode.Dot2Image, "PluginImages.svg.2dot.svg" },
+                { DrawMode.Dot3Image, "PluginImages.svg.3dot.svg" },
+                { DrawMode.Dot4Image, "PluginImages.svg.4dot.svg" },
+                { DrawMode.Dot5Image, "PluginImages.svg.5dot.svg" },
+                { DrawMode.Dot6Image, "PluginImages.svg.6dot.svg" },
+                { DrawMode.Dot7Image, "PluginImages.svg.7dot.svg" },
+                { DrawMode.Dot8Image, "PluginImages.svg.8dot.svg" },
+                { DrawMode.TextTool, "" }
             };
 
             this.toolDisplayNames = new Dictionary<DrawMode, string>
             {
                 { DrawMode.StraightLine, "Line" },
-                { DrawMode.Rectangle, "Rect" }
+                { DrawMode.Rectangle, "Rect" },
+                { DrawMode.Triangle, "Triangle" },
+                { DrawMode.TextTool, "TEXT" }
             };
         }
 
@@ -193,10 +206,17 @@ namespace AetherDraw.UI
                 string activePath = iconPaths.GetValueOrDefault(activeModeInGroup, "");
                 var tex = activePath != "" ? TextureManager.GetTexture(activePath) : null;
                 var drawList = ImGui.GetWindowDrawList();
-                bool isGroupActive = group.SubModes.Contains(currentDrawMode);
+                bool isGroupActive = group.SubModes.Contains(currentDrawMode) || group.Primary == currentDrawMode;
                 using (isGroupActive ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
                 {
-                    if (ImGui.Button($"##{group.Primary}", iconButtonSize)) setCurrentDrawMode(activeModeInGroup);
+                    if (ImGui.Button($"##{group.Primary}", iconButtonSize))
+                    {
+                        // If the button has no sub-modes (like Text), just activate it directly.
+                        if (group.SubModes.Any())
+                            setCurrentDrawMode(activeModeInGroup);
+                        else
+                            setCurrentDrawMode(group.Primary);
+                    }
                     var min = ImGui.GetItemRectMin();
                     var max = ImGui.GetItemRectMax();
                     var center = (min + max) / 2;
@@ -211,13 +231,24 @@ namespace AetherDraw.UI
                             drawList.AddRect(graphicCenter - new Vector2(iconButtonSize.X * 0.1f, iconButtonSize.Y * 0.1f), graphicCenter + new Vector2(iconButtonSize.X * 0.1f, iconButtonSize.Y * 0.1f), color, 0f, ImDrawFlags.None, 2f);
                             drawList.AddCircle(graphicCenter, iconButtonSize.X * 0.2f, color, 0, 2f);
                         }
-                        var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, activeModeInGroup.ToString().Replace("Image", ""));
-                        var textSize = ImGui.CalcTextSize(activeToolName);
-                        drawList.AddText(new Vector2(center.X - textSize.X / 2, max.Y - textSize.Y - (iconButtonSize.Y * 0.1f)), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
+                        else if (group.Primary == DrawMode.TextTool)
+                        {
+                            var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, "TEXT");
+                            var textSize = ImGui.CalcTextSize(activeToolName);
+                            drawList.AddText(new Vector2(center.X - textSize.X / 2, center.Y - textSize.Y / 2), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
+                        }
+
+                        if (group.Primary != DrawMode.TextTool)
+                        {
+                            var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, activeModeInGroup.ToString().Replace("Image", ""));
+                            var textSize = ImGui.CalcTextSize(activeToolName);
+                            drawList.AddText(new Vector2(center.X - textSize.X / 2, max.Y - textSize.Y - (iconButtonSize.Y * 0.1f)), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
+                        }
                     }
                 }
                 if (ImGui.IsItemHovered()) ImGui.SetTooltip(group.Tooltip);
-                if (ImGui.BeginPopupContextItem($"popup_{group.Primary}", ImGuiPopupFlags.MouseButtonLeft))
+
+                if (group.SubModes.Any() && ImGui.BeginPopupContextItem($"popup_{group.Primary}", ImGuiPopupFlags.MouseButtonLeft))
                 {
                     foreach (var subMode in group.SubModes)
                     {
@@ -245,12 +276,6 @@ namespace AetherDraw.UI
                     }
                     ImGui.EndPopup();
                 }
-            }
-
-            bool isTextToolSelected = currentDrawMode == DrawMode.TextTool;
-            using (isTextToolSelected ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
-            {
-                if (ImGui.Button("TEXT", new Vector2(btnWidthHalf, iconButtonSize.Y))) setCurrentDrawMode(DrawMode.TextTool);
             }
 
             ImGui.Separator();

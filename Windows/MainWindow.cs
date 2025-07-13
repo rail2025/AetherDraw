@@ -1,25 +1,20 @@
-// AetherDraw/Windows/MainWindow.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using Dalamud.Interface.Windowing;
-using ImGuiNET;
-using System.Linq;
-using AetherDraw.DrawingLogic;
 using AetherDraw.Core;
+using AetherDraw.DrawingLogic;
+using AetherDraw.Networking;
+using AetherDraw.Serialization;
 using AetherDraw.UI;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
-using AetherDraw.Serialization;
-using AetherDraw.Networking;
+using Dalamud.Interface.Windowing;
+using ImGuiNET;
+using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Numerics;
 
 namespace AetherDraw.Windows
 {
-    /// <summary>
-    /// Represents the main window for the AetherDraw plugin.
-    /// This window orchestrates UI components and delegates core functionalities.
-    /// </summary>
     public class MainWindow : Window, IDisposable
     {
         private readonly Plugin plugin;
@@ -40,31 +35,15 @@ namespace AetherDraw.Windows
         private bool currentShapeFilled = false;
         private float ScaledCanvasGridSize => 40f * ImGuiHelpers.GlobalScale;
         private Vector2 currentCanvasDrawSize;
-
-        /// <summary>
-        /// A buffer to hold the pasted text for loading a plan.
-        /// </summary>
         private string textToLoad = "";
-        // New field to hold the RaidPlan.io URL
         private string raidPlanUrlToLoad = "";
-
-        // State flags for managing popups
         private bool openClearConfirmPopup = false;
         private bool openDeletePageConfirmPopup = false;
         private bool openRoomClosingPopup = false;
-        /// <summary>
-        /// A flag used to reliably trigger the opening of the text import modal.
-        /// </summary>
         private bool openImportTextModal = false;
-        // New flag for the RaidPlan URL import modal
         private bool openRaidPlanImportModal = false;
         private string clearConfirmText = "";
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MainWindow"/> class.
-        /// </summary>
-        /// <param name="plugin">The main plugin instance.</param>
-        /// <param name="id">An optional unique ID to append to the window name for creating multiple instances.</param>
         public MainWindow(Plugin plugin, string id = "") : base($"AetherDraw Whiteboard{id}###AetherDrawMainWindow{id}")
         {
             this.plugin = plugin;
@@ -84,21 +63,15 @@ namespace AetherDraw.Windows
             this.currentBrushThickness = initialThicknessPresets.Contains(this.configuration.DefaultBrushThickness) ? this.configuration.DefaultBrushThickness : initialThicknessPresets[1];
             undoManager.ClearHistory();
 
-            // Subscribe to network events
             plugin.NetworkManager.OnConnected += HandleNetworkConnect;
             plugin.NetworkManager.OnDisconnected += HandleNetworkDisconnect;
             plugin.NetworkManager.OnStateUpdateReceived += HandleStateUpdateReceived;
             plugin.NetworkManager.OnRoomClosingWarning += HandleRoomClosingWarning;
         }
 
-        /// <summary>
-        /// Disposes of managed resources and unsubscribes from events.
-        /// </summary>
         public void Dispose()
         {
             if (this.planIOManager != null) this.planIOManager.OnPlanLoadSuccess -= HandleSuccessfulPlanLoad;
-
-            // Unsubscribe from network events
             plugin.NetworkManager.OnConnected -= HandleNetworkConnect;
             plugin.NetworkManager.OnDisconnected -= HandleNetworkDisconnect;
             plugin.NetworkManager.OnStateUpdateReceived -= HandleStateUpdateReceived;
@@ -110,44 +83,30 @@ namespace AetherDraw.Windows
         private void HandleNetworkDisconnect() => pageManager.ExitLiveMode();
         private void HandleRoomClosingWarning() => openRoomClosingPopup = true;
 
-        /// <summary>
-        /// Main handler for all incoming state updates from the server. It is page-aware.
-        /// </summary>
-        /// <param name="payload">The network payload containing the page index, action, and data.</param>
         private void HandleStateUpdateReceived(NetworkPayload payload)
         {
             if (!pageManager.IsLiveMode) return;
-
             var allPages = pageManager.GetAllPages();
-
-            // If a ReplacePage command comes for a page that doesn't exist, create pages until it does.
             if (payload.Action == PayloadActionType.ReplacePage)
             {
                 while (allPages.Count <= payload.PageIndex)
                 {
-                    // Add a new page but don't switch to it.
-                    // The contents will be immediately overwritten by the payload data.
                     pageManager.AddNewPage(false);
                 }
             }
-
             if (payload.PageIndex < 0 || payload.PageIndex >= allPages.Count)
             {
                 Plugin.Log?.Warning($"Received state update for invalid page index: {payload.PageIndex}");
                 return;
             }
-
-            // A user should not process updates for objects they are currently dragging.
             if (payload.Action == PayloadActionType.UpdateObjects)
             {
                 if (shapeInteractionHandler.DraggedObjectIds.Any())
                 {
-                    return; // Simplified: if we are dragging anything, ignore incoming updates.
+                    return;
                 }
             }
-
             var targetPageDrawables = allPages[payload.PageIndex].Drawables;
-
             try
             {
                 switch (payload.Action)
@@ -157,7 +116,6 @@ namespace AetherDraw.Windows
                         var receivedObjects = DrawableSerializer.DeserializePageFromBytes(payload.Data);
                         targetPageDrawables.AddRange(receivedObjects);
                         break;
-
                     case PayloadActionType.DeleteObjects:
                         if (payload.Data == null) return;
                         using (var ms = new MemoryStream(payload.Data))
@@ -171,7 +129,6 @@ namespace AetherDraw.Windows
                             }
                         }
                         break;
-
                     case PayloadActionType.UpdateObjects:
                         if (payload.Data == null) return;
                         var updatedObjects = DrawableSerializer.DeserializePageFromBytes(payload.Data);
@@ -184,15 +141,13 @@ namespace AetherDraw.Windows
                             }
                             else
                             {
-                                targetPageDrawables.Add(updatedObject); // Add if not found, for robustness
+                                targetPageDrawables.Add(updatedObject);
                             }
                         }
                         break;
-
                     case PayloadActionType.ClearPage:
                         targetPageDrawables.Clear();
                         break;
-
                     case PayloadActionType.ReplacePage:
                         if (payload.Data == null) return;
                         var fullPageState = DrawableSerializer.DeserializePageFromBytes(payload.Data);
@@ -207,15 +162,10 @@ namespace AetherDraw.Windows
         }
         #endregion
 
-        /// <summary>
-        /// Handles post-plan-load logic, including broadcasting the new plan in a live session.
-        /// </summary>
         private void HandleSuccessfulPlanLoad()
         {
             ResetInteractionStates();
             undoManager.ClearHistory();
-
-            // If in a live session, broadcast the new state of ALL pages to other clients.
             if (pageManager.IsLiveMode)
             {
                 var allLoadedPages = pageManager.GetAllPages();
@@ -223,24 +173,19 @@ namespace AetherDraw.Windows
                 {
                     var page = allLoadedPages[i];
                     var payloadData = DrawableSerializer.SerializePageToBytes(page.Drawables);
-
-                    var payload = new NetworkPayload
-                    {
-                        PageIndex = i,
-                        Action = PayloadActionType.ReplacePage,
-                        Data = payloadData
-                    };
+                    var payload = new NetworkPayload { PageIndex = i, Action = PayloadActionType.ReplacePage, Data = payloadData };
                     _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
             }
         }
 
-        /// <inheritdoc/>
         public override void PreDraw() => Flags = configuration.IsMainWindowMovable ? ImGuiWindowFlags.None : ImGuiWindowFlags.NoMove;
 
-        /// <inheritdoc/>
         public override void Draw()
         {
+            
+            TextureManager.DoMainThreadWork();
+
             if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
             if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
@@ -250,9 +195,7 @@ namespace AetherDraw.Windows
             {
                 if (toolbarRaii) this.toolbarDrawer.DrawLeftToolbar();
             }
-
             ImGui.SameLine();
-
             using (var rightPaneRaii = ImRaii.Child("RightPane", Vector2.Zero, false, ImGuiWindowFlags.None))
             {
                 if (rightPaneRaii)
@@ -260,7 +203,6 @@ namespace AetherDraw.Windows
                     float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y;
                     float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsHeight - ImGui.GetStyle().ItemSpacing.Y;
                     canvasAvailableHeight = Math.Max(canvasAvailableHeight, 50f * ImGuiHelpers.GlobalScale);
-
                     if (ImGui.BeginChild("CanvasDrawingArea", new Vector2(0, canvasAvailableHeight), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
                     {
                         currentCanvasDrawSize = ImGui.GetContentRegionAvail();
@@ -270,7 +212,6 @@ namespace AetherDraw.Windows
                     DrawBottomControlsBar(bottomControlsHeight);
                 }
             }
-
             planIOManager.DrawFileDialogs();
             DrawConfirmationPopups();
         }
@@ -297,12 +238,7 @@ namespace AetherDraw.Windows
             }
             if (pageManager.IsLiveMode && pastedItems.Any())
             {
-                var payload = new NetworkPayload
-                {
-                    PageIndex = pageManager.GetCurrentPageIndex(),
-                    Action = PayloadActionType.AddObjects,
-                    Data = DrawableSerializer.SerializePageToBytes(pastedItems)
-                };
+                var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.AddObjects, Data = DrawableSerializer.SerializePageToBytes(pastedItems) };
                 _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
             }
         }
@@ -331,20 +267,11 @@ namespace AetherDraw.Windows
             ResetInteractionStates();
             if (pageManager.IsLiveMode)
             {
-                var payload = new NetworkPayload
-                {
-                    PageIndex = pageManager.GetCurrentPageIndex(),
-                    Action = PayloadActionType.ReplacePage,
-                    Data = DrawableSerializer.SerializePageToBytes(undoneState)
-                };
+                var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(undoneState) };
                 _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
             }
         }
 
-        /// <summary>
-        /// Draws the bottom bar containing page tabs and main action buttons.
-        /// </summary>
-        /// <param name="barHeight">The calculated height for the bar.</param>
         private void DrawBottomControlsBar(float barHeight)
         {
             using var bottomBarChild = ImRaii.Child("BottomControlsRegion", new Vector2(0, barHeight), true, ImGuiWindowFlags.None);
@@ -382,7 +309,6 @@ namespace AetherDraw.Windows
                 }
                 ImGui.SameLine(0, 3f * ImGuiHelpers.GlobalScale);
             }
-
             if (ImGui.Button("+##AddPage", new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()))) RequestAddNewPage();
             ImGui.SameLine();
             if (ImGui.Button("Copy Page##CopyPageButton", new Vector2(ImGui.CalcTextSize("Copy Page").X + ImGui.GetStyle().FramePadding.X * 2.0f, ImGui.GetFrameHeight()))) RequestCopyPage();
@@ -391,7 +317,6 @@ namespace AetherDraw.Windows
             {
                 if (ImGui.Button("Paste Page##PastePageButton", new Vector2(ImGui.CalcTextSize("Paste Page").X + ImGui.GetStyle().FramePadding.X * 2.0f, ImGui.GetFrameHeight()))) RequestPastePage();
             }
-
             if (currentPages.Count > 1)
             {
                 ImGui.SameLine();
@@ -404,17 +329,13 @@ namespace AetherDraw.Windows
             }
         }
 
-        /// <summary>
-        /// Draws the main action buttons in the bottom bar. The UI has been simplified to remove URL loading functionality.
-        /// </summary>
         private void DrawActionButtons()
         {
             float availableWidth = ImGui.GetContentRegionAvail().X;
-            int numberOfActionButtons = 4; // Load, Save, WDIG, Live
+            int numberOfActionButtons = 4;
             float totalSpacing = ImGui.GetStyle().ItemSpacing.X * (numberOfActionButtons - 1);
             float actionButtonWidth = (availableWidth - totalSpacing) / numberOfActionButtons;
 
-            // --- Load Button ---
             if (ImGui.Button("Load##LoadButton", new Vector2(actionButtonWidth, 0)))
             {
                 ImGui.OpenPopup("LoadPopup");
@@ -430,29 +351,24 @@ namespace AetherDraw.Windows
                     textToLoad = "";
                     openImportTextModal = true;
                 }
-                // Add the new menu item here
                 if (ImGui.MenuItem("Import from RaidPlan.io URL..."))
                 {
-                    raidPlanUrlToLoad = ""; // Clear previous URL
+                    raidPlanUrlToLoad = "";
                     openRaidPlanImportModal = true;
-                    Plugin.Log?.Info("[UI] 'Import from RaidPlan.io URL...' clicked. Flag 'openRaidPlanImportModal' set to true.");
                 }
                 ImGui.EndPopup();
             }
-
             if (openImportTextModal)
             {
                 ImGui.OpenPopup("Import From Text");
                 openImportTextModal = false;
             }
-
             if (openRaidPlanImportModal)
             {
                 ImGui.OpenPopup("Import from RaidPlan.io");
                 openRaidPlanImportModal = false;
             }
 
-            // --- Modal Popup for Text Input ---
             bool pOpen = true;
             if (ImGui.BeginPopupModal("Import From Text", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
             {
@@ -470,17 +386,16 @@ namespace AetherDraw.Windows
                 ImGui.EndPopup();
             }
 
-            // --- New Modal for RaidPlan URL ---
-            
             if (ImGui.BeginPopupModal("Import from RaidPlan.io", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
             {
-                Plugin.Log?.Info("[UI] Rendering 'Import from RaidPlan.io' modal content.");
                 ImGui.Text("Enter the RaidPlan.io URL below.");
                 ImGui.InputText("##RaidPlanUrl", ref raidPlanUrlToLoad, 256);
                 if (ImGui.Button("Import##RaidPlanImport", new Vector2(120, 0)))
                 {
-                    // Placeholder for now. Eventually this will call a method in PlanIOManager.
-                    Plugin.Log?.Info($"Attempting to import from RaidPlan URL: {raidPlanUrlToLoad}");
+                    if (!string.IsNullOrWhiteSpace(raidPlanUrlToLoad))
+                    {
+                        _ = planIOManager.RequestLoadPlanFromUrl(raidPlanUrlToLoad);
+                    }
                     ImGui.CloseCurrentPopup();
                 }
                 ImGui.SameLine();
@@ -493,7 +408,6 @@ namespace AetherDraw.Windows
 
             ImGui.SameLine();
 
-            // --- Save Button ---
             if (ImGui.Button("Save##SaveButton", new Vector2(actionButtonWidth, 0)))
             {
                 ImGui.OpenPopup("SavePopup");
@@ -518,7 +432,6 @@ namespace AetherDraw.Windows
 
             ImGui.SameLine();
 
-            // --- WDIG and Live Buttons ---
             if (ImGui.Button("Open WDIG##OpenWDIGButton", new Vector2(actionButtonWidth, 0)))
             {
                 try { Plugin.CommandManager.ProcessCommand("/wdig"); }
@@ -533,7 +446,6 @@ namespace AetherDraw.Windows
                     else plugin.ToggleLiveSessionUI();
                 }
             }
-
             var fileError = planIOManager.LastFileDialogError;
             if (!string.IsNullOrEmpty(fileError)) { ImGui.Spacing(); ImGui.TextColored(new Vector4(1.0f, 0.3f, 0.3f, 1.0f), fileError); }
         }
@@ -551,14 +463,8 @@ namespace AetherDraw.Windows
                 {
                     if (ImGui.Button("Confirm Clear", new Vector2(120 * ImGuiHelpers.GlobalScale, 0)))
                     {
-                        var payload = new NetworkPayload
-                        {
-                            PageIndex = pageManager.GetCurrentPageIndex(),
-                            Action = PayloadActionType.ClearPage,
-                            Data = null
-                        };
+                        var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ClearPage, Data = null };
                         _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
-
                         pageManager.ClearCurrentPageDrawables();
                         clearConfirmText = "";
                         ImGui.CloseCurrentPopup();
@@ -620,10 +526,8 @@ namespace AetherDraw.Windows
             currentCanvasDrawSize = canvasSizeForImGuiDrawing;
             if (canvasSizeForImGuiDrawing.X < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.X = 50f * ImGuiHelpers.GlobalScale;
             if (canvasSizeForImGuiDrawing.Y < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.Y = 50f * ImGuiHelpers.GlobalScale;
-
             ImDrawListPtr drawList = ImGui.GetWindowDrawList();
             Vector2 canvasOriginScreen = ImGui.GetCursorScreenPos();
-
             drawList.AddRectFilled(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, ImGui.GetColorU32(new Vector4(0.15f, 0.15f, 0.17f, 1.0f)));
             float scaledGridCellSize = ScaledCanvasGridSize;
             if (scaledGridCellSize > 0)
@@ -632,9 +536,7 @@ namespace AetherDraw.Windows
                 for (float y = scaledGridCellSize; y < canvasSizeForImGuiDrawing.Y; y += scaledGridCellSize) drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSizeForImGuiDrawing.X, canvasOriginScreen.Y + y), ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f)), Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
             }
             drawList.AddRect(canvasOriginScreen - Vector2.One, canvasOriginScreen + canvasSizeForImGuiDrawing + Vector2.One, ImGui.GetColorU32(new Vector4(0.4f, 0.4f, 0.45f, 1f)), 0f, ImDrawFlags.None, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
-
             if (inPlaceTextEditor.IsEditing) { inPlaceTextEditor.RecalculateEditorBounds(canvasOriginScreen, ImGuiHelpers.GlobalScale); inPlaceTextEditor.DrawEditorUI(); }
-
             ImGui.SetCursorScreenPos(canvasOriginScreen);
             ImGui.InvisibleButton("##AetherDrawCanvasInteractionLayer", canvasSizeForImGuiDrawing);
             Vector2 mousePosLogical = (ImGui.GetMousePos() - canvasOriginScreen) / ImGuiHelpers.GlobalScale;
@@ -642,7 +544,6 @@ namespace AetherDraw.Windows
             {
                 canvasController.ProcessCanvasInteraction(mousePosLogical, ImGui.GetMousePos(), canvasOriginScreen, drawList, ImGui.IsMouseDown(ImGuiMouseButton.Left), ImGui.IsMouseClicked(ImGuiMouseButton.Left), ImGui.IsMouseReleased(ImGuiMouseButton.Left), ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left), GetLayerPriority);
             }
-
             ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
             var drawablesToRender = pageManager.GetCurrentPageDrawables();
             if (drawablesToRender != null && drawablesToRender.Any())
@@ -682,12 +583,7 @@ namespace AetherDraw.Windows
             {
                 if (pageManager.IsLiveMode)
                 {
-                    var payload = new NetworkPayload
-                    {
-                        PageIndex = pageManager.GetCurrentPageIndex(),
-                        Action = PayloadActionType.ReplacePage,
-                        Data = DrawableSerializer.SerializePageToBytes(pageManager.GetCurrentPageDrawables())
-                    };
+                    var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(pageManager.GetCurrentPageDrawables()) };
                     _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
                 ResetInteractionStates();
@@ -720,7 +616,7 @@ namespace AetherDraw.Windows
             return mode switch
             {
                 DrawMode.TextTool => 10,
-                DrawMode.Waymark1Image or DrawMode.Waymark2Image or DrawMode.Waymark3Image or DrawMode.Waymark4Image or DrawMode.WaymarkAImage or DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or DrawMode.Party5Image or DrawMode.Party6Image or DrawMode.Party7Image or DrawMode.Party8Image or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.TriangleImage or DrawMode.PlusImage or DrawMode.StackIcon or DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon => 5,
+                DrawMode.Waymark1Image or DrawMode.Waymark2Image or DrawMode.Waymark3Image or DrawMode.Waymark4Image or DrawMode.WaymarkAImage or DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or DrawMode.Party5Image or DrawMode.Party6Image or DrawMode.Party7Image or DrawMode.Party8Image or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.TriangleImage or DrawMode.PlusImage or DrawMode.StackIcon or DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon or DrawMode.Dot1Image or DrawMode.Dot2Image or DrawMode.Dot3Image or DrawMode.Dot4Image or DrawMode.Dot5Image or DrawMode.Dot6Image or DrawMode.Dot7Image or DrawMode.Dot8Image => 5,
                 DrawMode.BossImage or DrawMode.CircleAoEImage or DrawMode.DonutAoEImage or DrawMode.FlareImage or DrawMode.LineStackImage or DrawMode.SpreadImage or DrawMode.StackImage => 3,
                 DrawMode.Pen or DrawMode.StraightLine or DrawMode.Rectangle or DrawMode.Circle or DrawMode.Arrow or DrawMode.Cone or DrawMode.Dash or DrawMode.Donut => 2,
                 _ => 1,

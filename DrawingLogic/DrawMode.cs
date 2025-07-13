@@ -11,10 +11,12 @@ namespace AetherDraw.DrawingLogic
         Cone,
         Dash,
         Donut,
+        Triangle,
 
         // Tools
         Select,
         Eraser,
+        Image, // Added for generic downloaded images
 
         // Image-based Tools / Placeables
         BossImage,
@@ -56,10 +58,18 @@ namespace AetherDraw.DrawingLogic
         TextTool,
 
         // Potentially other specific icons if they behave like placeable images
-        StackIcon,        // If this is different from StackImage
-        SpreadIcon,       // If this is different from SpreadImage
+        StackIcon,
+        SpreadIcon,
         TetherIcon,
-        BossIconPlaceholder, // If this is different from BossImage
-        AddMobIcon
+        BossIconPlaceholder,
+        AddMobIcon,
+        Dot1Image,
+        Dot2Image,
+        Dot3Image,
+        Dot4Image,
+        Dot5Image,
+        Dot6Image,
+        Dot7Image,
+        Dot8Image
     }
 }

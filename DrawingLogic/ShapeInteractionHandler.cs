@@ -24,7 +24,7 @@ namespace AetherDraw.DrawingLogic
         /// <summary>
         /// Defines the type of drag operation currently being performed by the user.
         /// </summary>
-        public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize }
+        public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize, TriangleResize }
 
         /// <summary>
         /// The current drag operation state.
@@ -214,6 +214,7 @@ namespace AetherDraw.DrawingLogic
             {
                 case DrawableImage dImg: InteractionHandlerHelpers.ProcessImageHandles(dImg, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableRectangle dRect: InteractionHandlerHelpers.ProcessRectangleHandles(dRect, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawableTriangle dTri: InteractionHandlerHelpers.ProcessTriangleHandles(dTri, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableText dText: InteractionHandlerHelpers.ProcessTextHandles(dText, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableArrow dArrow: InteractionHandlerHelpers.ProcessArrowHandles(dArrow, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableCone dCone: InteractionHandlerHelpers.ProcessConeHandles(dCone, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
@@ -290,6 +291,7 @@ namespace AetherDraw.DrawingLogic
                 case DrawableImage dImg: initialType = ActiveDragType.ImageResize; dragStartObjectPivotLogical = dImg.PositionRelative; dragStartSizeLogical = dImg.DrawSize; dragStartRotationAngle = dImg.RotationAngle; break;
                 case DrawableRectangle dRect when draggedHandleIndex == 4: initialType = ActiveDragType.RectRotate; (dragStartObjectPivotLogical, _) = dRect.GetGeometry(); dragStartRotationAngle = dRect.RotationAngle; break;
                 case DrawableRectangle dRect: initialType = ActiveDragType.RectResize; dragStartPoint1Logical = dRect.StartPointRelative; dragStartPoint2Logical = dRect.EndPointRelative; dragStartRotationAngle = dRect.RotationAngle; (dragStartObjectPivotLogical, _) = dRect.GetGeometry(); break;
+                case DrawableTriangle: initialType = ActiveDragType.TriangleResize; break;
                 case DrawableText dText: initialType = ActiveDragType.TextResize; dragStartTextPositionLogical = dText.PositionRelative; dragStartTextBoundingBoxSizeLogical = dText.CurrentBoundingBoxSize; dragStartFontSizeLogical = dText.FontSize; break;
                 case DrawableArrow dArr:
                     dragStartPoint1Logical = dArr.StartPointRelative;
@@ -343,6 +345,7 @@ namespace AetherDraw.DrawingLogic
                     case ActiveDragType.ImageRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.RectResize: InteractionHandlerHelpers.UpdateRectangleDrag((DrawableRectangle)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.RectRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.TriangleResize: InteractionHandlerHelpers.UpdateTriangleResizeDrag((DrawableTriangle)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.TextResize: InteractionHandlerHelpers.UpdateTextResizeDrag((DrawableText)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.ArrowStartPoint: InteractionHandlerHelpers.UpdateArrowStartDrag((DrawableArrow)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.ArrowEndPoint: InteractionHandlerHelpers.UpdateArrowEndDrag((DrawableArrow)singleSelectedItem, mousePos); break;

@@ -53,6 +53,20 @@ namespace AetherDraw.DrawingLogic
         }
 
         /// <summary>
+        /// Draws the resize handles for a DrawableTriangle.
+        /// </summary>
+        public static void ProcessTriangleHandles(DrawableTriangle dTri, Vector2 mousePos, Vector2 canvasOrigin, ImDrawListPtr drawList, ShapeInteractionHandler handler, ref bool mouseOverAny)
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                if (handler.DrawAndCheckHandle(drawList, dTri.Vertices[i], canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handler.handleColorResize, handler.handleColorResizeHover))
+                {
+                    handler.draggedHandleIndex = i;
+                }
+            }
+        }
+
+        /// <summary>
         /// Draws the resize handles for a DrawableText object.
         /// </summary>
         public static void ProcessTextHandles(DrawableText dText, Vector2 mousePos, Vector2 canvasOrigin, ImDrawListPtr drawList, ShapeInteractionHandler handler, ref bool mouseOverAny)
@@ -104,7 +118,7 @@ namespace AetherDraw.DrawingLogic
             if (handler.DrawAndCheckHandle(drawList, logicalApex, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handler.handleColorResize, handler.handleColorResizeHover)) handler.draggedHandleIndex = 0;
             if (handler.DrawAndCheckHandle(drawList, logicalRotatedBaseCenter, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handler.handleColorResize, handler.handleColorResizeHover)) handler.draggedHandleIndex = 1;
 
-            Vector2 axisDir = logicalBaseEndUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(logicalBaseEndRotated) : new Vector2(0, 1);
+            Vector2 axisDir = logicalBaseEndUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(logicalBaseEndUnrotated) : new Vector2(0, 1);
             Vector2 rotHandleLogical = logicalRotatedBaseCenter + axisDir * (DrawableRectangle.UnscaledRotationHandleExtraOffset * 0.75f);
             if (handler.DrawAndCheckHandle(drawList, rotHandleLogical, canvasOrigin, mousePos, ref mouseOverAny, handler.handleColorRotation, handler.handleColorRotationHover)) handler.draggedHandleIndex = 2;
         }
@@ -163,6 +177,17 @@ namespace AetherDraw.DrawingLogic
             dRect.StartPointRelative = newCenter - newHalfSizeLocal;
             dRect.EndPointRelative = newCenter + newHalfSizeLocal;
             dRect.RotationAngle = handler.dragStartRotationAngle;
+        }
+
+        /// <summary>
+        /// Updates the position of a vertex of a DrawableTriangle during a resize drag.
+        /// </summary>
+        public static void UpdateTriangleResizeDrag(DrawableTriangle dTri, Vector2 mousePos, ShapeInteractionHandler handler)
+        {
+            if (handler.draggedHandleIndex >= 0 && handler.draggedHandleIndex < 3)
+            {
+                dTri.Vertices[handler.draggedHandleIndex] = mousePos;
+            }
         }
 
         /// <summary>

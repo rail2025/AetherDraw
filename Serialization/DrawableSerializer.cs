@@ -173,6 +173,14 @@ namespace AetherDraw.Serialization
                     writer.Write(dash.DashLength);
                     writer.Write(dash.GapLength);
                     break;
+                case DrawMode.Triangle:
+                    var triangle = (DrawableTriangle)drawable;
+                    for (int i = 0; i < 3; i++)
+                    {
+                        writer.Write(triangle.Vertices[i].X);
+                        writer.Write(triangle.Vertices[i].Y);
+                    }
+                    break;
                 case DrawMode.BossImage:
                 case DrawMode.CircleAoEImage:
                 case DrawMode.DonutAoEImage:
@@ -209,6 +217,14 @@ namespace AetherDraw.Serialization
                 case DrawMode.TetherIcon:
                 case DrawMode.BossIconPlaceholder:
                 case DrawMode.AddMobIcon:
+                case DrawMode.Dot1Image:
+                case DrawMode.Dot2Image:
+                case DrawMode.Dot3Image:
+                case DrawMode.Dot4Image:
+                case DrawMode.Dot5Image:
+                case DrawMode.Dot6Image:
+                case DrawMode.Dot7Image:
+                case DrawMode.Dot8Image:
                     var image = (DrawableImage)drawable;
                     writer.Write(image.ImageResourcePath ?? string.Empty);
                     writer.Write(image.PositionRelative.X); writer.Write(image.PositionRelative.Y);
@@ -318,6 +334,13 @@ namespace AetherDraw.Serialization
                     dash.GapLength = gapLength;
                     drawable = dash;
                     break;
+                case DrawMode.Triangle:
+                    if (reader.BaseStream.Position + sizeof(float) * 6 > reader.BaseStream.Length) return null;
+                    var v1 = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                    var v2 = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                    var v3 = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                    drawable = new DrawableTriangle(v1, v2, v3, color);
+                    break;
                 case DrawMode.BossImage:
                 case DrawMode.CircleAoEImage:
                 case DrawMode.DonutAoEImage:
@@ -354,6 +377,14 @@ namespace AetherDraw.Serialization
                 case DrawMode.TetherIcon:
                 case DrawMode.BossIconPlaceholder:
                 case DrawMode.AddMobIcon:
+                case DrawMode.Dot1Image:
+                case DrawMode.Dot2Image:
+                case DrawMode.Dot3Image:
+                case DrawMode.Dot4Image:
+                case DrawMode.Dot5Image:
+                case DrawMode.Dot6Image:
+                case DrawMode.Dot7Image:
+                case DrawMode.Dot8Image:
                     string imgPath = reader.ReadString();
                     if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 imgPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());

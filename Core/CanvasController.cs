@@ -233,9 +233,10 @@ namespace AetherDraw.Core
                 DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or
                 DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.StackIcon or
                 DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon or
-                DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or 
+                DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or
                 DrawMode.Party5Image or DrawMode.Party6Image or DrawMode.Party7Image or DrawMode.Party8Image or
-                DrawMode.TriangleImage or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.PlusImage
+                DrawMode.TriangleImage or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.PlusImage or
+                DrawMode.Dot1Image or DrawMode.Dot2Image or DrawMode.Dot3Image or DrawMode.Dot4Image or DrawMode.Dot5Image or DrawMode.Dot6Image or DrawMode.Dot7Image or DrawMode.Dot8Image
                 => true,
                 _ => false,
             };
@@ -250,6 +251,7 @@ namespace AetherDraw.Core
             {
                 string imagePath = "";
                 Vector2 imageUnscaledSize = DefaultUnscaledImageSize;
+                Vector4 imageTint = Vector4.One;
                 switch (currentMode)
                 {
                     case DrawMode.BossImage: imagePath = "PluginImages.svg.boss.svg"; imageUnscaledSize = new Vector2(60f, 60f); break;
@@ -288,11 +290,19 @@ namespace AetherDraw.Core
                     case DrawMode.TetherIcon: imagePath = "PluginImages.svg.placeholder.svg"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.BossIconPlaceholder: imagePath = "PluginImages.svg.boss.svg"; imageUnscaledSize = new Vector2(35f, 35f); break;
                     case DrawMode.AddMobIcon: imagePath = "PluginImages.svg.placeholder.svg"; imageUnscaledSize = new Vector2(30f, 30f); break;
+                    case DrawMode.Dot1Image: imagePath = "PluginImages.svg.1dot.svg"; imageTint = new Vector4(0.3f, 0.5f, 1.0f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot2Image: imagePath = "PluginImages.svg.2dot.svg"; imageTint = new Vector4(1.0f, 0.3f, 0.3f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot3Image: imagePath = "PluginImages.svg.3dot.svg"; imageTint = new Vector4(0.3f, 0.5f, 1.0f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot4Image: imagePath = "PluginImages.svg.4dot.svg"; imageTint = new Vector4(1.0f, 0.3f, 0.3f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot5Image: imagePath = "PluginImages.svg.5dot.svg"; imageTint = new Vector4(0.3f, 0.5f, 1.0f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot6Image: imagePath = "PluginImages.svg.6dot.svg"; imageTint = new Vector4(1.0f, 0.3f, 0.3f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot7Image: imagePath = "PluginImages.svg.7dot.svg"; imageTint = new Vector4(0.3f, 0.5f, 1.0f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Dot8Image: imagePath = "PluginImages.svg.8dot.svg"; imageTint = new Vector4(1.0f, 0.3f, 0.3f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
                 }
 
                 if (!string.IsNullOrEmpty(imagePath))
                 {
-                    var newImage = new DrawableImage(currentMode, imagePath, mousePosLogical, imageUnscaledSize, Vector4.One);
+                    var newImage = new DrawableImage(currentMode, imagePath, mousePosLogical, imageUnscaledSize, imageTint);
 
                     if (pageManager.IsLiveMode)
                     {
@@ -341,15 +351,33 @@ namespace AetherDraw.Core
 
         private BaseDrawable? CreateNewDrawingObject(DrawMode mode, Vector2 startPosLogical, Vector4 color, float thickness, bool isFilled)
         {
+            Vector4 finalColor = color;
+            // For filled shapes, automatically apply transparency for better layering visibility.
+            if (isFilled)
+            {
+                switch (mode)
+                {
+                    case DrawMode.Rectangle:
+                    case DrawMode.Circle:
+                    case DrawMode.Cone:
+                    case DrawMode.Donut:
+                    case DrawMode.Triangle:
+                    case DrawMode.Arrow:
+                        finalColor.W = 0.4f; // Set alpha to 40%
+                        break;
+                }
+            }
+
             return mode switch
             {
                 DrawMode.Pen => new DrawablePath(startPosLogical, color, thickness),
                 DrawMode.StraightLine => new DrawableStraightLine(startPosLogical, color, thickness),
                 DrawMode.Dash => new DrawableDash(startPosLogical, color, thickness),
-                DrawMode.Rectangle => new DrawableRectangle(startPosLogical, color, thickness, isFilled),
-                DrawMode.Circle => new DrawableCircle(startPosLogical, color, thickness, isFilled),
-                DrawMode.Arrow => new DrawableArrow(startPosLogical, color, thickness),
-                DrawMode.Cone => new DrawableCone(startPosLogical, color, thickness, isFilled),
+                DrawMode.Rectangle => new DrawableRectangle(startPosLogical, finalColor, thickness, isFilled),
+                DrawMode.Circle => new DrawableCircle(startPosLogical, finalColor, thickness, isFilled),
+                DrawMode.Arrow => new DrawableArrow(startPosLogical, finalColor, thickness),
+                DrawMode.Cone => new DrawableCone(startPosLogical, finalColor, thickness, isFilled),
+                DrawMode.Triangle => new DrawableTriangle(startPosLogical, finalColor),
                 _ => null,
             };
         }

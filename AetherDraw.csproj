@@ -3,15 +3,15 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.1.0.0</AssemblyVersion>
+        <AssemblyVersion>2.2.0.0</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
         <LangVersion>latest</LangVersion>
-        <Description>A plugin to draw encounter strategies, with live collaboration!</Description>
+        <Description>A plugin to draw encounter strategies, with live collaboration! Supports raidplan url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.1.0.0</Version>
+        <Version>2.2.0.0</Version>
     </PropertyGroup>
 
     <ItemGroup>
@@ -72,6 +72,7 @@
 
     <ItemGroup>
         <PackageReference Include="AngleSharp" Version="1.3.0" />
+        <PackageReference Include="HtmlAgilityPack" Version="1.12.1" />
         <PackageReference Include="SixLabors.Fonts" Version="2.1.3" />
         <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
         <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.6" />
@@ -89,6 +90,17 @@
       <EmbeddedResource Include="PluginImages\svg\prox_aoe.svg" />
       <EmbeddedResource Include="PluginImages\svg\spread.svg" />
       <EmbeddedResource Include="PluginImages\svg\stack.svg" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\svg\1dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\2dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\3dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\4dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\5dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\6dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\7dot.svg" />
+      <EmbeddedResource Include="PluginImages\svg\8dot.svg" />
     </ItemGroup>
 
 </Project>
