@@ -4,6 +4,7 @@ using SkiaSharp;
 using Svg.Skia;
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
@@ -17,26 +18,19 @@ namespace AetherDraw.DrawingLogic
         private static readonly ConcurrentDictionary<string, IDalamudTextureWrap?> LoadedTextures = new();
         private static readonly ConcurrentBag<string> FailedDownloads = new();
         private static readonly ConcurrentBag<string> PendingDownloads = new();
+        private static readonly Dictionary<string, Task<IDalamudTextureWrap>> PendingCreationTasks = new();
+        private static readonly ConcurrentQueue<(string resourcePath, byte[] data)> TextureCreationQueue = new();
         private static readonly HttpClient HttpClient = new();
-
-        //Hold actions that need to be run on the main thread.
-        private static readonly ConcurrentQueue<Action> MainThreadActions = new();
 
         static TextureManager()
         {
             HttpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36");
-            
-            // HttpClient.DefaultRequestHeaders.Referrer = new Uri("https://raidplan.io/");
         }
 
         public static IDalamudTextureWrap? GetTexture(string resourcePath)
         {
             if (Plugin.TextureProvider == null || string.IsNullOrEmpty(resourcePath)) return null;
-
-            if (FailedDownloads.Contains(resourcePath))
-            {
-                return null;
-            }
+            if (FailedDownloads.Contains(resourcePath)) return null;
 
             if (LoadedTextures.TryGetValue(resourcePath, out var tex))
             {
@@ -49,8 +43,9 @@ namespace AetherDraw.DrawingLogic
                 return tex;
             }
 
-            if (!PendingDownloads.Contains(resourcePath))
+            if (!PendingDownloads.Contains(resourcePath) && !PendingCreationTasks.ContainsKey(resourcePath))
             {
+                Plugin.Log?.Debug($"[TextureManager] New texture request. Initiating download for: {resourcePath}");
                 PendingDownloads.Add(resourcePath);
                 Task.Run(() => LoadTextureInBackground(resourcePath));
             }
@@ -60,75 +55,100 @@ namespace AetherDraw.DrawingLogic
 
         public static void DoMainThreadWork()
         {
-            while (MainThreadActions.TryDequeue(out var action))
+            if (Plugin.TextureProvider == null) return;
+
+            if (TextureCreationQueue.TryDequeue(out var item))
             {
-                action?.Invoke();
+                Plugin.Log?.Debug($"[TextureManager] Dequeued data for {item.resourcePath}. Starting texture creation task.");
+                var creationTask = Plugin.TextureProvider.CreateFromImageAsync(item.data);
+                PendingCreationTasks[item.resourcePath] = creationTask;
+            }
+
+            if (PendingCreationTasks.Any())
+            {
+                var completedTasks = PendingCreationTasks.Where(kvp => kvp.Value.IsCompleted).ToList();
+                foreach (var completed in completedTasks)
+                {
+                    var resourcePath = completed.Key;
+                    var task = completed.Value;
+                    Plugin.Log?.Debug($"[TextureManager] Task for {resourcePath} completed with status: {task.Status}");
+                    try
+                    {
+                        if (task.IsCompletedSuccessfully)
+                        {
+                            LoadedTextures[resourcePath] = task.Result;
+                            Plugin.Log?.Info($"[TextureManager] Successfully created and cached texture for: {resourcePath}");
+                        }
+                        else
+                        {
+                            if (task.Exception != null)
+                                Plugin.Log?.Error(task.Exception, $"[TextureManager] Texture creation task faulted for {resourcePath}");
+                            FailedDownloads.Add(resourcePath);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log?.Error(ex, $"[TextureManager] Error processing completed texture task for {resourcePath}");
+                        FailedDownloads.Add(resourcePath);
+                    }
+                    finally
+                    {
+                        PendingCreationTasks.Remove(resourcePath);
+                    }
+                }
             }
         }
 
         private static async Task LoadTextureInBackground(string resourcePath)
         {
+            Plugin.Log?.Debug($"[TextureManager] Background task started for: {resourcePath}");
             try
             {
                 byte[]? imageBytes = null;
                 if (resourcePath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
-                    imageBytes = await HttpClient.GetByteArrayAsync(resourcePath);
+                    using var request = new HttpRequestMessage(HttpMethod.Get, resourcePath);
+                    if (resourcePath.Contains("raidplan.io"))
+                    {
+                        request.Headers.Referrer = new Uri("https://raidplan.io/");
+                    }
+                    var response = await HttpClient.SendAsync(request);
+                    Plugin.Log?.Debug($"[TextureManager] HTTP response for {resourcePath}: {response.StatusCode}");
+                    response.EnsureSuccessStatusCode();
+                    imageBytes = await response.Content.ReadAsByteArrayAsync();
+                    Plugin.Log?.Debug($"[TextureManager] Downloaded {imageBytes.Length} bytes for: {resourcePath}");
                 }
                 else
                 {
                     var assembly = Assembly.GetExecutingAssembly();
                     var fullResourcePath = $"{assembly.GetName().Name}.{resourcePath.Replace("\\", ".").Replace("/", ".")}";
                     using var resourceStream = assembly.GetManifestResourceStream(fullResourcePath);
-                    if (resourceStream != null)
-                    {
-                        imageBytes = ReadStream(resourceStream);
-                    }
+                    if (resourceStream != null) imageBytes = ReadStream(resourceStream);
                 }
 
-                if (imageBytes == null) throw new Exception("Image byte data was null after download/resource loading.");
+                if (imageBytes == null) throw new Exception("Image byte data was null.");
 
                 if (resourcePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
                 {
+                    Plugin.Log?.Debug($"[TextureManager] Rasterizing SVG for: {resourcePath}");
                     using var stream = new MemoryStream(imageBytes);
                     imageBytes = RasterizeSvg(stream);
                 }
 
                 if (imageBytes != null)
                 {
-                    // queue to do it on the main thread.
-                    MainThreadActions.Enqueue(() =>
-                    {
-                        if (Plugin.TextureProvider == null) return;
-                        Plugin.TextureProvider.CreateFromImageAsync(imageBytes).ContinueWith(task =>
-                        {
-                            if (task.IsCompletedSuccessfully && task.Result != null)
-                            {
-                                LoadedTextures[resourcePath] = task.Result;
-                            }
-                            else
-                            {
-                                AetherDraw.Plugin.Log?.Error(task.Exception, $"Texture creation task failed for {resourcePath}");
-                                FailedDownloads.Add(resourcePath);
-                                LoadedTextures.TryRemove(resourcePath, out _);
-                            }
-                        });
-                    });
+                    Plugin.Log?.Debug($"[TextureManager] Enqueuing texture data for main thread processing: {resourcePath}");
+                    TextureCreationQueue.Enqueue((resourcePath, imageBytes));
                 }
                 else
                 {
-                    throw new Exception("SVG Rasterization resulted in null byte data.");
+                    throw new Exception("Image processing resulted in null byte data.");
                 }
             }
             catch (Exception ex)
             {
-                // Queue the logging and cleanup to happen safely on the main thread.
-                MainThreadActions.Enqueue(() =>
-                {
-                    AetherDraw.Plugin.Log?.Error(ex, $"Failed to load texture: {resourcePath}");
-                    FailedDownloads.Add(resourcePath);
-                    LoadedTextures.TryRemove(resourcePath, out _);
-                });
+                Plugin.Log?.Error(ex, $"[TextureManager] Download/processing failed for: {resourcePath}");
+                FailedDownloads.Add(resourcePath);
             }
         }
 
@@ -137,21 +157,16 @@ namespace AetherDraw.DrawingLogic
             using var svg = new SKSvg();
             if (svg.Load(svgStream) is { } && svg.Picture != null)
             {
-                var rasterWidth = 64;
-                var rasterHeight = 64;
-
-                using var surface = SKSurface.Create(new SKImageInfo(rasterWidth, rasterHeight));
+                using var surface = SKSurface.Create(new SKImageInfo(64, 64));
                 var canvas = surface.Canvas;
                 canvas.Clear(SKColors.Transparent);
-
                 var svgSize = svg.Picture.CullRect;
                 if (svgSize.Width > 0 && svgSize.Height > 0)
                 {
-                    float scale = Math.Min(rasterWidth / svgSize.Width, rasterHeight / svgSize.Height);
+                    float scale = Math.Min(64 / svgSize.Width, 64 / svgSize.Height);
                     var matrix = SKMatrix.CreateScale(scale, scale);
                     canvas.DrawPicture(svg.Picture, in matrix);
                 }
-
                 using var image = surface.Snapshot();
                 using var data = image.Encode(SKEncodedImageFormat.Png, 100);
                 return data.ToArray();

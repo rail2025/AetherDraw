@@ -1,29 +1,28 @@
-// AetherDraw/Core/PlanIOManager.cs
+using AetherDraw.DrawingLogic;
+using AetherDraw.RaidPlan.Models;
+using AetherDraw.RaidPlan.Services;
+using AetherDraw.Serialization;
+using Dalamud.Interface.ImGuiFileDialog;
+using Dalamud.Interface.Utility;
+using Dalamud.Plugin;
+using HtmlAgilityPack;
+using ImGuiNET;
+using SixLabors.Fonts;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Numerics;
-using AetherDraw.DrawingLogic;
-using AetherDraw.Serialization;
-using Dalamud.Interface.ImGuiFileDialog;
-using Dalamud.Plugin;
-using Dalamud.Interface.Utility;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Drawing;
-using SixLabors.ImageSharp.Drawing.Processing;
-using SixLabors.Fonts;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
-using System.Text.RegularExpressions;
-using ImGuiNET;
-using System.Threading.Tasks;
+using System.Numerics;
 using System.Text.Json;
-using AetherDraw.RaidPlan.Models;
-using AetherDraw.RaidPlan.Services;
-using HtmlAgilityPack;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace AetherDraw.Core
 {
@@ -32,7 +31,7 @@ namespace AetherDraw.Core
         private readonly PageManager pageManager;
         private readonly IDalamudPluginInterface pluginInterface;
         private readonly FileDialogManager fileDialogManager;
-        private readonly DrawingLogic.InPlaceTextEditor inPlaceTextEditor;
+        private readonly InPlaceTextEditor inPlaceTextEditor;
         private readonly Func<float> getScaledCanvasGridSizeFunc;
         private readonly Func<DrawMode, int> getLayerPriorityFunc;
         private readonly Func<int> getCurrentPageIndexFunc;
@@ -40,7 +39,7 @@ namespace AetherDraw.Core
         public Action? OnPlanLoadSuccess { get; set; }
         public string LastFileDialogError { get; private set; } = string.Empty;
 
-        public PlanIOManager(PageManager pm, DrawingLogic.InPlaceTextEditor editor, IDalamudPluginInterface pi, Func<float> getGridSizeFunc, Func<DrawMode, int> getPriorityFunc, Func<int> getIndexFunc)
+        public PlanIOManager(PageManager pm, InPlaceTextEditor editor, IDalamudPluginInterface pi, Func<float> getGridSizeFunc, Func<DrawMode, int> getPriorityFunc, Func<int> getIndexFunc)
         {
             this.pageManager = pm ?? throw new ArgumentNullException(nameof(pm));
             this.inPlaceTextEditor = editor ?? throw new ArgumentNullException(nameof(editor));
@@ -99,7 +98,7 @@ namespace AetherDraw.Core
             catch (Exception ex)
             {
                 LastFileDialogError = "Failed to copy plan to clipboard.";
-                AetherDraw.Plugin.Log?.Error(ex, "[PlanIOManager] Error during CopyCurrentPlanToClipboardCompressed.");
+                Plugin.Log?.Error(ex, "[PlanIOManager] Error during CopyCurrentPlanToClipboardCompressed.");
             }
         }
 
@@ -127,16 +126,18 @@ namespace AetherDraw.Core
                 }
                 catch (InvalidDataException)
                 {
-                    AetherDraw.Plugin.Log?.Warning("[PlanIOManager] Pasted data was not GZip compressed. Loading as uncompressed.");
+                    Plugin.Log?.Warning("[PlanIOManager] Pasted data was not GZip compressed. Loading as uncompressed.");
                     decompressedBytes = receivedBytes;
                 }
+
                 var loadedPlan = PlanSerializer.DeserializePlanFromBytes(decompressedBytes);
                 if (loadedPlan == null || loadedPlan.Pages == null)
                 {
                     LastFileDialogError = "Failed to read plan data. It might be corrupt or invalid.";
                     return;
                 }
-                pageManager.LoadPages(loadedPlan.Pages);
+
+                pageManager.LoadPages(loadedPlan.Pages!);
                 LastFileDialogError = "Plan loaded successfully from text.";
                 OnPlanLoadSuccess?.Invoke();
             }
@@ -147,7 +148,7 @@ namespace AetherDraw.Core
             catch (Exception ex)
             {
                 LastFileDialogError = "An error occurred while loading the data.";
-                AetherDraw.Plugin.Log?.Error(ex, "[PlanIOManager] Error in RequestLoadPlanFromText.");
+                Plugin.Log?.Error(ex, "[PlanIOManager] Error in RequestLoadPlanFromText.");
             }
         }
 
@@ -161,7 +162,7 @@ namespace AetherDraw.Core
             }
             if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out Uri? uriResult))
             {
-                LastFileDialogError = "Invalid or unsupported URL format.";
+                LastFileDialogError = "Invalid or unsupported URL format. Try raidplan.io links.";
                 return;
             }
             try
@@ -180,26 +181,50 @@ namespace AetherDraw.Core
             catch (Exception ex)
             {
                 LastFileDialogError = "Could not retrieve data from URL.";
-                AetherDraw.Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading from URL {correctedUrl}.");
+                Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading from URL {correctedUrl}.");
             }
         }
 
         private async Task ProcessRaidPlanInBackend(string htmlContent)
         {
+            Plugin.Log?.Debug($"[PlanIOManager] Starting background processing of HTML content (length: {htmlContent.Length}).");
             LastFileDialogError = "Parsing and translating plan...";
+
             var resultingPages = await Task.Run(() =>
             {
                 try
                 {
                     var htmlDoc = new HtmlDocument();
                     htmlDoc.LoadHtml(htmlContent);
+
+                    Plugin.Log?.Debug("[PlanIOManager] Searching for og:image meta tag...");
+                    var imageNode = htmlDoc.DocumentNode.SelectSingleNode("//meta[@property='og:image']");
+                    // Make backgroundImageUrl nullable to match the possible null value returned by GetAttributeValue
+                    string? backgroundImageUrl = null;
+                    if (imageNode != null)
+                    {
+                        backgroundImageUrl = imageNode.GetAttributeValue("content", "") ?? null;
+                    }
+
+                    if (backgroundImageUrl != null)
+                    {
+                        Plugin.Log?.Info($"[PlanIOManager] Found background image in meta tag: {backgroundImageUrl}");
+                    }
+                    else
+                    {
+                        Plugin.Log?.Warning("[PlanIOManager] Could not find og:image meta tag in HTML.");
+                    }
+
+                    Plugin.Log?.Debug("[PlanIOManager] Searching for __NEXT_DATA__ script block...");
                     var scriptNode = htmlDoc.DocumentNode.SelectSingleNode("//script[@id='__NEXT_DATA__']");
                     var jsonData = scriptNode?.InnerHtml.Trim();
                     if (string.IsNullOrEmpty(jsonData))
                     {
-                        AetherDraw.Plugin.Log?.Warning("[PlanIOManager] Could not find '__NEXT_DATA__' script block.");
-                        return null;
+                        Plugin.Log?.Error("[PlanIOManager] Could not find '__NEXT_DATA__' script block.");
+                        return new List<PageData>(); // Returning an empty list instead of default
                     }
+
+                    Plugin.Log?.Debug("[PlanIOManager] Parsing JSON data...");
                     using (var doc = JsonDocument.Parse(jsonData))
                     {
                         if (doc.RootElement.TryGetProperty("props", out var props) &&
@@ -207,21 +232,29 @@ namespace AetherDraw.Core
                             pageProps.TryGetProperty("_plan", out var planElement))
                         {
                             var planJson = planElement.GetRawText();
-                            // FIX CS0118: Fully qualify the RaidPlan type
                             var raidPlan = JsonSerializer.Deserialize<AetherDraw.RaidPlan.Models.RaidPlan>(planJson);
-                            if (raidPlan == null) return null;
+                            if (raidPlan == null)
+                            {
+                                Plugin.Log?.Error("[PlanIOManager] Failed to deserialize RaidPlan from JSON.");
+                                return new List<PageData>(); // Returning an empty list instead of default
+                            }
+
                             var translator = new RaidPlanTranslator();
-                            return translator.Translate(raidPlan);
+                            Plugin.Log?.Debug($"[PlanIOManager] Calling translator with fallback URL: '{backgroundImageUrl ?? "null"}'");
+                            return translator.Translate(raidPlan, backgroundImageUrl);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    AetherDraw.Plugin.Log?.Error(ex, "[PlanIOManager] Error parsing or translating RaidPlan JSON.");
-                    return null;
+                    Plugin.Log?.Error(ex, "[PlanIOManager] Error processing the HTML content.");
+                    return new List<PageData>(); // Return empty list in case of failure
                 }
-                return null;
+
+                Plugin.Log?.Error("[PlanIOManager] Failed to find plan data in JSON structure.");
+                return default; // more null warning 
             });
+
             if (resultingPages != null && resultingPages.Any())
             {
                 pageManager.LoadPages(resultingPages);
@@ -272,7 +305,6 @@ namespace AetherDraw.Core
         {
             if (success && !string.IsNullOrEmpty(baseFilePathFromDialog))
             {
-                // FIX CS0104: Use System.IO.Path to resolve ambiguity
                 string? directory = System.IO.Path.GetDirectoryName(baseFilePathFromDialog);
                 string baseNameOnly = System.IO.Path.GetFileNameWithoutExtension(baseFilePathFromDialog) ?? "MyAetherDrawImage";
                 string targetExtension = ".png";
@@ -290,18 +322,16 @@ namespace AetherDraw.Core
                     PageData currentPageToSave = currentPages[i];
                     string pagePrefix = $"{i + 1}";
                     string pageSpecificFileName = $"{pagePrefix}-{baseNameOnly}{targetExtension}";
-                    // FIX CS0104: Use System.IO.Path to resolve ambiguity
                     string fullPagePath = System.IO.Path.Combine(directory ?? "", pageSpecificFileName);
                     try
                     {
                         ActuallySaveSinglePageAsImage(currentPageToSave, fullPagePath, canvasVisualSize);
                         successCount++;
-                        // FIX CS0104: Use System.IO.Path to resolve ambiguity
                         savedFiles.Add(System.IO.Path.GetFileName(fullPagePath));
                     }
                     catch (Exception ex)
                     {
-                        AetherDraw.Plugin.Log?.Error(ex, $"[PlanIOManager] Failed to save page '{currentPageToSave.Name}' to '{fullPagePath}'.");
+                        Plugin.Log?.Error(ex, $"[PlanIOManager] Failed to save page '{currentPageToSave.Name}' to '{fullPagePath}'.");
                         failureCount++;
                     }
                 }
@@ -332,13 +362,13 @@ namespace AetherDraw.Core
                     LastFileDialogError = "Failed to read plan file. It might be corrupt, an incompatible version, or empty.";
                     return;
                 }
-                pageManager.LoadPages(loadedPlan.Pages);
+                pageManager.LoadPages(loadedPlan.Pages!);
                 LastFileDialogError = $"Plan '{loadedPlan.PlanName}' loaded.";
                 OnPlanLoadSuccess?.Invoke();
             }
             catch (Exception ex)
             {
-                AetherDraw.Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading plan from {filePath}.");
+                Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading plan from {filePath}.");
                 LastFileDialogError = $"Error loading plan: {ex.Message}";
             }
         }
@@ -352,15 +382,13 @@ namespace AetherDraw.Core
                 LastFileDialogError = "Nothing to save in the current plan.";
                 return;
             }
-            // FIX CS0104: Use System.IO.Path to resolve ambiguity
             string planName = System.IO.Path.GetFileNameWithoutExtension(filePath) ?? "MyAetherDrawPlan";
             try
             {
-                // FIX CS0104: Use System.IO.Path to resolve ambiguity
                 string? directory = System.IO.Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 {
-                    Directory.CreateDirectory(directory);
+                    Directory.CreateDirectory(directory!);
                 }
                 byte[]? serializedPlanData = PlanSerializer.SerializePlanToBytes(currentPages, planName, 1, 1, 0);
                 if (serializedPlanData != null)
@@ -375,7 +403,7 @@ namespace AetherDraw.Core
             }
             catch (Exception ex)
             {
-                AetherDraw.Plugin.Log?.Error(ex, $"[PlanIOManager] Error saving plan to {filePath}.");
+                Plugin.Log?.Error(ex, $"[PlanIOManager] Error saving plan to {filePath}.");
                 LastFileDialogError = $"Error saving plan: {ex.Message}";
             }
         }
@@ -383,7 +411,6 @@ namespace AetherDraw.Core
         private void ActuallySaveSinglePageAsImage(PageData pageToSave, string targetFilePath, Vector2 canvasVisualSize)
         {
             string finalFilePath = targetFilePath;
-            // FIX CS0104: Use System.IO.Path to resolve ambiguity
             if (!string.IsNullOrEmpty(finalFilePath) && !finalFilePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
             {
                 finalFilePath = System.IO.Path.ChangeExtension(finalFilePath, ".png");

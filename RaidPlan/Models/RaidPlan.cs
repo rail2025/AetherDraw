@@ -3,7 +3,6 @@ using System.Collections.Generic;
 
 namespace AetherDraw.RaidPlan.Models
 {
-    // Root object for the raid plan
     public class RaidPlan
     {
         [JsonPropertyName("version")]
@@ -12,6 +11,15 @@ namespace AetherDraw.RaidPlan.Models
         [JsonPropertyName("name")]
         public string? Name { get; set; }
 
+        [JsonPropertyName("raid")]
+        public string? Raid { get; set; }
+
+        [JsonPropertyName("boss")]
+        public string? Boss { get; set; }
+
+        [JsonPropertyName("map_type")]
+        public string? MapType { get; set; }
+
         [JsonPropertyName("nodes")]
         public List<Node>? Nodes { get; set; }
 
@@ -19,7 +27,6 @@ namespace AetherDraw.RaidPlan.Models
         public int Steps { get; set; }
     }
 
-    // Represents a single drawable element on the canvas
     public class Node
     {
         [JsonPropertyName("attr")]
@@ -32,7 +39,6 @@ namespace AetherDraw.RaidPlan.Models
         public string? Type { get; set; }
     }
 
-    // Attributes of the node (e.g., color, size, text)
     public class Attr
     {
         [JsonPropertyName("fill")]
@@ -58,9 +64,14 @@ namespace AetherDraw.RaidPlan.Models
 
         [JsonPropertyName("abilityId")]
         public string? abilityId { get; set; }
+
+        [JsonPropertyName("opacity")]
+        public float? Opacity { get; set; }
+
+        [JsonPropertyName("fontSize")]
+        public float? FontSize { get; set; }
     }
 
-    // Metadata for the node (e.g., position, rotation, scale)
     public class Meta
     {
         [JsonPropertyName("pos")]

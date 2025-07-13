@@ -67,7 +67,7 @@ namespace AetherDraw.DrawingLogic
 
         public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
         {
-            // Placeholder - full implementation not required for this fix
+            // Placeholder - i dont remember why this is here
         }
 
         public override System.Drawing.RectangleF GetBoundingBox()

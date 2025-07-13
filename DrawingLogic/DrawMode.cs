@@ -16,7 +16,7 @@ namespace AetherDraw.DrawingLogic
         // Tools
         Select,
         Eraser,
-        Image, // Added for generic downloaded images
+        Image, // Added for generic downloaded images, if raidplan ever lets me download from them
 
         // Image-based Tools / Placeables
         BossImage,
@@ -57,7 +57,7 @@ namespace AetherDraw.DrawingLogic
 
         TextTool,
 
-        // Potentially other specific icons if they behave like placeable images
+        // Other specific icons if they behave like placeable images
         StackIcon,
         SpreadIcon,
         TetherIcon,

@@ -4,6 +4,7 @@ using AetherDraw.RaidPlan.Models;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 
@@ -34,7 +35,37 @@ namespace AetherDraw.RaidPlan.Services
             { "4", "PluginImages.toolbar.4_waymark.png" }
         };
 
-        public List<PageData> Translate(Models.RaidPlan raidPlan)
+        private static readonly Dictionary<string, DrawMode> AssetIdToDrawModeMap = new()
+        {
+            { "ff-boss", DrawMode.BossImage },
+            { "ff-stack", DrawMode.StackImage },
+            { "ff-spread", DrawMode.SpreadImage },
+            { "ff-linestack", DrawMode.LineStackImage },
+            { "ff-flare", DrawMode.FlareImage },
+            { "ff-donut", DrawMode.DonutAoEImage },
+            { "ff-aoe", DrawMode.CircleAoEImage },
+            { "ff-area-prox", DrawMode.CircleAoEImage },
+            { "ff-knock", DrawMode.SpreadImage },
+            { "a", DrawMode.WaymarkAImage },
+            { "b", DrawMode.WaymarkBImage },
+            { "c", DrawMode.WaymarkCImage },
+            { "d", DrawMode.WaymarkDImage },
+            { "1", DrawMode.Waymark1Image },
+            { "2", DrawMode.Waymark2Image },
+            { "3", DrawMode.Waymark3Image },
+            { "4", DrawMode.Waymark4Image },
+            { "role_tank.png", DrawMode.RoleTankImage },
+            { "role_healer.png", DrawMode.RoleHealerImage },
+            { "role_melee.png", DrawMode.RoleMeleeImage },
+            { "role_ranged.png", DrawMode.RoleRangedImage },
+            { "Tank.JPG", DrawMode.RoleTankImage },
+            { "Healer.JPG", DrawMode.RoleHealerImage },
+            { "Melee.JPG", DrawMode.RoleMeleeImage },
+            { "Ranged.JPG", DrawMode.RoleRangedImage },
+            { "BossIconPlaceholder.svg", DrawMode.BossIconPlaceholder }
+        };
+
+        public List<PageData> Translate(Models.RaidPlan raidPlan, string? fallbackBackgroundImageUrl = null)
         {
             var pages = new List<PageData>();
             if (raidPlan?.Nodes == null || raidPlan.Steps == 0) return pages;
@@ -43,7 +74,6 @@ namespace AetherDraw.RaidPlan.Services
             {
                 var sourceSize = new Vector2(1200, 675);
                 var targetSize = new Vector2(800, 600);
-
                 if (sourceSize.X == 0 || sourceSize.Y == 0) return pages;
 
                 float baseScale = Math.Min(targetSize.X / sourceSize.X, targetSize.Y / sourceSize.Y);
@@ -51,12 +81,49 @@ namespace AetherDraw.RaidPlan.Services
 
                 var arenaNode = raidPlan.Nodes.FirstOrDefault(n => n.Type == "arena");
                 BaseDrawable? backgroundDrawable = null;
-                if (arenaNode != null)
+
+                string? finalBackgroundImageUrl = null;
+                if (arenaNode?.Attr != null && !string.IsNullOrEmpty(arenaNode.Attr.ImageUrl))
                 {
-                    backgroundDrawable = ToAetherDrawDrawable(arenaNode, baseScale, offset, targetSize);
+                    finalBackgroundImageUrl = arenaNode.Attr.ImageUrl;
+                }
+                else if (!string.IsNullOrEmpty(raidPlan.Raid) && !string.IsNullOrEmpty(raidPlan.Boss))
+                {
+                    string mapFileName = !string.IsNullOrEmpty(raidPlan.MapType) ? $"{raidPlan.Boss}-{raidPlan.MapType}" : raidPlan.Boss;
+                    finalBackgroundImageUrl = $"{RaidPlanAssetBaseUrl}raid/{raidPlan.Raid}/map/{mapFileName}.jpg";
                 }
 
-                // --- OPTIMIZATION: Group nodes by step once for efficient lookup ---
+                if (!string.IsNullOrEmpty(finalBackgroundImageUrl))
+                {
+                    Vector2 backgroundSize;
+
+                    // If the URL is from Imgur apply different scaling logic.
+                    if (finalBackgroundImageUrl.Contains("imgur.com"))
+                    {
+                        // Scale to cover the largest dimension.
+                        float maxDimension = Math.Max(targetSize.X, targetSize.Y);
+                        backgroundSize = new Vector2(maxDimension, maxDimension);
+                    }
+                    else
+                    {
+                        // For 16:9 background embedded images from raidplan.io
+                        const float sourceAspectRatio = 16f / 9f;
+                        float targetAspectRatio = targetSize.X / targetSize.Y;
+
+                        if (targetAspectRatio > sourceAspectRatio)
+                        {
+                            backgroundSize = new Vector2(targetSize.X, targetSize.X / sourceAspectRatio);
+                        }
+                        else
+                        {
+                            backgroundSize = new Vector2(targetSize.Y * sourceAspectRatio, targetSize.Y);
+                        }
+                    }
+
+                    Plugin.Log?.Info($"[RaidPlanTranslator] Using background image: {finalBackgroundImageUrl}");
+                    backgroundDrawable = new DrawableImage(DrawMode.Image, finalBackgroundImageUrl, targetSize / 2, backgroundSize, Vector4.One, 0);
+                }
+
                 var nodesByStep = raidPlan.Nodes
                     .Where(n => n.Meta != null && n.Type != "arena")
                     .GroupBy(n => n.Meta!.Step)
@@ -65,13 +132,10 @@ namespace AetherDraw.RaidPlan.Services
                 for (int i = 0; i < raidPlan.Steps; i++)
                 {
                     var page = new PageData { Name = (i + 1).ToString(), Drawables = new List<BaseDrawable>() };
-
                     if (backgroundDrawable != null)
                     {
                         page.Drawables.Add(backgroundDrawable.Clone());
                     }
-
-                    // --- OPTIMIZATION: Directly access the pre-grouped nodes for the current step ---
                     if (nodesByStep.TryGetValue(i, out var nodesForStep))
                     {
                         foreach (var node in nodesForStep)
@@ -86,7 +150,7 @@ namespace AetherDraw.RaidPlan.Services
             catch (Exception ex)
             {
                 AetherDraw.Plugin.Log?.Error(ex, "An unexpected error occurred during RaidPlan translation.");
-                return new List<PageData>(); // Return an empty list on failure
+                return new List<PageData>();
             }
             return pages;
         }
@@ -99,13 +163,9 @@ namespace AetherDraw.RaidPlan.Services
             var pos = new Vector2(node.Meta.Pos.X.Value * scale, node.Meta.Pos.Y.Value * scale) + offset;
             var size = new Vector2((node.Meta.Size?.W ?? 0f) * (node.Meta.Scale?.X ?? 1f) * scale, (node.Meta.Size?.H ?? 0f) * (node.Meta.Scale?.Y ?? 1f) * scale);
             float rotation = node.Meta.Angle * (float)(Math.PI / 180.0);
-            var color = HexToVector4(node.Attr?.Fill ?? node.Attr?.colorA ?? "#FFFFFF");
+            var color = HexToVector4(node.Attr?.Fill ?? node.Attr?.colorA ?? "#FFFFFF", node.Attr?.Opacity ?? 1.0f);
 
-            if (!IsValid(pos) || !IsValid(size) || !IsValid(rotation))
-            {
-                AetherDraw.Plugin.Log?.Warning($"Skipping invalid drawable node due to NaN/Infinity values. Type: {node.Type}");
-                return null;
-            }
+            if (!IsValid(pos) || !IsValid(size) || !IsValid(rotation)) return null;
 
             switch (node.Type)
             {
@@ -116,15 +176,13 @@ namespace AetherDraw.RaidPlan.Services
 
                 case "rect":
                     return new DrawableRectangle(pos - size / 2, color, 1f, true) { EndPointRelative = pos + size / 2, RotationAngle = rotation };
-
                 case "circle":
                     return new DrawableCircle(pos, color, 1f, true) { Radius = size.X / 2 };
-
                 case "arrow":
-                    var startPoint = pos - new Vector2(0, size.Y / 2);
-                    var endPoint = pos + new Vector2(0, size.Y / 2);
-                    return new DrawableArrow(startPoint, color, 4f * scale) { EndPointRelative = endPoint, RotationAngle = rotation };
-
+                    var transform = Matrix3x2.CreateRotation(rotation) * Matrix3x2.CreateTranslation(pos);
+                    var startPoint = Vector2.Transform(new Vector2(0, size.Y / 2), transform);
+                    var endPoint = Vector2.Transform(new Vector2(0, -size.Y / 2), transform);
+                    return new DrawableArrow(startPoint, color, 4f * scale) { EndPointRelative = endPoint };
                 case "triangle":
                     return CreateTriangleFromNode(pos, size, rotation, color);
 
@@ -133,48 +191,79 @@ namespace AetherDraw.RaidPlan.Services
                 case "ability":
                 case "emoji":
                     if (node.Attr == null) return null;
+                    // Just add more emojis here every tier for stupid raidplan users that want to be cute
+                    var replacementEmojis = new HashSet<string> { "🔫", "😈", "🍀", "🪁", "🏹", "🗡️", "🐲", "🐏", "🐱", "🐿️" };
+                    var textContent = node.Attr.Text?.ToLowerInvariant() ?? "";
+                    bool needsReplacement = replacementEmojis.Contains(node.Attr.Emoji ?? "") || textContent.Contains("gun") || textContent.Contains("animal");
+                    if (needsReplacement)
+                    {
+                        var orangeTint = new Vector4(1.0f, 0.65f, 0.0f, 1.0f);
+                        var bossIconPath = "PluginImages.svg.boss.svg";
+                        var defaultIconSize = new Vector2(30f * scale, 30f * scale);
+                        return new DrawableImage(DrawMode.BossIconPlaceholder, bossIconPath, pos, defaultIconSize, orangeTint, rotation);
+                    }
 
                     if (!string.IsNullOrEmpty(node.Attr.abilityId))
                     {
                         switch (node.Attr.abilityId)
                         {
-                            case "ff-circle":
-                                return new DrawableCircle(pos, color, 1f, true) { Radius = size.X / 2 };
-                            case "ff-square":
-                                return new DrawableRectangle(pos - size / 2, color, 1f, true) { EndPointRelative = pos + size / 2, RotationAngle = rotation };
-                            case "ff-wedge":
-                                return CreateTriangleFromNode(pos, size, rotation, color);
-                            case "ff-ring":
-                                return new DrawableCircle(pos, color, 2f * scale, false) { Radius = size.X / 2 };
+                            case "ff-circle": return new DrawableCircle(pos, color, 1f, true) { Radius = size.X / 2 };
+                            case "ff-square": return new DrawableRectangle(pos - size / 2, color, 1f, true) { EndPointRelative = pos + size / 2, RotationAngle = rotation };
+                            case "ff-wedge": return CreateTriangleFromNode(pos, size, rotation, color);
+                            case "ff-ring": return new DrawableCircle(pos, color, 2f * scale, false) { Radius = size.X / 2 };
+                            case "ff-pie":
+                                var pieWidth = size.X * 0.75f;
+                                var pieOffset = Vector2.Transform(new Vector2(size.X * 0.125f, 0), Matrix3x2.CreateRotation(rotation));
+                                return new DrawableRectangle((pos + pieOffset) - new Vector2(pieWidth, size.Y) / 2, color, 1f, true) { EndPointRelative = (pos + pieOffset) + new Vector2(pieWidth, size.Y) / 2, RotationAngle = rotation };
+                            case "ff-half":
+                                var halfWidth = size.X / 2;
+                                var halfOffset = Vector2.Transform(new Vector2(-size.X / 4, 0), Matrix3x2.CreateRotation(rotation));
+                                return new DrawableRectangle((pos + halfOffset) - new Vector2(halfWidth, size.Y) / 2, color, 1f, true) { EndPointRelative = (pos + halfOffset) + new Vector2(halfWidth, size.Y) / 2, RotationAngle = rotation };
                         }
                     }
 
                     string imagePath = "";
+                    DrawMode drawMode = DrawMode.Image;
+                    string assetId = node.Attr.abilityId ?? node.Attr.WayId ?? string.Empty;
+
+                    if (!string.IsNullOrEmpty(node.Attr.Asset))
+                    {
+                        var fileName = Path.GetFileName(node.Attr.Asset);
+                        if (AssetIdToDrawModeMap.TryGetValue(fileName, out var specificMode))
+                        {
+                            drawMode = specificMode;
+                        }
+                    }
+                    else if (!string.IsNullOrEmpty(assetId) && AssetIdToDrawModeMap.TryGetValue(assetId, out var specificMode))
+                    {
+                        drawMode = specificMode;
+                    }
+
                     if (!string.IsNullOrEmpty(node.Attr.abilityId) && RaidPlanAssetMap.TryGetValue(node.Attr.abilityId, out var localAbilityPath))
-                    {
                         imagePath = localAbilityPath;
-                    }
                     else if (!string.IsNullOrEmpty(node.Attr.WayId) && RaidPlanAssetMap.TryGetValue(node.Attr.WayId, out var localWaymarkPath))
-                    {
                         imagePath = localWaymarkPath;
-                    }
                     else
                     {
-                        if (!string.IsNullOrEmpty(node.Attr.Asset))
-                            imagePath = RaidPlanAssetBaseUrl + node.Attr.Asset;
-                        else if (!string.IsNullOrEmpty(node.Attr.abilityId))
-                            imagePath = $"{RaidPlanAssetBaseUrl}ability/{node.Attr.abilityId}.png";
-                        else if (!string.IsNullOrEmpty(node.Attr.WayId))
-                            imagePath = $"{RaidPlanAssetBaseUrl}waypoint/{node.Attr.WayId}.png";
+                        if (!string.IsNullOrEmpty(node.Attr.Asset)) imagePath = RaidPlanAssetBaseUrl + node.Attr.Asset;
+                        else if (!string.IsNullOrEmpty(node.Attr.abilityId)) imagePath = $"{RaidPlanAssetBaseUrl}ability/{node.Attr.abilityId}.png";
+                        else if (!string.IsNullOrEmpty(node.Attr.WayId)) imagePath = $"{RaidPlanAssetBaseUrl}waypoint/{node.Attr.WayId}.png";
                     }
 
                     if (!string.IsNullOrEmpty(imagePath))
-                        return new DrawableImage(DrawMode.Image, imagePath, pos, size, color, rotation);
-
+                        return new DrawableImage(drawMode, imagePath, pos, size, color, rotation);
                     return null;
 
                 case "itext":
-                    return new DrawableText(pos, node.Attr?.Text ?? "", color, 20f * scale, size.X);
+                    const float largeTextSize = 24f;
+                    const float mediumTextSize = 20f;
+                    const float smallTextSize = 16f;
+
+                    float finalUnscaledSize = mediumTextSize;
+                    if (node.Attr?.FontSize == 4) finalUnscaledSize = largeTextSize;
+                    else if (node.Attr?.FontSize == 2) finalUnscaledSize = smallTextSize;
+
+                    return new DrawableText(pos, node.Attr?.Text ?? "", color, finalUnscaledSize * scale, size.X);
 
                 default:
                     return null;
@@ -192,19 +281,19 @@ namespace AetherDraw.RaidPlan.Services
             return new DrawableTriangle(Vector2.Transform(vertices[0], transform), Vector2.Transform(vertices[1], transform), Vector2.Transform(vertices[2], transform), color);
         }
 
-        private Vector4 HexToVector4(string hex)
+        private Vector4 HexToVector4(string hex, float alpha)
         {
             var cleaned = hex.StartsWith("#") ? hex.Substring(1) : hex;
-            if (cleaned.Length != 6) return Vector4.One;
+            if (cleaned.Length != 6) return new Vector4(1, 1, 1, alpha);
             try
             {
                 return new Vector4(
                     int.Parse(cleaned.Substring(0, 2), NumberStyles.HexNumber) / 255f,
                     int.Parse(cleaned.Substring(2, 2), NumberStyles.HexNumber) / 255f,
                     int.Parse(cleaned.Substring(4, 2), NumberStyles.HexNumber) / 255f,
-                    1f);
+                    alpha);
             }
-            catch { return Vector4.One; }
+            catch { return new Vector4(1, 1, 1, alpha); }
         }
     }
 }

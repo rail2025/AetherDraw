@@ -308,7 +308,7 @@ namespace AetherDraw.UI
             // --- Footer Buttons ---
             float availableHeight = ImGui.GetContentRegionAvail().Y;
 
-            // **FIX**: More robust height calculation for the footer buttons.
+            // robust height calculation for the footer buttons.
             float bugReportButtonHeight = ImGui.CalcTextSize("Bug report/\nFeature request").Y + ImGui.GetStyle().FramePadding.Y * 2.0f;
             float kofiButtonHeight = ImGui.GetFrameHeight();
             float footerButtonsTotalHeight = bugReportButtonHeight + kofiButtonHeight + ImGui.GetStyle().ItemSpacing.Y;
@@ -333,7 +333,6 @@ namespace AetherDraw.UI
                 ImGui.SetTooltip("Opens the GitHub Issues page in your browser.");
             }
 
-            // Ko-fi Button
             string kofiButtonText = "Support on Ko-Fi";
             uint kofiButtonColor = 0xFF312B;
             using (ImRaii.PushColor(ImGuiCol.Button, 0xFF000000 | kofiButtonColor))
