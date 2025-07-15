@@ -21,10 +21,12 @@ namespace AetherDraw.RaidPlan.Services
             { "ff-spread", "PluginImages.svg.spread.svg" },
             { "ff-linestack", "PluginImages.svg.line_stack.svg" },
             { "ff-flare", "PluginImages.svg.flare.svg" },
+            { "ff-player-prox", "PluginImages.svg.flare.svg" },
             { "ff-donut", "PluginImages.svg.donut.svg" },
             { "ff-aoe", "PluginImages.svg.prox_aoe.svg" },
             { "ff-area-prox", "PluginImages.svg.prox_aoe.svg" },
             { "ff-knock", "PluginImages.svg.spread.svg" },
+            { "ff-stackline", "PluginImages.svg.line_stack.svg" },
             { "a", "PluginImages.toolbar.A.png" },
             { "b", "PluginImages.toolbar.B.png" },
             { "c", "PluginImages.toolbar.C.png" },
@@ -41,7 +43,9 @@ namespace AetherDraw.RaidPlan.Services
             { "ff-stack", DrawMode.StackImage },
             { "ff-spread", DrawMode.SpreadImage },
             { "ff-linestack", DrawMode.LineStackImage },
+            { "ff-stackline", DrawMode.LineStackImage },
             { "ff-flare", DrawMode.FlareImage },
+            { "ff-player-prox", DrawMode.FlareImage },
             { "ff-donut", DrawMode.DonutAoEImage },
             { "ff-aoe", DrawMode.CircleAoEImage },
             { "ff-area-prox", DrawMode.CircleAoEImage },
@@ -65,6 +69,7 @@ namespace AetherDraw.RaidPlan.Services
             { "BossIconPlaceholder.svg", DrawMode.BossIconPlaceholder }
         };
 
+
         public List<PageData> Translate(Models.RaidPlan raidPlan, string? fallbackBackgroundImageUrl = null)
         {
             var pages = new List<PageData>();
@@ -72,16 +77,8 @@ namespace AetherDraw.RaidPlan.Services
 
             try
             {
-                var sourceSize = new Vector2(1200, 675);
-                var targetSize = new Vector2(800, 600);
-                if (sourceSize.X == 0 || sourceSize.Y == 0) return pages;
-
-                float baseScale = Math.Min(targetSize.X / sourceSize.X, targetSize.Y / sourceSize.Y);
-                var offset = (targetSize - (sourceSize * baseScale)) / 2;
-
+                // 1. Correctly resolve the background image URL.
                 var arenaNode = raidPlan.Nodes.FirstOrDefault(n => n.Type == "arena");
-                BaseDrawable? backgroundDrawable = null;
-
                 string? finalBackgroundImageUrl = null;
                 if (arenaNode?.Attr != null && !string.IsNullOrEmpty(arenaNode.Attr.ImageUrl))
                 {
@@ -92,36 +89,43 @@ namespace AetherDraw.RaidPlan.Services
                     string mapFileName = !string.IsNullOrEmpty(raidPlan.MapType) ? $"{raidPlan.Boss}-{raidPlan.MapType}" : raidPlan.Boss;
                     finalBackgroundImageUrl = $"{RaidPlanAssetBaseUrl}raid/{raidPlan.Raid}/map/{mapFileName}.jpg";
                 }
+                else if (!string.IsNullOrEmpty(fallbackBackgroundImageUrl))
+                {
+                    finalBackgroundImageUrl = fallbackBackgroundImageUrl;
+                }
 
+                // 2. Use 16:9 coordinate system for ALL nodes.
+                var sourceSize = new Vector2(1200, 675);
+                var targetSize = new Vector2(800, 600);
+                if (sourceSize.X == 0 || sourceSize.Y == 0) return pages;
+
+                // 3. Calculate the single, consistent scale and offset for the entire plan.
+                float baseScale = Math.Min(targetSize.X / sourceSize.X, targetSize.Y / sourceSize.Y);
+                var offset = (targetSize - (sourceSize * baseScale)) / 2;
+
+                BaseDrawable? backgroundDrawable = null;
                 if (!string.IsNullOrEmpty(finalBackgroundImageUrl))
                 {
-                    Vector2 backgroundSize;
+                    Vector2 backgroundDrawSize;
+                    // The size of the entire 16:9 canvas after being scaled down.
+                    var scaledSourceCanvasSize = sourceSize * baseScale;
 
-                    // If the URL is from Imgur apply different scaling logic.
                     if (finalBackgroundImageUrl.Contains("imgur.com"))
                     {
-                        // Scale to cover the largest dimension.
-                        float maxDimension = Math.Max(targetSize.X, targetSize.Y);
-                        backgroundSize = new Vector2(maxDimension, maxDimension);
+                        // For Imgur, create a square background. Its side length is based on the
+                        // HEIGHT of the source canvas, scaled consistently with all other nodes.
+                        backgroundDrawSize = new Vector2(675, 675) * baseScale;
                     }
                     else
                     {
-                        // For 16:9 background embedded images from raidplan.io
-                        const float sourceAspectRatio = 16f / 9f;
-                        float targetAspectRatio = targetSize.X / targetSize.Y;
-
-                        if (targetAspectRatio > sourceAspectRatio)
-                        {
-                            backgroundSize = new Vector2(targetSize.X, targetSize.X / sourceAspectRatio);
-                        }
-                        else
-                        {
-                            backgroundSize = new Vector2(targetSize.Y * sourceAspectRatio, targetSize.Y);
-                        }
+                        // For standard 16:9 backgrounds, the drawable's size is the full scaled canvas.
+                        backgroundDrawSize = scaledSourceCanvasSize;
                     }
 
-                    Plugin.Log?.Info($"[RaidPlanTranslator] Using background image: {finalBackgroundImageUrl}");
-                    backgroundDrawable = new DrawableImage(DrawMode.Image, finalBackgroundImageUrl, targetSize / 2, backgroundSize, Vector4.One, 0);
+                    // The position is ALWAYS the center of the scaled 16:9 area.
+                    var backgroundDrawPosition = offset + (scaledSourceCanvasSize / 2);
+
+                    backgroundDrawable = new DrawableImage(DrawMode.Image, finalBackgroundImageUrl, backgroundDrawPosition, backgroundDrawSize, Vector4.One, 0);
                 }
 
                 var nodesByStep = raidPlan.Nodes
@@ -154,6 +158,8 @@ namespace AetherDraw.RaidPlan.Services
             }
             return pages;
         }
+
+
 
         private BaseDrawable? ToAetherDrawDrawable(Node node, float scale, Vector2 offset, Vector2 targetCanvasSize)
         {

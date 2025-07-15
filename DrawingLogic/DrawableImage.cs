@@ -67,7 +67,70 @@ namespace AetherDraw.DrawingLogic
 
         public override void DrawToImage(IImageProcessingContext context, Vector2 canvasOriginInOutputImage, float currentGlobalScale)
         {
-            // Placeholder - i dont remember why this is here
+            byte[]? imageBytes = TextureManager.GetImageData(this.ImageResourcePath);
+
+            if (imageBytes == null)
+            {
+                Plugin.Log?.Warning($"[DrawableImage.DrawToImage] Image data for '{this.ImageResourcePath}' was not available in the cache for export.");
+                return;
+            }
+
+            try
+            {
+                using (var image = Image.Load<Rgba32>(imageBytes))
+                {
+                    var finalSize = new Size(
+                        (int)Math.Round(this.DrawSize.X * currentGlobalScale),
+                        (int)Math.Round(this.DrawSize.Y * currentGlobalScale)
+                    );
+
+                    if (finalSize.Width <= 0 || finalSize.Height <= 0) return;
+
+                    using var finalImage = image.Clone(ctx => ctx.Resize(finalSize));
+
+                    if (Math.Abs(this.Color.X - 1f) > 0.01f || Math.Abs(this.Color.Y - 1f) > 0.01f || Math.Abs(this.Color.Z - 1f) > 0.01f || Math.Abs(this.Color.W - 1f) > 0.01f)
+                    {
+                        var tint = new Rgba32(this.Color.X, this.Color.Y, this.Color.Z, this.Color.W);
+
+                        // ProcessPixelRows is called on the 'Image' object, not the drawing context.
+                        finalImage.ProcessPixelRows(accessor =>
+                        {
+                            for (int y = 0; y < accessor.Height; y++)
+                            {
+                                Span<Rgba32> pixelRow = accessor.GetRowSpan(y);
+                                foreach (ref var pixel in pixelRow)
+                                {
+                                    if (pixel.A > 0)
+                                    {
+                                        var newR = (byte)(pixel.R * tint.R / 255);
+                                        var newG = (byte)(pixel.G * tint.G / 255);
+                                        var newB = (byte)(pixel.B * tint.B / 255);
+                                        pixel = new Rgba32(newR, newG, newB, pixel.A);
+                                    }
+                                }
+                            }
+                        });
+                    }
+
+                    if (this.RotationAngle != 0)
+                    {
+                        float degrees = this.RotationAngle * (180f / MathF.PI);
+                        finalImage.Mutate(x => x.Rotate(degrees));
+                    }
+
+                    var centerPoint = (this.PositionRelative * currentGlobalScale) + canvasOriginInOutputImage;
+                    var topLeftPosition = new Point(
+                        (int)Math.Round(centerPoint.X - finalImage.Width / 2f),
+                        (int)Math.Round(centerPoint.Y - finalImage.Height / 2f)
+                    );
+
+                    context.DrawImage(finalImage, topLeftPosition, 1f);
+                }
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.Error(ex, $"Failed to process and draw image for export: {this.ImageResourcePath}");
+            }
         }
 
         public override System.Drawing.RectangleF GetBoundingBox()

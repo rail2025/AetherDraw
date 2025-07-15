@@ -16,6 +16,7 @@ namespace AetherDraw.DrawingLogic
     public static class TextureManager
     {
         private static readonly ConcurrentDictionary<string, IDalamudTextureWrap?> LoadedTextures = new();
+        private static readonly ConcurrentDictionary<string, byte[]?> LoadedImageData = new();
         private static readonly ConcurrentBag<string> FailedDownloads = new();
         private static readonly ConcurrentBag<string> PendingDownloads = new();
         private static readonly Dictionary<string, Task<IDalamudTextureWrap>> PendingCreationTasks = new();
@@ -51,6 +52,12 @@ namespace AetherDraw.DrawingLogic
             }
 
             return null;
+        }
+
+        public static byte[]? GetImageData(string resourcePath)
+        {
+            LoadedImageData.TryGetValue(resourcePath, out var data);
+            return data;
         }
 
         public static void DoMainThreadWork()
@@ -101,10 +108,9 @@ namespace AetherDraw.DrawingLogic
 
         private static async Task LoadTextureInBackground(string resourcePath)
         {
-            Plugin.Log?.Debug($"[TextureManager] Background task started for: {resourcePath}");
             try
             {
-                byte[]? imageBytes = null;
+                byte[]? rawImageBytes = null;
                 if (resourcePath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     using var request = new HttpRequestMessage(HttpMethod.Get, resourcePath);
@@ -113,36 +119,39 @@ namespace AetherDraw.DrawingLogic
                         request.Headers.Referrer = new Uri("https://raidplan.io/");
                     }
                     var response = await HttpClient.SendAsync(request);
-                    Plugin.Log?.Debug($"[TextureManager] HTTP response for {resourcePath}: {response.StatusCode}");
                     response.EnsureSuccessStatusCode();
-                    imageBytes = await response.Content.ReadAsByteArrayAsync();
-                    Plugin.Log?.Debug($"[TextureManager] Downloaded {imageBytes.Length} bytes for: {resourcePath}");
+                    rawImageBytes = await response.Content.ReadAsByteArrayAsync();
                 }
                 else
                 {
                     var assembly = Assembly.GetExecutingAssembly();
                     var fullResourcePath = $"{assembly.GetName().Name}.{resourcePath.Replace("\\", ".").Replace("/", ".")}";
                     using var resourceStream = assembly.GetManifestResourceStream(fullResourcePath);
-                    if (resourceStream != null) imageBytes = ReadStream(resourceStream);
+                    if (resourceStream != null) rawImageBytes = ReadStream(resourceStream);
                 }
 
-                if (imageBytes == null) throw new Exception("Image byte data was null.");
+                if (rawImageBytes == null) throw new Exception("Image byte data was null.");
 
+                byte[]? finalUsableBytes = rawImageBytes;
+
+                // If the resource is an SVG, rasterize it into a PNG.
                 if (resourcePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
                 {
                     Plugin.Log?.Debug($"[TextureManager] Rasterizing SVG for: {resourcePath}");
-                    using var stream = new MemoryStream(imageBytes);
-                    imageBytes = RasterizeSvg(stream);
+                    using var stream = new MemoryStream(rawImageBytes);
+                    finalUsableBytes = RasterizeSvg(stream);
                 }
 
-                if (imageBytes != null)
+                if (finalUsableBytes != null)
                 {
-                    Plugin.Log?.Debug($"[TextureManager] Enqueuing texture data for main thread processing: {resourcePath}");
-                    TextureCreationQueue.Enqueue((resourcePath, imageBytes));
+                    // Cache the final, usable image data (always PNG/JPG, never SVG).
+                    LoadedImageData.TryAdd(resourcePath, finalUsableBytes);
+                    // Enqueue the same final data for GPU texture creation.
+                    TextureCreationQueue.Enqueue((resourcePath, finalUsableBytes));
                 }
                 else
                 {
-                    throw new Exception("Image processing resulted in null byte data.");
+                    throw new Exception($"Image processing for {resourcePath} resulted in null byte data.");
                 }
             }
             catch (Exception ex)
@@ -157,16 +166,26 @@ namespace AetherDraw.DrawingLogic
             using var svg = new SKSvg();
             if (svg.Load(svgStream) is { } && svg.Picture != null)
             {
-                using var surface = SKSurface.Create(new SKImageInfo(64, 64));
+                var svgSize = svg.Picture.CullRect;
+                var width = (int)Math.Ceiling(svgSize.Width);
+                var height = (int)Math.Ceiling(svgSize.Height);
+
+                // If the SVG lacks dimensions, fall back to a default size.
+                if (width <= 0) width = 64;
+                if (height <= 0) height = 64;
+
+                var info = new SKImageInfo(width, height);
+
+                using var surface = SKSurface.Create(info);
                 var canvas = surface.Canvas;
                 canvas.Clear(SKColors.Transparent);
-                var svgSize = svg.Picture.CullRect;
-                if (svgSize.Width > 0 && svgSize.Height > 0)
-                {
-                    float scale = Math.Min(64 / svgSize.Width, 64 / svgSize.Height);
-                    var matrix = SKMatrix.CreateScale(scale, scale);
-                    canvas.DrawPicture(svg.Picture, in matrix);
-                }
+
+                // Scale the picture to fit the canvas, preserving aspect ratio.
+                var matrix = SKMatrix.CreateScale(
+                    (float)info.Width / svgSize.Width,
+                    (float)info.Height / svgSize.Height);
+                canvas.DrawPicture(svg.Picture, in matrix);
+
                 using var image = surface.Snapshot();
                 using var data = image.Encode(SKEncodedImageFormat.Png, 100);
                 return data.ToArray();

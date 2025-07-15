@@ -181,6 +181,7 @@ namespace AetherDraw.Serialization
                         writer.Write(triangle.Vertices[i].Y);
                     }
                     break;
+                case DrawMode.Image:
                 case DrawMode.BossImage:
                 case DrawMode.CircleAoEImage:
                 case DrawMode.DonutAoEImage:
@@ -341,6 +342,7 @@ namespace AetherDraw.Serialization
                     var v3 = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     drawable = new DrawableTriangle(v1, v2, v3, color);
                     break;
+                case DrawMode.Image:
                 case DrawMode.BossImage:
                 case DrawMode.CircleAoEImage:
                 case DrawMode.DonutAoEImage:
