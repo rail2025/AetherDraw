@@ -20,6 +20,14 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 <br>
 ![export example](https://github.com/user-attachments/assets/93cbb47b-b749-4409-a878-2e76c73756a4)
 
+<br>
+<img width="1019" height="804" alt="raidplan urls" src="https://github.com/user-attachments/assets/920bdb22-93a2-4c73-9997-effa1533bab7" />
+
+<br>
+<img width="911" height="765" alt="emoji" src="https://github.com/user-attachments/assets/eae44084-77ec-47ad-8d4f-aa801e2e6918" />
+
+
+
 <br>![save plan example](https://github.com/user-attachments/assets/4033928c-234c-4e07-a56e-db7506633b6b)
 
 <br>
