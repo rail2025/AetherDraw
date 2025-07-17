@@ -68,6 +68,12 @@ namespace AetherDraw.RaidPlan.Models
         [JsonPropertyName("opacity")]
         public float? Opacity { get; set; }
 
+        [JsonPropertyName("points")]
+        public List<float>? Points { get; set; }
+
+        [JsonPropertyName("stroke")]
+        public string? Stroke { get; set; }
+
         [JsonPropertyName("fontSize")]
         public float? FontSize { get; set; }
     }

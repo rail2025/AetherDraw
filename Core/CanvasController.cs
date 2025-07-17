@@ -1,4 +1,3 @@
-// AetherDraw/Core/CanvasController.cs
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -11,20 +10,15 @@ using ImGuiNET;
 
 namespace AetherDraw.Core
 {
-    /// <summary>
-    /// Manages the direct interaction logic on the drawing canvas, such as creating new shapes,
-    /// erasing, and delegating complex interactions like object manipulation to the ShapeInteractionHandler.
-    /// </summary>
     public class CanvasController
     {
-        // --- Injected Dependencies & Delegates ---
         private readonly UndoManager undoManager;
         private readonly PageManager pageManager;
         private readonly Plugin plugin;
         private readonly Func<DrawMode> getCurrentDrawMode;
         private readonly Action<DrawMode> setCurrentDrawMode;
         private readonly Func<Vector4> getCurrentBrushColor;
-        private readonly Func<float> getCurrentBrushThickness; // Unscaled
+        private readonly Func<float> getCurrentBrushThickness;
         private readonly Func<bool> getCurrentShapeFilled;
         private readonly List<BaseDrawable> selectedDrawablesListRef;
         private readonly Func<BaseDrawable?> getHoveredDrawableFunc;
@@ -33,19 +27,15 @@ namespace AetherDraw.Core
         private readonly InPlaceTextEditor inPlaceTextEditor;
         private readonly Configuration configuration;
 
-        // --- Internal State ---
         private bool isDrawingOnCanvas = false;
         private BaseDrawable? currentDrawingObjectInternal = null;
         private double lastEraseTime = 0;
+        private string? emojiToPlace = null; // New field for placing emojis
 
-        // --- Constants ---
         private const float DefaultUnscaledFontSize = 16f;
         private const float DefaultUnscaledTextWrapWidth = 200f;
         private static readonly Vector2 DefaultUnscaledImageSize = new Vector2(30f, 30f);
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="CanvasController"/> class.
-        /// </summary>
         public CanvasController(
             UndoManager undoManagerInstance,
             PageManager pageManagerInstance,
@@ -78,15 +68,15 @@ namespace AetherDraw.Core
             this.plugin = pluginInstance ?? throw new ArgumentNullException(nameof(pluginInstance));
         }
 
-        /// <summary>
-        /// Gets the current drawable object being created for preview rendering.
-        /// </summary>
-        /// <returns>The current in-progress <see cref="BaseDrawable"/>, or null.</returns>
+        public void StartPlacingEmoji(string emoji)
+        {
+            this.emojiToPlace = emoji;
+            setCurrentDrawMode(DrawMode.EmojiImage);
+            TextureManager.PreloadEmojiTexture(emoji);
+        }
+
         public BaseDrawable? GetCurrentDrawingObjectForPreview() => currentDrawingObjectInternal;
 
-        /// <summary>
-        /// The main entry point for processing all user interactions on the canvas.
-        /// </summary>
         public void ProcessCanvasInteraction(
             Vector2 mousePosLogical, Vector2 mousePosScreen, Vector2 canvasOriginScreen, ImDrawListPtr drawList,
             bool isLMBDown, bool isLMBClickedOnCanvas, bool isLMBReleased, bool isLMBDoubleClickedOnCanvas,
@@ -124,12 +114,64 @@ namespace AetherDraw.Core
                 case DrawMode.TextTool:
                     HandleTextToolInput(mousePosLogical, canvasOriginScreen, isLMBClickedOnCanvas, currentDrawablesOnPage);
                     break;
+                case DrawMode.EmojiImage:
+                    HandleEmojiPlacement(mousePosLogical, isLMBClickedOnCanvas, drawList);
+                    break;
                 default:
                     if (IsImagePlacementMode(getCurrentDrawMode()))
                         HandleImagePlacementInput(mousePosLogical, isLMBClickedOnCanvas, currentDrawablesOnPage);
                     else
                         HandleShapeDrawingInput(mousePosLogical, isLMBDown, isLMBClickedOnCanvas, isLMBReleased);
                     break;
+            }
+        }
+
+        private void HandleEmojiPlacement(Vector2 mousePosLogical, bool isLMBClickedOnCanvas, ImDrawListPtr drawList)
+        {
+            if (emojiToPlace == null) return;
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+
+            var tex = TextureManager.GetTexture("emoji:" + emojiToPlace);
+            if (tex != null && tex.ImGuiHandle != IntPtr.Zero)
+            {
+                var previewSize = new Vector2(30, 30) * ImGuiHelpers.GlobalScale;
+                var screenPos = ImGui.GetMousePos() - (previewSize / 2);
+                ImGui.GetForegroundDrawList().AddImage(tex.ImGuiHandle, screenPos, screenPos + previewSize);
+            }
+            else
+            {
+                ImGui.SetTooltip("Loading emoji...");
+            }
+
+            if (isLMBClickedOnCanvas)
+            {
+                var newImage = new DrawableImage(
+                    DrawMode.EmojiImage,
+                    "emoji:" + emojiToPlace,
+                    mousePosLogical,
+                    new Vector2(30f, 30f),
+                    Vector4.One,
+                    0f
+                );
+                newImage.IsPreview = false;
+
+                var currentDrawables = pageManager.GetCurrentPageDrawables();
+                undoManager.RecordAction(currentDrawables, "Place Emoji");
+                currentDrawables.Add(newImage);
+
+                if (pageManager.IsLiveMode)
+                {
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.AddObjects,
+                        Data = Serialization.DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { newImage })
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                }
+
+                emojiToPlace = null;
+                setCurrentDrawMode(DrawMode.Select);
             }
         }
 
@@ -144,7 +186,6 @@ namespace AetherDraw.Core
             float logicalEraserRadius = 10f;
             var objectsToDelete = new List<Guid>();
 
-            // Find all objects hit by the eraser
             foreach (var d in currentDrawablesOnPage)
             {
                 if (d.IsHit(mousePosLogical, logicalEraserRadius))
@@ -157,7 +198,6 @@ namespace AetherDraw.Core
             {
                 if (pageManager.IsLiveMode)
                 {
-                    // In live mode, send a delete message with all Guids
                     using var ms = new MemoryStream();
                     using var writer = new BinaryWriter(ms);
                     writer.Write(objectsToDelete.Count);
@@ -176,7 +216,6 @@ namespace AetherDraw.Core
                 }
                 else
                 {
-                    // In local mode, record undo and remove locally
                     undoManager.RecordAction(currentDrawablesOnPage, "Eraser Action");
                     currentDrawablesOnPage.RemoveAll(d => objectsToDelete.Contains(d.UniqueId));
                     selectedDrawablesListRef.RemoveAll(d => objectsToDelete.Contains(d.UniqueId));
@@ -195,7 +234,6 @@ namespace AetherDraw.Core
 
                 if (pageManager.IsLiveMode)
                 {
-                    // In live mode, only send the network message. Do not add locally.
                     var payload = new NetworkPayload
                     {
                         PageIndex = pageManager.GetCurrentPageIndex(),
@@ -206,13 +244,10 @@ namespace AetherDraw.Core
                 }
                 else
                 {
-                    // In local mode, add to canvas and record undo.
                     undoManager.RecordAction(currentDrawablesOnPage, "Add Text");
                     currentDrawablesOnPage.Add(newText);
                 }
 
-                // Select the new text and open the editor. This works because the object will be
-                // added via network broadcast before the next frame, or was added locally.
                 foreach (var sel in selectedDrawablesListRef) sel.IsSelected = false;
                 selectedDrawablesListRef.Clear();
                 newText.IsSelected = true;
@@ -352,7 +387,6 @@ namespace AetherDraw.Core
         private BaseDrawable? CreateNewDrawingObject(DrawMode mode, Vector2 startPosLogical, Vector4 color, float thickness, bool isFilled)
         {
             Vector4 finalColor = color;
-            // For filled shapes, automatically apply transparency for better layering visibility.
             if (isFilled)
             {
                 switch (mode)
@@ -363,7 +397,7 @@ namespace AetherDraw.Core
                     case DrawMode.Donut:
                     case DrawMode.Triangle:
                     case DrawMode.Arrow:
-                        finalColor.W = 0.4f; // Set alpha to 40%
+                        finalColor.W = 0.4f;
                         break;
                 }
             }
@@ -403,7 +437,6 @@ namespace AetherDraw.Core
             {
                 if (pageManager.IsLiveMode)
                 {
-                    // In live mode, only send the network message.
                     var payload = new NetworkPayload
                     {
                         PageIndex = pageManager.GetCurrentPageIndex(),
@@ -414,7 +447,6 @@ namespace AetherDraw.Core
                 }
                 else
                 {
-                    // In local mode, add directly to the canvas.
                     pageManager.GetCurrentPageDrawables().Add(currentDrawingObjectInternal);
                 }
             }

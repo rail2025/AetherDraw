@@ -36,8 +36,9 @@ namespace AetherDraw.Core
         private readonly Func<DrawMode, int> getLayerPriorityFunc;
         private readonly Func<int> getCurrentPageIndexFunc;
         private static readonly HttpClient HttpClient = new HttpClient();
+        //public Action<string>? OnBackgroundImageSelected { get; set; } //user img in case ever solve bad actors problem
         public Action? OnPlanLoadSuccess { get; set; }
-        public string LastFileDialogError { get; private set; } = string.Empty;
+        public string LastFileDialogError { get; set; } = string.Empty;
 
         public PlanIOManager(PageManager pm, InPlaceTextEditor editor, IDalamudPluginInterface pi, Func<float> getGridSizeFunc, Func<DrawMode, int> getPriorityFunc, Func<int> getIndexFunc)
         {
@@ -73,6 +74,24 @@ namespace AetherDraw.Core
             fileDialogManager.SaveFileDialog("Save Image As...", "PNG Image{.png,.PNG}", "MyAetherDrawImage", ".png", (success, path) => HandleSaveImageDialogResult(success, path, currentCanvasVisualSize), initialPath, true);
         }
 
+        /*public void RequestLoadCustomBackground()
+        {
+            LastFileDialogError = string.Empty;
+            string initialPath = GetInitialDialogPath();
+            fileDialogManager.OpenFileDialog("Import Background Image", "Image Files{.png,.jpg,.jpeg}", HandleLoadBackgroundDialogResult, 1, initialPath, true);
+        }*/
+
+        /*private void HandleLoadBackgroundDialogResult(bool success, List<string> paths)
+        {
+            if (success && paths != null && paths.Count > 0 && !string.IsNullOrEmpty(paths[0]))
+            {
+                OnBackgroundImageSelected?.Invoke(paths[0]);
+            }
+            else if (!success)
+            {
+                LastFileDialogError = "Background import cancelled or failed.";
+            }
+        }*/
         public void CopyCurrentPlanToClipboardCompressed()
         {
             LastFileDialogError = string.Empty;

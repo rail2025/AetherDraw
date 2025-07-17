@@ -77,7 +77,6 @@ namespace AetherDraw.RaidPlan.Services
 
             try
             {
-                // 1. Correctly resolve the background image URL.
                 var arenaNode = raidPlan.Nodes.FirstOrDefault(n => n.Type == "arena");
                 string? finalBackgroundImageUrl = null;
                 if (arenaNode?.Attr != null && !string.IsNullOrEmpty(arenaNode.Attr.ImageUrl))
@@ -94,12 +93,10 @@ namespace AetherDraw.RaidPlan.Services
                     finalBackgroundImageUrl = fallbackBackgroundImageUrl;
                 }
 
-                // 2. Use 16:9 coordinate system for ALL nodes.
                 var sourceSize = new Vector2(1200, 675);
                 var targetSize = new Vector2(800, 600);
                 if (sourceSize.X == 0 || sourceSize.Y == 0) return pages;
 
-                // 3. Calculate the single, consistent scale and offset for the entire plan.
                 float baseScale = Math.Min(targetSize.X / sourceSize.X, targetSize.Y / sourceSize.Y);
                 var offset = (targetSize - (sourceSize * baseScale)) / 2;
 
@@ -107,22 +104,17 @@ namespace AetherDraw.RaidPlan.Services
                 if (!string.IsNullOrEmpty(finalBackgroundImageUrl))
                 {
                     Vector2 backgroundDrawSize;
-                    // The size of the entire 16:9 canvas after being scaled down.
                     var scaledSourceCanvasSize = sourceSize * baseScale;
 
                     if (finalBackgroundImageUrl.Contains("imgur.com"))
                     {
-                        // For Imgur, create a square background. Its side length is based on the
-                        // HEIGHT of the source canvas, scaled consistently with all other nodes.
                         backgroundDrawSize = new Vector2(675, 675) * baseScale;
                     }
                     else
                     {
-                        // For standard 16:9 backgrounds, the drawable's size is the full scaled canvas.
                         backgroundDrawSize = scaledSourceCanvasSize;
                     }
 
-                    // The position is ALWAYS the center of the scaled 16:9 area.
                     var backgroundDrawPosition = offset + (scaledSourceCanvasSize / 2);
 
                     backgroundDrawable = new DrawableImage(DrawMode.Image, finalBackgroundImageUrl, backgroundDrawPosition, backgroundDrawSize, Vector4.One, 0);
@@ -192,12 +184,47 @@ namespace AetherDraw.RaidPlan.Services
                 case "triangle":
                     return CreateTriangleFromNode(pos, size, rotation, color);
 
+                case "path":
+                    if (node.Attr?.Points == null || node.Attr.Points.Count < 4) return null;
+
+                    var pathPoints = new List<Vector2>();
+                    for (int i = 0; i < node.Attr.Points.Count - 1; i += 2)
+                    {
+                        // The points in the raidplan JSON are in a high-resolution coordinate system.
+                        // So divide by 10 to bring them into the standard 1200x675 canvas space.
+                        var point = new Vector2(node.Attr.Points[i] / 10f, node.Attr.Points[i + 1] / 10f);
+                        pathPoints.Add((point * scale) + offset);
+                    }
+
+                    if (pathPoints.Count < 2) return null;
+
+                    var pathColor = HexToVector4(node.Attr.Stroke ?? "#FFFFFF", node.Attr.Opacity ?? 1.0f);
+
+                    var drawablePath = new DrawablePath(pathPoints.First(), pathColor, 4f * scale)
+                    {
+                        PointsRelative = pathPoints,
+                        IsPreview = false
+                    };
+                    return drawablePath;
+
                 case "marker":
                 case "waypoint":
                 case "ability":
                 case "emoji":
                     if (node.Attr == null) return null;
-                    // Just add more emojis here every tier for stupid raidplan users that want to be cute
+
+                    if (node.Type == "emoji" && !string.IsNullOrEmpty(node.Attr.Emoji))
+                    {
+                        string emojiChar = node.Attr.Emoji;
+                        string resourcePath = "emoji:" + emojiChar;
+
+                        TextureManager.PreloadEmojiTexture(emojiChar);
+
+                        Vector2 emojiSize = size.LengthSquared() > 1.0f ? size : new Vector2(30f * scale, 30f * scale);
+
+                        return new DrawableImage(DrawMode.EmojiImage, resourcePath, pos, emojiSize, Vector4.One, rotation);
+                    }
+
                     var replacementEmojis = new HashSet<string> { "🔫", "😈", "🍀", "🪁", "🏹", "🗡️", "🐲", "🐏", "🐱", "🐿️" };
                     var textContent = node.Attr.Text?.ToLowerInvariant() ?? "";
                     bool needsReplacement = replacementEmojis.Contains(node.Attr.Emoji ?? "") || textContent.Contains("gun") || textContent.Contains("animal");

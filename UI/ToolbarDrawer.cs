@@ -1,4 +1,3 @@
-// AetherDraw/UI/ToolbarDrawer.cs
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -14,17 +13,13 @@ namespace AetherDraw.UI
 {
     public class ToolbarButton
     {
-        public DrawMode Primary { get; set; } // The default icon for the button
-        public List<DrawMode> SubModes { get; set; } = new(); // The icons in the popup
+        public DrawMode Primary { get; set; }
+        public List<DrawMode> SubModes { get; set; } = new();
         public string Tooltip { get; set; } = "";
     }
 
-    /// <summary>
-    /// Handles the drawing of the main toolbar controls for AetherDraw.
-    /// </summary>
     public class ToolbarDrawer
     {
-        // Delegates for accessing and modifying MainWindow's state
         private readonly Func<DrawMode> getCurrentDrawMode;
         private readonly Action<DrawMode> setCurrentDrawMode;
         private readonly Func<bool> getIsShapeFilled;
@@ -33,25 +28,19 @@ namespace AetherDraw.UI
         private readonly Action<float> setCurrentBrushThickness;
         private readonly Func<Vector4> getCurrentBrushColor;
         private readonly Action<Vector4> setCurrentBrushColor;
-
-        // Callbacks for actions handled by MainWindow
         private readonly Action onCopySelected;
         private readonly Action onPasteCopied;
         private readonly Action onClearAll;
         private readonly Action onUndo;
-
-        // Direct references to handlers/managers
+        private readonly Action onOpenEmojiPicker;
+        private readonly Action onImportBackgroundUrl; // New action for URL import
         private readonly ShapeInteractionHandler shapeInteractionHandler;
         private readonly DrawingLogic.InPlaceTextEditor inPlaceTextEditor;
         private readonly UndoManager undoManager;
-
-        // Data structures for the toolbar layout
         private readonly List<ToolbarButton> mainToolbarButtons;
         private readonly Dictionary<DrawMode, DrawMode> activeSubModeMap;
         private readonly Dictionary<DrawMode, string> iconPaths;
         private readonly Dictionary<DrawMode, string> toolDisplayNames;
-
-        // Static UI definitions
         private static readonly float[] ThicknessPresets = { 1.5f, 4f, 7f, 10f };
         private static readonly Vector4[] ColorPalette = {
             new(1.0f,1.0f,1.0f,1.0f), new(0.0f,0.0f,0.0f,1.0f),
@@ -68,7 +57,9 @@ namespace AetherDraw.UI
             Func<bool> getIsShapeFilled, Action<bool> setIsShapeFilled,
             UndoManager undoManager,
             Func<float> getCurrentBrushThickness, Action<float> setCurrentBrushThickness,
-            Func<Vector4> getCurrentBrushColor, Action<Vector4> setCurrentBrushColor)
+            Func<Vector4> getCurrentBrushColor, Action<Vector4> setCurrentBrushColor,
+            Action onOpenEmojiPicker,
+            Action onImportBackgroundUrl) // Renamed for clarity
         {
             this.getCurrentDrawMode = getCurrentDrawMode ?? throw new ArgumentNullException(nameof(getCurrentDrawMode));
             this.setCurrentDrawMode = setCurrentDrawMode ?? throw new ArgumentNullException(nameof(setCurrentDrawMode));
@@ -85,6 +76,8 @@ namespace AetherDraw.UI
             this.setCurrentBrushThickness = setCurrentBrushThickness ?? throw new ArgumentNullException(nameof(setCurrentBrushThickness));
             this.getCurrentBrushColor = getCurrentBrushColor ?? throw new ArgumentNullException(nameof(getCurrentBrushColor));
             this.setCurrentBrushColor = setCurrentBrushColor ?? throw new ArgumentNullException(nameof(setCurrentBrushColor));
+            this.onOpenEmojiPicker = onOpenEmojiPicker;
+            this.onImportBackgroundUrl = onImportBackgroundUrl;
 
             this.mainToolbarButtons = new List<ToolbarButton>
             {
@@ -97,7 +90,7 @@ namespace AetherDraw.UI
                 new() { Primary = DrawMode.Waymark1Image, SubModes = new List<DrawMode> { DrawMode.Waymark1Image, DrawMode.Waymark2Image, DrawMode.Waymark3Image, DrawMode.Waymark4Image }, Tooltip = "Waymarks 1-4" },
                 new() { Primary = DrawMode.StackImage, SubModes = new List<DrawMode> { DrawMode.StackImage, DrawMode.SpreadImage, DrawMode.LineStackImage, DrawMode.FlareImage, DrawMode.DonutAoEImage, DrawMode.CircleAoEImage, DrawMode.BossImage }, Tooltip = "Mechanic Icons" },
                 new() { Primary = DrawMode.TextTool, SubModes = new List<DrawMode>(), Tooltip = "Text Tool" },
-                new() { Primary = DrawMode.Dot1Image, SubModes = new List<DrawMode> { DrawMode.Dot1Image, DrawMode.Dot2Image, DrawMode.Dot3Image, DrawMode.Dot4Image, DrawMode.Dot5Image, DrawMode.Dot6Image, DrawMode.Dot7Image, DrawMode.Dot8Image }, Tooltip = "Colored Dots" }
+                new() { Primary = DrawMode.Dot3Image, SubModes = new List<DrawMode> { DrawMode.Dot1Image, DrawMode.Dot2Image, DrawMode.Dot3Image, DrawMode.Dot4Image, DrawMode.Dot5Image, DrawMode.Dot6Image, DrawMode.Dot7Image, DrawMode.Dot8Image }, Tooltip = "Colored Dots" }
             };
 
             this.activeSubModeMap = new Dictionary<DrawMode, DrawMode>();
@@ -149,7 +142,8 @@ namespace AetherDraw.UI
                 { DrawMode.Dot6Image, "PluginImages.svg.6dot.svg" },
                 { DrawMode.Dot7Image, "PluginImages.svg.7dot.svg" },
                 { DrawMode.Dot8Image, "PluginImages.svg.8dot.svg" },
-                { DrawMode.TextTool, "" }
+                { DrawMode.TextTool, "" },
+                { DrawMode.EmojiImage, "" },
             };
 
             this.toolDisplayNames = new Dictionary<DrawMode, string>
@@ -157,7 +151,8 @@ namespace AetherDraw.UI
                 { DrawMode.StraightLine, "Line" },
                 { DrawMode.Rectangle, "Rect" },
                 { DrawMode.Triangle, "Triangle" },
-                { DrawMode.TextTool, "TEXT" }
+                { DrawMode.TextTool, "TEXT" },
+                { DrawMode.EmojiImage, "EMOJI" },
             };
         }
 
@@ -169,7 +164,6 @@ namespace AetherDraw.UI
             float btnWidthFull = availableWidth;
             float btnWidthHalf = (availableWidth - itemSpacing) / 2f;
 
-            // --- Static Buttons ---
             void DrawToolButton(string label, DrawMode mode, float width)
             {
                 bool isSelected = currentDrawMode == mode;
@@ -192,9 +186,18 @@ namespace AetherDraw.UI
 
             if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0))) onClearAll();
 
+            if (ImGui.Button("Emoji", new Vector2(btnWidthFull, 0)))
+            {
+                onOpenEmojiPicker();
+            }
+
+            if (ImGui.Button("Set BG (URL)", new Vector2(btnWidthFull, 0)))
+            {
+                onImportBackgroundUrl();
+            }
+
             ImGui.Separator();
 
-            // --- Dynamic Popup Buttons ---
             Vector2 iconButtonSize = new(btnWidthHalf, 45 * ImGuiHelpers.GlobalScale);
             Vector2 popupIconButtonSize = new(32 * ImGuiHelpers.GlobalScale, 32 * ImGuiHelpers.GlobalScale);
 
@@ -202,20 +205,25 @@ namespace AetherDraw.UI
             {
                 var group = mainToolbarButtons[i];
                 if (i > 0 && i % 2 != 0) ImGui.SameLine();
-                DrawMode activeModeInGroup = activeSubModeMap[group.Primary];
+                DrawMode activeModeInGroup = activeSubModeMap.GetValueOrDefault(group.Primary, group.Primary);
                 string activePath = iconPaths.GetValueOrDefault(activeModeInGroup, "");
                 var tex = activePath != "" ? TextureManager.GetTexture(activePath) : null;
                 var drawList = ImGui.GetWindowDrawList();
-                bool isGroupActive = group.SubModes.Contains(currentDrawMode) || group.Primary == currentDrawMode;
+
+                bool isGroupActive = currentDrawMode == group.Primary || (group.SubModes.Any() && group.SubModes.Contains(currentDrawMode));
+
                 using (isGroupActive ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
                 {
                     if (ImGui.Button($"##{group.Primary}", iconButtonSize))
                     {
-                        // If the button has no sub-modes (like Text), just activate it directly.
                         if (group.SubModes.Any())
+                        {
                             setCurrentDrawMode(activeModeInGroup);
+                        }
                         else
+                        {
                             setCurrentDrawMode(group.Primary);
+                        }
                     }
                     var min = ImGui.GetItemRectMin();
                     var max = ImGui.GetItemRectMax();
@@ -305,10 +313,7 @@ namespace AetherDraw.UI
                     ImGui.GetForegroundDrawList().AddRect(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), ImGui.GetColorU32(new Vector4(1, 1, 0, 1)), 0, ImDrawFlags.None, 2f);
             }
 
-            // --- Footer Buttons ---
             float availableHeight = ImGui.GetContentRegionAvail().Y;
-
-            // robust height calculation for the footer buttons.
             float bugReportButtonHeight = ImGui.CalcTextSize("Bug report/\nFeature request").Y + ImGui.GetStyle().FramePadding.Y * 2.0f;
             float kofiButtonHeight = ImGui.GetFrameHeight();
             float footerButtonsTotalHeight = bugReportButtonHeight + kofiButtonHeight + ImGui.GetStyle().ItemSpacing.Y;
@@ -318,7 +323,6 @@ namespace AetherDraw.UI
                 ImGui.SetCursorPosY(ImGui.GetCursorPosY() + availableHeight - footerButtonsTotalHeight);
             }
 
-            // GitHub Issues Button
             using (ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.1f, 0.4f, 0.1f, 1.0f)))
             using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(0.1f, 0.5f, 0.1f, 1.0f)))
             using (ImRaii.PushColor(ImGuiCol.ButtonActive, new Vector4(0.2f, 0.6f, 0.2f, 1.0f)))

@@ -17,6 +17,7 @@ namespace AetherDraw.DrawingLogic
         Select,
         Eraser,
         Image, // Added for generic downloaded images, if raidplan ever lets me download from them
+        EmojiImage,
 
         // Image-based Tools / Placeables
         BossImage,

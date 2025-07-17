@@ -33,15 +33,31 @@ namespace AetherDraw.DrawingLogic
             if (Plugin.TextureProvider == null || string.IsNullOrEmpty(resourcePath)) return null;
             if (FailedDownloads.Contains(resourcePath)) return null;
 
-            if (LoadedTextures.TryGetValue(resourcePath, out var tex))
+            if (resourcePath.StartsWith("emoji:"))
             {
-                if (tex?.ImGuiHandle == IntPtr.Zero)
+                if (LoadedTextures.TryGetValue(resourcePath, out var tex))
+                {
+                    if (tex?.ImGuiHandle == IntPtr.Zero)
+                    {
+                        LoadedTextures.TryRemove(resourcePath, out _);
+                        tex?.Dispose();
+                        return null;
+                    }
+                    return tex;
+                }
+                // If not found, it's assumed PreloadEmojiTexture was called and it's in the queue.
+                return null;
+            }
+
+            if (LoadedTextures.TryGetValue(resourcePath, out var existingTex))
+            {
+                if (existingTex?.ImGuiHandle == IntPtr.Zero)
                 {
                     LoadedTextures.TryRemove(resourcePath, out _);
-                    tex?.Dispose();
+                    existingTex?.Dispose();
                     return null;
                 }
-                return tex;
+                return existingTex;
             }
 
             if (!PendingDownloads.Contains(resourcePath) && !PendingCreationTasks.ContainsKey(resourcePath))
@@ -52,6 +68,33 @@ namespace AetherDraw.DrawingLogic
             }
 
             return null;
+        }
+
+        public static void PreloadEmojiTexture(string emojiChar)
+        {
+            if (string.IsNullOrEmpty(emojiChar)) return;
+            string resourcePath = "emoji:" + emojiChar;
+            if (LoadedTextures.ContainsKey(resourcePath) || PendingDownloads.Contains(resourcePath))
+                return;
+
+            Plugin.Log?.Debug($"[TextureManager] New emoji texture request. Initiating generation for: {emojiChar}");
+            PendingDownloads.Add(resourcePath);
+            Task.Run(() => GenerateAndLoadEmojiTexture(emojiChar, resourcePath));
+        }
+
+        private static async Task GenerateAndLoadEmojiTexture(string emojiChar, string resourcePath)
+        {
+            try
+            {
+                byte[] finalUsableBytes = await EmojiRenderer.RenderEmojiToPngAsync(emojiChar);
+                LoadedImageData.TryAdd(resourcePath, finalUsableBytes);
+                TextureCreationQueue.Enqueue((resourcePath, finalUsableBytes));
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.Error(ex, $"[TextureManager] Failed to generate texture for emoji: {emojiChar}");
+                FailedDownloads.Add(resourcePath);
+            }
         }
 
         public static byte[]? GetImageData(string resourcePath)
@@ -122,6 +165,11 @@ namespace AetherDraw.DrawingLogic
                     response.EnsureSuccessStatusCode();
                     rawImageBytes = await response.Content.ReadAsByteArrayAsync();
                 }
+                /*else 
+                if (File.Exists(resourcePath))
+                {
+                    rawImageBytes = await File.ReadAllBytesAsync(resourcePath);
+                }*/
                 else
                 {
                     var assembly = Assembly.GetExecutingAssembly();
@@ -134,7 +182,6 @@ namespace AetherDraw.DrawingLogic
 
                 byte[]? finalUsableBytes = rawImageBytes;
 
-                // If the resource is an SVG, rasterize it into a PNG.
                 if (resourcePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
                 {
                     Plugin.Log?.Debug($"[TextureManager] Rasterizing SVG for: {resourcePath}");
@@ -144,9 +191,7 @@ namespace AetherDraw.DrawingLogic
 
                 if (finalUsableBytes != null)
                 {
-                    // Cache the final, usable image data (always PNG/JPG, never SVG).
                     LoadedImageData.TryAdd(resourcePath, finalUsableBytes);
-                    // Enqueue the same final data for GPU texture creation.
                     TextureCreationQueue.Enqueue((resourcePath, finalUsableBytes));
                 }
                 else
@@ -170,7 +215,6 @@ namespace AetherDraw.DrawingLogic
                 var width = (int)Math.Ceiling(svgSize.Width);
                 var height = (int)Math.Ceiling(svgSize.Height);
 
-                // If the SVG lacks dimensions, fall back to a default size.
                 if (width <= 0) width = 64;
                 if (height <= 0) height = 64;
 
@@ -180,7 +224,6 @@ namespace AetherDraw.DrawingLogic
                 var canvas = surface.Canvas;
                 canvas.Clear(SKColors.Transparent);
 
-                // Scale the picture to fit the canvas, preserving aspect ratio.
                 var matrix = SKMatrix.CreateScale(
                     (float)info.Width / svgSize.Width,
                     (float)info.Height / svgSize.Height);

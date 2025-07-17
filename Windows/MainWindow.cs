@@ -44,6 +44,11 @@ namespace AetherDraw.Windows
         private bool openRaidPlanImportModal = false;
         private string clearConfirmText = "";
 
+        private bool openEmojiInputModal = false;
+private bool openBackgroundUrlModal = false;
+        private string backgroundUrlInput = "";
+
+
         public MainWindow(Plugin plugin, string id = "") : base($"AetherDraw Whiteboard{id}###AetherDrawMainWindow{id}")
         {
             this.plugin = plugin;
@@ -54,8 +59,30 @@ namespace AetherDraw.Windows
             this.shapeInteractionHandler = new ShapeInteractionHandler(this.plugin, this.undoManager, this.pageManager);
             this.planIOManager = new PlanIOManager(this.pageManager, this.inPlaceTextEditor, Plugin.PluginInterface, () => this.ScaledCanvasGridSize, this.GetLayerPriority, this.pageManager.GetCurrentPageIndex);
             this.planIOManager.OnPlanLoadSuccess += HandleSuccessfulPlanLoad;
-            this.toolbarDrawer = new ToolbarDrawer(() => this.currentDrawMode, (newMode) => this.currentDrawMode = newMode, this.shapeInteractionHandler, this.inPlaceTextEditor, this.PerformCopySelected, this.PerformPasteCopied, this.PerformClearAll, this.PerformUndo, () => this.currentShapeFilled, (isFilled) => this.currentShapeFilled = isFilled, this.undoManager, () => this.currentBrushThickness, (newThickness) => this.currentBrushThickness = newThickness, () => this.currentBrushColor, (newColor) => this.currentBrushColor = newColor);
-            this.canvasController = new CanvasController(this.undoManager, this.pageManager, () => currentDrawMode, (newMode) => currentDrawMode = newMode, () => currentBrushColor, () => currentBrushThickness, () => currentShapeFilled, selectedDrawables, () => hoveredDrawable, (newHovered) => hoveredDrawable = newHovered, this.shapeInteractionHandler, this.inPlaceTextEditor, this.configuration, this.plugin);
+
+            // The subscription for local file import is commented out but kept for reference.
+            // this.planIOManager.OnBackgroundImageSelected += PlaceCustomBackground; 
+
+            this.canvasController = new CanvasController(
+                this.undoManager, this.pageManager,
+                () => currentDrawMode, (newMode) => currentDrawMode = newMode,
+                () => currentBrushColor, () => currentBrushThickness, () => currentShapeFilled,
+                selectedDrawables, () => hoveredDrawable, (newHovered) => hoveredDrawable = newHovered,
+                this.shapeInteractionHandler, this.inPlaceTextEditor, this.configuration, this.plugin
+            );
+
+            this.toolbarDrawer = new ToolbarDrawer(
+                () => this.currentDrawMode, (newMode) => this.currentDrawMode = newMode,
+                this.shapeInteractionHandler, this.inPlaceTextEditor,
+                this.PerformCopySelected, this.PerformPasteCopied, this.PerformClearAll, this.PerformUndo,
+                () => this.currentShapeFilled, (isFilled) => this.currentShapeFilled = isFilled,
+                this.undoManager,
+                () => this.currentBrushThickness, (newThickness) => this.currentBrushThickness = newThickness,
+                () => this.currentBrushColor, (newColor) => this.currentBrushColor = newColor,
+                () => this.openEmojiInputModal = true,
+                () => this.openBackgroundUrlModal = true // This action opens the URL modal
+            );
+
             this.SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(850f * 0.75f * ImGuiHelpers.GlobalScale, 600f * ImGuiHelpers.GlobalScale), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
             this.RespectCloseHotkey = true;
             this.currentBrushColor = new Vector4(this.configuration.DefaultBrushColorR, this.configuration.DefaultBrushColorG, this.configuration.DefaultBrushColorB, this.configuration.DefaultBrushColorA);
@@ -72,10 +99,53 @@ namespace AetherDraw.Windows
         public void Dispose()
         {
             if (this.planIOManager != null) this.planIOManager.OnPlanLoadSuccess -= HandleSuccessfulPlanLoad;
+            // this.planIOManager.OnBackgroundImageSelected -= PlaceCustomBackground;
             plugin.NetworkManager.OnConnected -= HandleNetworkConnect;
             plugin.NetworkManager.OnDisconnected -= HandleNetworkDisconnect;
             plugin.NetworkManager.OnStateUpdateReceived -= HandleStateUpdateReceived;
             plugin.NetworkManager.OnRoomClosingWarning -= HandleRoomClosingWarning;
+        }
+
+        private void PlaceCustomBackground(string imageUrl)
+        {
+            if (string.IsNullOrEmpty(imageUrl) || !Uri.TryCreate(imageUrl, UriKind.Absolute, out _))
+            {
+                planIOManager.LastFileDialogError = "Invalid URL provided.";
+                return;
+            }
+
+            var drawables = pageManager.GetCurrentPageDrawables();
+
+            // This action will be recorded for both local and live sessions.
+            undoManager.RecordAction(drawables, "Import Background");
+
+            // Remove any existing background image first.
+            drawables.RemoveAll(d => d.ObjectDrawMode == DrawMode.Image);
+
+            var backgroundImage = new DrawableImage(
+                DrawMode.Image,
+                imageUrl,
+                this.currentCanvasDrawSize / (2f * ImGuiHelpers.GlobalScale),
+                this.currentCanvasDrawSize / ImGuiHelpers.GlobalScale,
+                Vector4.One, 0f
+            );
+            backgroundImage.IsPreview = false;
+
+            // Add the new background to the beginning of the list.
+            drawables.Insert(0, backgroundImage);
+
+            // If in a live session, send the entire page state to ensure everyone is synced.
+            // This is the safest way to handle adding/replacing a background.
+            if (pageManager.IsLiveMode)
+            {
+                var payload = new NetworkPayload
+                {
+                    PageIndex = pageManager.GetCurrentPageIndex(),
+                    Action = PayloadActionType.ReplacePage, // Use ReplacePage to guarantee sync
+                    Data = DrawableSerializer.SerializePageToBytes(drawables)
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+            }
         }
 
         #region Network Event Handlers
@@ -183,13 +253,15 @@ namespace AetherDraw.Windows
 
         public override void Draw()
         {
-            
             TextureManager.DoMainThreadWork();
 
             if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
             if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
             if (openRaidPlanImportModal) { ImGui.OpenPopup("Import from RaidPlan.io"); openRaidPlanImportModal = false; }
+            if (openEmojiInputModal) { ImGui.OpenPopup("Place Emoji"); openEmojiInputModal = false; }
+            if (openBackgroundUrlModal) { ImGui.OpenPopup("Import Background URL"); openBackgroundUrlModal = false; }
+
 
             using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(125f * ImGuiHelpers.GlobalScale, 0), true, ImGuiWindowFlags.None))
             {
@@ -214,6 +286,78 @@ namespace AetherDraw.Windows
             }
             planIOManager.DrawFileDialogs();
             DrawConfirmationPopups();
+            DrawEmojiInputModal();
+            DrawBackgroundUrlModal();
+        }
+
+        private void DrawBackgroundUrlModal()
+        {
+            bool pOpen = true;
+            if (ImGui.BeginPopupModal("Import Background URL", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.Text("Paste the URL of an image below.");
+                ImGui.SetNextItemWidth(300 * ImGuiHelpers.GlobalScale);
+                ImGui.InputText("##BackgroundUrl", ref backgroundUrlInput, 512);
+                ImGui.TextDisabled("e.g., a direct link to a .png or .jpeg from Imgur.");
+
+                ImGui.Separator();
+
+                if (ImGui.Button("Import", new Vector2(120, 0)))
+                {
+                    PlaceCustomBackground(backgroundUrlInput);
+                    backgroundUrlInput = "";
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Cancel"))
+                {
+                    backgroundUrlInput = "";
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
+            }
+        }
+
+        private void DrawEmojiInputModal()
+        {
+            bool pOpen = true;
+            ImGui.SetNextWindowSize(new Vector2(300 * ImGuiHelpers.GlobalScale, 0));
+            if (ImGui.BeginPopupModal("Place Emoji", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.Text("1. Find an emoji and copy it.");
+                ImGui.Text("2. Click the button below to place it.");
+                ImGui.Spacing();
+                ImGui.Separator();
+                ImGui.Spacing();
+
+                if (ImGui.Button("Place from Clipboard", new Vector2(-1, 0)))
+                {
+                    try
+                    {
+                        string clipboardText = ImGui.GetClipboardText();
+                        if (!string.IsNullOrEmpty(clipboardText))
+                        {
+                            string emojiToPlace = char.IsSurrogatePair(clipboardText, 0)
+                                ? clipboardText.Substring(0, 2)
+                                : clipboardText.Substring(0, 1);
+
+                            canvasController.StartPlacingEmoji(emojiToPlace);
+                            ImGui.CloseCurrentPopup();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Plugin.Log?.Error(ex, "Failed to place emoji from clipboard.");
+                        ImGui.CloseCurrentPopup();
+                    }
+                }
+
+                if (ImGui.Button("Cancel", new Vector2(-1, 0)))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
+            }
         }
 
         private void PerformCopySelected() => CopySelected();
@@ -616,6 +760,8 @@ namespace AetherDraw.Windows
             return mode switch
             {
                 DrawMode.TextTool => 10,
+                DrawMode.EmojiImage => 6,
+                DrawMode.Image => 0,
                 DrawMode.Waymark1Image or DrawMode.Waymark2Image or DrawMode.Waymark3Image or DrawMode.Waymark4Image or DrawMode.WaymarkAImage or DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or DrawMode.Party5Image or DrawMode.Party6Image or DrawMode.Party7Image or DrawMode.Party8Image or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.TriangleImage or DrawMode.PlusImage or DrawMode.StackIcon or DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon or DrawMode.Dot1Image or DrawMode.Dot2Image or DrawMode.Dot3Image or DrawMode.Dot4Image or DrawMode.Dot5Image or DrawMode.Dot6Image or DrawMode.Dot7Image or DrawMode.Dot8Image => 5,
                 DrawMode.BossImage or DrawMode.CircleAoEImage or DrawMode.DonutAoEImage or DrawMode.FlareImage or DrawMode.LineStackImage or DrawMode.SpreadImage or DrawMode.StackImage => 3,
                 DrawMode.Pen or DrawMode.StraightLine or DrawMode.Rectangle or DrawMode.Circle or DrawMode.Arrow or DrawMode.Cone or DrawMode.Dash or DrawMode.Donut => 2,
