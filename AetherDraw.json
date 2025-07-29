@@ -1,11 +1,11 @@
 {
     "Author": "rail",
     "Name": "AetherDraw",
-    "Punchline": "Whiteboard planner",
+    "Punchline": "A better whiteboard raid planner",
     "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
-    "Changelog": "v2.3.0.0: Added a tool to place emojis as rotatable images from the clipboard, import a custom background from a URL. More raidplan.io import fixes.\nv2.2.2.0: More import fixes.",
+    "Changelog": "v2.3.0.1: Added a tool to place emojis as rotatable images from the clipboard, import a custom background from a URL. More raidplan.io import fixes.\nv2.2.2.0: More import fixes.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.3.0.0",
+    "AssemblyVersion": "2.3.0.1",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [
