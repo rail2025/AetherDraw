@@ -14,11 +14,12 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 
 
 <br>
-![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)<br>
+<img width="658" height="698" alt="aetherdraw v2 3 0 2" src="https://github.com/user-attachments/assets/cdeedb89-f0a9-4a89-82d4-6e37f49f4389" />
 <br>
-![draw area example](https://github.com/user-attachments/assets/85fa34e4-aa57-494c-8f58-34ffd09c4101)
 <br>
-![export example](https://github.com/user-attachments/assets/93cbb47b-b749-4409-a878-2e76c73756a4)
+<img width="1424" height="709" alt="enlarged canvas" src="https://github.com/user-attachments/assets/82780e4e-c959-4607-9d5f-7ca9ed5722f4" />
+<br>
+<img width="1407" height="718" alt="wdig export" src="https://github.com/user-attachments/assets/fa2a8a8f-6a91-4c1e-9f6e-5c1fda2b15c1" />
 
 <br>
 <img width="1019" height="804" alt="raidplan urls" src="https://github.com/user-attachments/assets/920bdb22-93a2-4c73-9997-effa1533bab7" />
