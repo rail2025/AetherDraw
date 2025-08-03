@@ -36,11 +36,7 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 
 open with /aetherdraw  <br>
 # Installation
-Enter /xlsettings in the chat window and go to the Experimental tab in the opening window.
-click the get testing builds:
-![testing builds](https://github.com/user-attachments/assets/5fc52921-06d0-4545-9038-86f0f93f8a98)
-Click on the Save-icon in the bottom right.
-Enter /xlplugins in the chat window and look for AetherDraw under the Testing Available and install. 
+Enter /xlplugins in the chat window and look for AetherDraw under the All Plugins and install. 
 <br>
 ## Bottom bar buttons:
 <br>
