@@ -14,8 +14,7 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 
 
 <br>
-![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)
- <br>
+![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)<br>
 <br>
 ![draw area example](https://github.com/user-attachments/assets/85fa34e4-aa57-494c-8f58-34ffd09c4101)
 <br>
