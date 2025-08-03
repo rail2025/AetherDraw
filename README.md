@@ -9,9 +9,10 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 <br>
 <br>
 
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/rail2025/AetherDraw/total?logoColor=brightgreen)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/endpoint?url=https://qzysathwfhebdai6xgauhz4q7m0mzmrf.lambda-url.us-east-1.on.aws/AetherDraw)
 <br>
-![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/rail2025/AetherDraw/latest/total?labelColor=blue)
+
+
 <br>
 ![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)
  <br>
