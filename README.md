@@ -113,7 +113,7 @@ The official server (wss://aetherdraw-server.onrender.com/ws) is open source:
 
     🗑️ Deletes rooms on timeout or when empty.
 
-    ❌ No persistent storage, no logs, no user tracking.
+    ❌ No personal information is ever logged or stored.
 
     📜 No session tokens, cookies, or identifiers.
 
