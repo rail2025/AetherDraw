@@ -6,7 +6,7 @@ using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin;
 using HtmlAgilityPack;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using SixLabors.Fonts;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing;

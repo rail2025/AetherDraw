@@ -6,7 +6,7 @@ using System.Numerics;
 using AetherDraw.DrawingLogic;
 using AetherDraw.Networking;
 using Dalamud.Interface.Utility;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 
 namespace AetherDraw.Core
 {
@@ -132,11 +132,11 @@ namespace AetherDraw.Core
             ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
 
             var tex = TextureManager.GetTexture("emoji:" + emojiToPlace);
-            if (tex != null && tex.ImGuiHandle != IntPtr.Zero)
+            if (tex != null && tex.Handle != IntPtr.Zero)
             {
                 var previewSize = new Vector2(30, 30) * ImGuiHelpers.GlobalScale;
                 var screenPos = ImGui.GetMousePos() - (previewSize / 2);
-                ImGui.GetForegroundDrawList().AddImage(tex.ImGuiHandle, screenPos, screenPos + previewSize);
+                ImGui.GetForegroundDrawList().AddImage(tex.Handle, screenPos, screenPos + previewSize);
             }
             else
             {

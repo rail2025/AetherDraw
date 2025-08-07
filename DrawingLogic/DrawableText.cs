@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -74,7 +74,7 @@ namespace AetherDraw.DrawingLogic
         public void PerformLayout()
         {
             laidOutLines_.Clear();
-            if (string.IsNullOrEmpty(this.RawText) || ImGui.GetCurrentContext() == IntPtr.Zero || !ImGui.GetFont().IsLoaded())
+            if (string.IsNullOrEmpty(this.RawText) || ImGui.GetCurrentContext().IsNull == true || !ImGui.GetFont().IsLoaded())
             {
                 CurrentBoundingBoxSize = Vector2.Zero;
                 return;
@@ -142,7 +142,7 @@ namespace AetherDraw.DrawingLogic
             uint displayColor = ImGui.GetColorU32(displayColorVec);
             float targetScaledFontSize = Math.Max(1f, FontSize * ImGuiHelpers.GlobalScale);
 
-            if (ImGui.GetCurrentContext() != IntPtr.Zero && ImGui.GetFont().IsLoaded())
+            if (!ImGui.GetCurrentContext().IsNull && ImGui.GetFont().IsLoaded())
             {
                 var imFont = ImGui.GetFont();
                 float originalFontScale = imFont.Scale;

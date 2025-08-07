@@ -6,7 +6,7 @@ using AetherDraw.Core;
 using AetherDraw.DrawingLogic;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Utility;
 
 namespace AetherDraw.UI
@@ -228,7 +228,7 @@ namespace AetherDraw.UI
                     var min = ImGui.GetItemRectMin();
                     var max = ImGui.GetItemRectMax();
                     var center = (min + max) / 2;
-                    if (tex != null) drawList.AddImage(tex.ImGuiHandle, min, max);
+                    if (tex != null) drawList.AddImage(tex.Handle, min, max);
                     else
                     {
                         var color = ImGui.GetColorU32(ImGuiCol.Text);
@@ -264,7 +264,7 @@ namespace AetherDraw.UI
                         var subTex = subPath != "" ? TextureManager.GetTexture(subPath) : null;
                         if (subTex != null)
                         {
-                            if (ImGui.ImageButton(subTex.ImGuiHandle, popupIconButtonSize))
+                            if (ImGui.ImageButton(subTex.Handle, popupIconButtonSize))
                             {
                                 setCurrentDrawMode(subMode);
                                 activeSubModeMap[group.Primary] = subMode;

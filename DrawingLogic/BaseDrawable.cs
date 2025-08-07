@@ -2,7 +2,7 @@
 using System;
 using System.Drawing; // Required for RectangleF
 using System.Numerics;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using SixLabors.ImageSharp.Processing;
 
 namespace AetherDraw.DrawingLogic

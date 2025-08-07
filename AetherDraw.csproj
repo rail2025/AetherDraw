@@ -1,9 +1,9 @@
-﻿<Project Sdk="Dalamud.NET.Sdk/12.0.2">
+﻿<Project Sdk="Dalamud.NET.Sdk/13.0.0">
 
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.3.0.2</AssemblyVersion>
+        <AssemblyVersion>2.3.0.3</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
@@ -11,7 +11,8 @@
         <Description>A whiteboard raid planner plugin to draw encounter strategies, with live collaboration! Supports raidplan url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.3.0.1</Version>
+        <Version>2.3.0.3</Version>
+        <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>
@@ -72,14 +73,14 @@
 
     <ItemGroup>
         <PackageReference Include="AngleSharp" Version="1.3.0" />
-        <PackageReference Include="HtmlAgilityPack" Version="1.12.1" />
+        <PackageReference Include="HtmlAgilityPack" Version="1.12.2" />
         <PackageReference Include="SixLabors.Fonts" Version="2.1.3" />
-        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.8" />
-        <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.6" />
-        <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.1.5" />
+        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+        <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
+        <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.2.0" />
         <PackageReference Include="SkiaSharp" Version="3.119.0" />
        
-        <PackageReference Include="Svg.Skia" Version="3.0.2" />
+        <PackageReference Include="Svg.Skia" Version="3.0.5" />
     </ItemGroup>
 
     <ItemGroup>
@@ -101,6 +102,16 @@
       <EmbeddedResource Include="PluginImages\svg\6dot.svg" />
       <EmbeddedResource Include="PluginImages\svg\7dot.svg" />
       <EmbeddedResource Include="PluginImages\svg\8dot.svg" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Update="DalamudPackager" Version="13.0.0" />
+    </ItemGroup>
+    <ItemGroup>
+        <Reference Include="ImGui.NET">
+            <HintPath>$(DalamudLibPath)ImGui.NET.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
     </ItemGroup>
 
 </Project>

@@ -1,7 +1,8 @@
 // AetherDraw/DrawingLogic/InteractionHandlerHelpers.cs
 using System;
 using System.Numerics;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
+
 using Dalamud.Interface.Utility;
 
 namespace AetherDraw.DrawingLogic
@@ -79,7 +80,7 @@ namespace AetherDraw.DrawingLogic
                 boxTopLeft + boxSize, // Bottom-right
                 boxTopLeft + new Vector2(0, boxSize.Y)  // Bottom-left
             };
-            ImGuiMouseCursor[] cursors = { ImGuiMouseCursor.ResizeNWSE, ImGuiMouseCursor.ResizeNESW, ImGuiMouseCursor.ResizeNWSE, ImGuiMouseCursor.ResizeNESW };
+            ImGuiMouseCursor[] cursors = { ImGuiMouseCursor.ResizeNwse, ImGuiMouseCursor.ResizeNesw, ImGuiMouseCursor.ResizeNwse, ImGuiMouseCursor.ResizeNesw };
             for (int i = 0; i < 4; i++)
                 if (handler.DrawAndCheckHandle(drawList, bboxCorners[i], canvasOrigin, mousePos, ref mouseOverAny, cursors[i], handler.handleColorResize, handler.handleColorResizeHover))
                     handler.draggedHandleIndex = i;
@@ -103,7 +104,7 @@ namespace AetherDraw.DrawingLogic
             Vector2 shaftMidLogicalRotated = dArrow.StartPointRelative + Vector2.Transform(localShaftEndUnrotated / 2f, Matrix3x2.CreateRotation(dArrow.RotationAngle));
             Vector2 shaftDirRotated = localShaftEndUnrotated.LengthSquared() > 0.001f ? Vector2.Normalize(Vector2.Transform(localShaftEndUnrotated, Matrix3x2.CreateRotation(dArrow.RotationAngle))) : Vector2.Transform(new Vector2(0, 1), Matrix3x2.CreateRotation(dArrow.RotationAngle));
             Vector2 perpOffsetThick = new Vector2(-shaftDirRotated.Y, shaftDirRotated.X) * (dArrow.Thickness / 2f + 10f);
-            if (handler.DrawAndCheckHandle(drawList, shaftMidLogicalRotated + perpOffsetThick, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeNS, handler.handleColorSpecial, handler.handleColorSpecialHover)) handler.draggedHandleIndex = 3;
+            if (handler.DrawAndCheckHandle(drawList, shaftMidLogicalRotated + perpOffsetThick, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeNs, handler.handleColorSpecial, handler.handleColorSpecialHover)) handler.draggedHandleIndex = 3;
         }
 
         /// <summary>

@@ -3,7 +3,7 @@ using System;
 using System.Numerics;
 using System.Collections.Generic;
 using System.Linq;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using System.Drawing; // Required for RectangleF
 

@@ -37,7 +37,8 @@ namespace AetherDraw.DrawingLogic
             {
                 if (LoadedTextures.TryGetValue(resourcePath, out var tex))
                 {
-                    if (tex?.ImGuiHandle == IntPtr.Zero)
+                    // using .Equals() to resolve ambiguity
+                    if (tex == null || tex.Handle.Handle.Equals(IntPtr.Zero))
                     {
                         LoadedTextures.TryRemove(resourcePath, out _);
                         tex?.Dispose();
@@ -51,7 +52,8 @@ namespace AetherDraw.DrawingLogic
 
             if (LoadedTextures.TryGetValue(resourcePath, out var existingTex))
             {
-                if (existingTex?.ImGuiHandle == IntPtr.Zero)
+                // using .Equals() to resolve ambiguity
+                if (existingTex == null || existingTex.Handle.Handle.Equals(IntPtr.Zero))
                 {
                     LoadedTextures.TryRemove(resourcePath, out _);
                     existingTex?.Dispose();
@@ -69,6 +71,7 @@ namespace AetherDraw.DrawingLogic
 
             return null;
         }
+
 
         public static void PreloadEmojiTexture(string emojiChar)
         {

@@ -3,9 +3,9 @@
     "Name": "AetherDraw",
     "Punchline": "A better whiteboard raid planner",
     "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
-    "Changelog": "v2.3.0.2: Added a tool to place emojis as rotatable images from the clipboard, import a custom background from a URL. More raidplan.io import fixes.\nv2.2.2.0: More import fixes.",
+    "Changelog": "v2.3.0.3: API 13.\nv2.3.0.2: Added a tool to place emojis as rotatable images from the clipboard, import a custom background from a URL. More raidplan.io import fixes.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.3.0.2",
+    "AssemblyVersion": "2.3.0.3",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [
@@ -14,7 +14,7 @@
         "image",
         "encounter"
     ],
-    "DalamudApiLevel": 12,
+    "DalamudApiLevel": 13,
     "LoadPriority": 0,
     "LastUpdate": 0,
     "DownloadLinkInstall": "",

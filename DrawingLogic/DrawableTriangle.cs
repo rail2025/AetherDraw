@@ -2,7 +2,7 @@
 using System;
 using System.Drawing;
 using System.Numerics;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;

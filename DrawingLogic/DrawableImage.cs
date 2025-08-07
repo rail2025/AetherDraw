@@ -1,6 +1,6 @@
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing.Processing;
 using SixLabors.ImageSharp.PixelFormats;
@@ -42,7 +42,7 @@ namespace AetherDraw.DrawingLogic
         {
             textureWrapCache ??= TextureManager.GetTexture(this.ImageResourcePath);
 
-            if (textureWrapCache == null || textureWrapCache.ImGuiHandle == IntPtr.Zero)
+            if (textureWrapCache == null || textureWrapCache.Handle == IntPtr.Zero)
             {
                 Vector2 screenPosCenter = (this.PositionRelative * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
                 Vector2 scaledDrawSize = this.DrawSize * ImGuiHelpers.GlobalScale;
@@ -61,7 +61,7 @@ namespace AetherDraw.DrawingLogic
                 quadVertices[i] = (quadVertices[i] * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
             }
 
-            drawList.AddImageQuad(textureWrapCache.ImGuiHandle, quadVertices[0], quadVertices[1], quadVertices[2], quadVertices[3],
+            drawList.AddImageQuad(textureWrapCache.Handle, quadVertices[0], quadVertices[1], quadVertices[2], quadVertices[3],
                                   Vector2.Zero, Vector2.UnitX, Vector2.One, Vector2.UnitY, tintColorU32);
         }
 
