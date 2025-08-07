@@ -9,16 +9,17 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 <br>
 <br>
 
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/rail2025/AetherDraw/total?logoColor=brightgreen)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/endpoint?url=https://qzysathwfhebdai6xgauhz4q7m0mzmrf.lambda-url.us-east-1.on.aws/AetherDraw)
 <br>
-![GitHub Downloads (all assets, latest release)](https://img.shields.io/github/downloads/rail2025/AetherDraw/latest/total?labelColor=blue)
+
+
 <br>
-![aetherdraw - v1 3 0 0](https://github.com/user-attachments/assets/5d8e35bf-d9f0-435f-b9e2-a3cadd5619c9)
- <br>
+<img width="658" height="698" alt="aetherdraw v2 3 0 2" src="https://github.com/user-attachments/assets/cdeedb89-f0a9-4a89-82d4-6e37f49f4389" />
 <br>
-![draw area example](https://github.com/user-attachments/assets/85fa34e4-aa57-494c-8f58-34ffd09c4101)
 <br>
-![export example](https://github.com/user-attachments/assets/93cbb47b-b749-4409-a878-2e76c73756a4)
+<img width="1424" height="709" alt="enlarged canvas" src="https://github.com/user-attachments/assets/82780e4e-c959-4607-9d5f-7ca9ed5722f4" />
+<br>
+<img width="1407" height="718" alt="wdig export" src="https://github.com/user-attachments/assets/fa2a8a8f-6a91-4c1e-9f6e-5c1fda2b15c1" />
 
 <br>
 <img width="1019" height="804" alt="raidplan urls" src="https://github.com/user-attachments/assets/920bdb22-93a2-4c73-9997-effa1533bab7" />
@@ -35,11 +36,7 @@ AetherDraw is for creating and collaborating on plans. For displaying the saved 
 
 open with /aetherdraw  <br>
 # Installation
-Enter /xlsettings in the chat window and go to the Experimental tab in the opening window.
-click the get testing builds:
-![testing builds](https://github.com/user-attachments/assets/5fc52921-06d0-4545-9038-86f0f93f8a98)
-Click on the Save-icon in the bottom right.
-Enter /xlplugins in the chat window and look for AetherDraw under the Testing Available and install. 
+Enter /xlplugins in the chat window and look for AetherDraw under the All Plugins and install. 
 <br>
 ## Bottom bar buttons:
 <br>
@@ -113,7 +110,7 @@ The official server (wss://aetherdraw-server.onrender.com/ws) is open source:
 
     🗑️ Deletes rooms on timeout or when empty.
 
-    ❌ No persistent storage, no logs, no user tracking.
+    ❌ No personal information is ever logged or stored.
 
     📜 No session tokens, cookies, or identifiers.
 
