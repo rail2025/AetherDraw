@@ -144,11 +144,14 @@ namespace AetherDraw.DrawingLogic
         /// </summary>
         public bool DrawAndCheckHandle(ImDrawListPtr drawList, Vector2 logicalPos, Vector2 canvasOrigin, Vector2 mousePos, ref bool mouseOverAny, uint color, uint hoverColor)
         {
+            var foregroundDrawList = ImGui.GetForegroundDrawList();
+
             Vector2 screenPos = logicalPos * ImGuiHelpers.GlobalScale + canvasOrigin;
             bool isHovering = Vector2.Distance(mousePos, logicalPos) < LogicalHandleInteractionRadius;
+
             if (isHovering) mouseOverAny = true;
-            drawList.AddCircleFilled(screenPos, ScaledHandleDrawRadius, isHovering ? hoverColor : color);
-            drawList.AddCircle(screenPos, ScaledHandleDrawRadius + 1f, ImGui.GetColorU32(new Vector4(0, 0, 0, 0.7f)));
+            foregroundDrawList.AddCircleFilled(screenPos, ScaledHandleDrawRadius, isHovering ? hoverColor : color);
+            foregroundDrawList.AddCircle(screenPos, ScaledHandleDrawRadius + 1f, ImGui.GetColorU32(new Vector4(0, 0, 0, 0.7f)));
             return isHovering;
         }
 
