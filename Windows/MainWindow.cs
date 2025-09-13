@@ -149,7 +149,23 @@ private bool openBackgroundUrlModal = false;
         }
 
         #region Network Event Handlers
-        private void HandleNetworkConnect() => pageManager.EnterLiveMode();
+        private void HandleNetworkConnect()
+        {
+            pageManager.EnterLiveMode(); // create the default page locally
+
+            var currentPageDrawables = pageManager.GetCurrentPageDrawables();
+            if (currentPageDrawables != null && currentPageDrawables.Any())
+            {
+                Plugin.Log?.Debug("[Sync Fix] Connected. Sending my default page as a candidate for initial state.");
+                var payload = new NetworkPayload
+                {
+                    PageIndex = pageManager.GetCurrentPageIndex(),
+                    Action = PayloadActionType.ReplacePage,
+                    Data = DrawableSerializer.SerializePageToBytes(currentPageDrawables)
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+            }
+        }
         private void HandleNetworkDisconnect() => pageManager.ExitLiveMode();
         private void HandleRoomClosingWarning() => openRoomClosingPopup = true;
 
@@ -202,18 +218,25 @@ private bool openBackgroundUrlModal = false;
                     case PayloadActionType.UpdateObjects:
                         if (payload.Data == null) return;
                         var updatedObjects = DrawableSerializer.DeserializePageFromBytes(payload.Data);
+
+                        //Plugin.Log?.Debug($"[Receiver] Received UpdateObjects payload containing {updatedObjects.Count} object(s).");
+                        //Plugin.Log?.Debug($"[Receiver] Current local drawable count: {targetPageDrawables.Count}");
                         foreach (var updatedObject in updatedObjects)
                         {
+                            //Plugin.Log?.Debug($"[Receiver] Processing incoming object with ID: {updatedObject.UniqueId} and Type: {updatedObject.ObjectDrawMode}");
                             int index = targetPageDrawables.FindIndex(d => d.UniqueId == updatedObject.UniqueId);
                             if (index != -1)
                             {
+                                //Plugin.Log?.Debug($"[Receiver] Found match by ID. Updating object at index {index}.");
                                 targetPageDrawables[index] = updatedObject;
                             }
                             else
                             {
+                                //Plugin.Log?.Debug($"[Receiver] No match for ID {updatedObject.UniqueId}. Adding it as a new object.");
                                 targetPageDrawables.Add(updatedObject);
                             }
                         }
+                        //Plugin.Log?.Debug($"[Receiver] After processing, local drawable count is now: {targetPageDrawables.Count}");
                         break;
                     case PayloadActionType.ClearPage:
                         targetPageDrawables.Clear();

@@ -11,7 +11,7 @@
         <Description>A whiteboard raid planner plugin to draw encounter strategies, with live collaboration! Supports raidplan url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.3.0.4</Version>
+        <Version>2.3.0.5</Version>
         <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
 

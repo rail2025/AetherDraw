@@ -88,6 +88,7 @@ namespace AetherDraw.Core
                 {
                     IsPreview = false
                 };
+                Plugin.Log?.Debug($"[PageManager] Created default waymark '{wmInfo.Mode}' with UniqueId: {drawableImage.UniqueId}"); 
                 newPage.Drawables.Add(drawableImage);
             }
             return newPage;

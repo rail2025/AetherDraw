@@ -3,16 +3,19 @@
     "Name": "AetherDraw",
     "Punchline": "A better whiteboard raid planner",
     "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
-    "Changelog": "v2.3.0.4: transform handle visible fix.\nv2.3.0.3: API 13.",
+    "Changelog": "v2.3.0.5: Fixed live session synchronization issue that caused duplicate objects (ghosting).\nv2.3.0.4: transform handle visible fix.\nv2.3.0.3: API 13.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.3.0.4",
+    "AssemblyVersion": "2.3.0.5",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [
         "viewer",
         "strategy",
         "image",
-        "encounter"
+        "encounter",
+        "raid",
+        "whiteboard",
+        "planner"
     ],
     "DalamudApiLevel": 13,
     "LoadPriority": 0,

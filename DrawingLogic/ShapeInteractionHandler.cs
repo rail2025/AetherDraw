@@ -113,6 +113,11 @@ namespace AetherDraw.DrawingLogic
                 // When the mouse is released, send one final, definitive update.
                 if (pageManager.IsLiveMode && currentDragType != ActiveDragType.None && currentDragType != ActiveDragType.MarqueeSelection)
                 {
+                    //logging for id tracing
+                    foreach (var drawable in selectedDrawables)
+                    {
+                        Plugin.Log?.Debug($"[Sender] Sending UpdateObjects for object with ID: {drawable.UniqueId} and Type: {drawable.ObjectDrawMode}");
+                    }
                     var payload = new NetworkPayload
                     {
                         PageIndex = pageManager.GetCurrentPageIndex(),
