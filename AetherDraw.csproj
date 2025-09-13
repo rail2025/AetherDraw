@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.3.0.4</AssemblyVersion>
+        <AssemblyVersion>2.3.0.5</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
