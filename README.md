@@ -105,7 +105,7 @@ All art, text, logos, videos, screenshots, images, sounds, music and recordings 
 
 🌐 Relay Server Design
 
-The official server (wss://aetherdraw-server.onrender.com/ws) is open source:
+The server protects your privacy:
 
     🧠 Stateless by design — acts as a dumb relay.
 
@@ -117,7 +117,6 @@ The official server (wss://aetherdraw-server.onrender.com/ws) is open source:
 
     🛑 No awareness of user identities or origins.
 
-    ✅ You can self-host the server if desired.
 
 #### 🧅 Threat Model
 
