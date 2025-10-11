@@ -1,11 +1,11 @@
 {
     "Author": "rail",
     "Name": "AetherDraw",
-    "Punchline": "A better whiteboard raid planner",
-    "Description": "Draw strategy images for encounters. Use /aetherdraw to open. Supports live collaboration.",
-    "Changelog": "v2.3.0.5: Fixed live session synchronization issue that caused duplicate objects (ghosting).\nv2.3.0.4: transform handle visible fix.\nv2.3.0.3: API 13.",
+    "Punchline": "A realtime multi-user whiteboard raid planner. Compatible with aetherdraw.me",
+    "Description": "Draw strategy plans for encounters. Use /aetherdraw to open. Supports realtime multi-user, multi-platform collaboration. Also available at aetherdraw.me when plugins are down!!",
+    "Changelog": "v2.3.1.0:Changed BG to image import, page sync fixes.\nv2.3.0.5: Fixed live session synchronization issue that caused duplicate objects (ghosting).\nv2.3.0.4: transform handle visible fix.\nv2.3.0.3: API 13.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.3.0.5",
+    "AssemblyVersion": "2.3.1.0",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [

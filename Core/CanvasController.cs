@@ -411,7 +411,7 @@ namespace AetherDraw.Core
                 DrawMode.Circle => new DrawableCircle(startPosLogical, finalColor, thickness, isFilled),
                 DrawMode.Arrow => new DrawableArrow(startPosLogical, finalColor, thickness),
                 DrawMode.Cone => new DrawableCone(startPosLogical, finalColor, thickness, isFilled),
-                DrawMode.Triangle => new DrawableTriangle(startPosLogical, finalColor),
+                DrawMode.Triangle => new DrawableTriangle(startPosLogical, finalColor, thickness, isFilled),
                 _ => null,
             };
         }

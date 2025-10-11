@@ -20,6 +20,7 @@ namespace AetherDraw.DrawingLogic
         private readonly Plugin plugin;
         private readonly UndoManager undoManager;
         private readonly PageManager pageManager;
+        private readonly Configuration configuration;
 
         /// <summary>
         /// Defines the type of drag operation currently being performed by the user.
@@ -36,6 +37,8 @@ namespace AetherDraw.DrawingLogic
         /// This is used to prevent the client from processing its own reflected network messages.
         /// </summary>
         public List<Guid> DraggedObjectIds { get; } = new List<Guid>();
+
+        private readonly Action<Guid> onObjectUpdateSent;
 
         #region Public State for Drag Operations
         public Vector2 dragStartMousePosLogical;
@@ -63,12 +66,13 @@ namespace AetherDraw.DrawingLogic
         /// <param name="plugin">The main plugin instance.</param>
         /// <param name="undoManagerInstance">The application's UndoManager.</param>
         /// <param name="pageManagerInstance">The application's PageManager.</param>
-        public ShapeInteractionHandler(Plugin plugin, UndoManager undoManagerInstance, PageManager pageManagerInstance)
+        public ShapeInteractionHandler(Plugin plugin, UndoManager undoManagerInstance, PageManager pageManagerInstance, Action<Guid> onObjectUpdateSent)
         {
             this.plugin = plugin;
+            this.configuration = plugin.Configuration;
             this.undoManager = undoManagerInstance ?? throw new ArgumentNullException(nameof(undoManagerInstance));
             this.pageManager = pageManagerInstance ?? throw new ArgumentNullException(nameof(pageManagerInstance));
-
+            this.onObjectUpdateSent = onObjectUpdateSent;
             this.handleColorDefault = ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 0.9f));
             this.handleColorHover = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.5f, 1.0f));
             this.handleColorRotation = ImGui.GetColorU32(new Vector4(0.5f, 1.0f, 0.5f, 0.9f));
@@ -110,9 +114,40 @@ namespace AetherDraw.DrawingLogic
 
             if (isLMBReleased)
             {
+                // SNAP TO GRID LOGIC (on mouse release)
+                if (configuration.IsSnapToGrid && currentDragType == ActiveDragType.GeneralSelection && selectedDrawables.Any())
+                {
+                    foreach (var drawable in selectedDrawables)
+                    {
+                        Vector2 anchorPoint;
+                        // Determine the primary anchor point of the shape
+                        if (drawable is DrawableImage img) anchorPoint = img.PositionRelative;
+                        else if (drawable is DrawableCircle circle) anchorPoint = circle.CenterRelative;
+                        else if (drawable is DrawableRectangle rect) anchorPoint = rect.GetGeometry().center;
+                        else if (drawable is DrawableText text) anchorPoint = text.PositionRelative;
+                        else if (drawable is DrawableArrow arrow) anchorPoint = arrow.StartPointRelative;
+                        else if (drawable is DrawableCone cone) anchorPoint = cone.ApexRelative;
+                        else if (drawable is DrawablePath path && path.PointsRelative.Any()) anchorPoint = path.PointsRelative[0];
+                        else if (drawable is DrawableStraightLine line) anchorPoint = line.StartPointRelative;
+                        else if (drawable is DrawableDash dash && dash.PointsRelative.Any()) anchorPoint = dash.PointsRelative[0];
+                        else continue; // Skip shapes without a clear anchor
+
+                        var snappedAnchor = HitDetection.SnapToGrid(anchorPoint, configuration.GridSize);
+                        var snapDelta = snappedAnchor - anchorPoint;
+                        if (snapDelta.LengthSquared() > 0.01f)
+                        {
+                            drawable.Translate(snapDelta);
+                        }
+                    }
+                }
+                
                 // When the mouse is released, send one final, definitive update.
                 if (pageManager.IsLiveMode && currentDragType != ActiveDragType.None && currentDragType != ActiveDragType.MarqueeSelection)
                 {
+                    // loop to register the moved objects for echo cancellation
+                    foreach (var drawable in selectedDrawables)
+                        onObjectUpdateSent(drawable.UniqueId);
+                    
                     //logging for id tracing
                     foreach (var drawable in selectedDrawables)
                     {

@@ -24,20 +24,20 @@ namespace AetherDraw.DrawingLogic
             this.Vertices[2] = v3;
             this.Color = color;
             this.IsFilled = true; // Triangles from this source are always filled
-            this.Thickness = 1f;
+            this.Thickness = 4f;
             this.IsPreview = false;
         }
 
         // Overloaded constructor for manual drawing
-        public DrawableTriangle(Vector2 startPoint, Vector4 color)
+        public DrawableTriangle(Vector2 startPoint, Vector4 color, float thickness, bool isFilled)
         {
             this.ObjectDrawMode = DrawMode.Triangle;
             this.Vertices[0] = startPoint;
             this.Vertices[1] = startPoint;
             this.Vertices[2] = startPoint;
             this.Color = color;
-            this.IsFilled = true;
-            this.Thickness = 1f;
+            this.IsFilled = isFilled;
+            this.Thickness = thickness;
             this.IsPreview = true;
         }
 
@@ -59,11 +59,15 @@ namespace AetherDraw.DrawingLogic
 
             if (IsFilled)
             {
-                drawList.AddTriangleFilled(screenVertices[0], screenVertices[1], screenVertices[2], displayColor);
+                drawList.AddTriangleFilled(screenVertices[0], screenVertices[1], screenVertices[2], displayColor); 
             }
             else
             {
-                drawList.AddTriangle(screenVertices[0], screenVertices[1], screenVertices[2], displayColor, Thickness * ImGuiHelpers.GlobalScale);
+                drawList.AddPolyline(ref screenVertices[0], 3, displayColor, ImDrawFlags.Closed, Math.Max
+                    (1f * ImGuiHelpers.GlobalScale,
+                    (Thickness * ImGuiHelpers.GlobalScale) + (IsSelected || IsHovered ? 2f * ImGuiHelpers.GlobalScale : 0f)
+                    )
+                    );
             }
         }
 

@@ -205,6 +205,21 @@ namespace AetherDraw.Core
             return true;
         }
 
+        public bool DeletePageAtIndex(int index)
+        {
+            var pages = GetAllPages();
+            if (index < 0 || index >= pages.Count || pages.Count <= 1) return false;
+
+            pages.RemoveAt(index);
+
+            // If the deleted page was at or before the current page, we need to adjust the index.
+            if (currentPageIndex >= index)
+            {
+                currentPageIndex = Math.Max(0, currentPageIndex - 1);
+            }
+            return true;
+        }
+
         /// <summary>
         /// Checks if there is a page stored in the internal clipboard.
         /// </summary>

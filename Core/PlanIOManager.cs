@@ -175,31 +175,71 @@ namespace AetherDraw.Core
         {
             LastFileDialogError = "Importing from URL...";
             string correctedUrl = url.Trim();
-            if (Regex.IsMatch(correctedUrl, @"^https?://pastebin\.com/([a-zA-Z0-9]+)$"))
-            {
-                correctedUrl = $"https://pastebin.com/raw/{Regex.Match(correctedUrl, @"^https?://pastebin\.com/([a-zA-Z0-9]+)$").Groups[1].Value}";
-            }
-            if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out Uri? uriResult))
-            {
-                LastFileDialogError = "Invalid or unsupported URL format. Try raidplan.io links.";
-                return;
-            }
+
             try
             {
-                string content = await HttpClient.GetStringAsync(uriResult);
-                bool isRaidPlan = uriResult.Host.EndsWith("raidplan.io");
-                if (isRaidPlan)
+                if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out Uri? uri))
+                {
+                    LastFileDialogError = "Invalid URL format.";
+                    return;
+                }
+
+                // Case 1: AetherDraw URL
+                if (uri.Host.EndsWith("aetherdraw-server.onrender.com") || uri.Host.EndsWith("aetherdraw.me"))
+                {
+                    var match = Regex.Match(uri.Query, @"[?&]plan=([^&]+)");
+                    if (match.Success)
+                    {
+                        string planId = match.Groups[1].Value;
+                        // Construct the direct url
+                        string apiUrl = $"https://aetherdraw-server.onrender.com/plan/load/{planId}";
+
+                        // Fetch the raw plan data directly from the server
+                        byte[] planDataBytes = await HttpClient.GetByteArrayAsync(apiUrl);
+
+                        var loadedPlan = PlanSerializer.DeserializePlanFromBytes(planDataBytes);
+                        if (loadedPlan != null && loadedPlan.Pages != null)
+                        {
+                            pageManager.LoadPages(loadedPlan.Pages);
+                            LastFileDialogError = "Successfully imported AetherDraw plan.";
+                            OnPlanLoadSuccess?.Invoke();
+                        }
+                        else
+                        {
+                            LastFileDialogError = "Failed to deserialize plan data from AetherDraw URL.";
+                        }
+                        return; // Import complete.
+                    }
+                }
+
+                // Case 2: Pastebin URL (convert to raw).
+                if (Regex.IsMatch(correctedUrl, @"^https?://pastebin\.com/([a-zA-Z0-9]+)$"))
+                {
+                    correctedUrl = $"https://pastebin.com/raw/{Regex.Match(correctedUrl, @"^https?://pastebin\.com/([a-zA-Z0-9]+)$").Groups[1].Value}";
+                }
+
+                // Case 3: RaidPlan.io or Raw Pastebin.
+                // Re-validate the URI in case it was changed (for pastebin).
+                if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out Uri? contentUri))
+                {
+                    LastFileDialogError = "Invalid URL format.";
+                    return;
+                }
+
+                string content = await HttpClient.GetStringAsync(contentUri);
+                if (contentUri.Host.Contains("raidplan.io"))
                 {
                     await ProcessRaidPlanInBackend(content);
                 }
                 else
                 {
+                    // This handles raw pastebin content.
                     RequestLoadPlanFromText(content);
                 }
             }
             catch (Exception ex)
             {
-                LastFileDialogError = "Could not retrieve data from URL.";
+                LastFileDialogError = "Could not retrieve or process data from URL.";
                 Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading from URL {correctedUrl}.");
             }
         }

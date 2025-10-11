@@ -16,6 +16,11 @@ namespace AetherDraw
         public float DefaultBrushColorA { get; set; } = 1.0f;
         public float DefaultBrushThickness { get; set; } = 4.0f;
 
+        public bool IsGridVisible { get; set; } = true;
+        public float GridSize { get; set; } = 40f;
+        public bool IsSnapToGrid { get; set; } = true;
+
+
         [NonSerialized]
         private IDalamudPluginInterface? pluginInterface; // Renamed from _pluginInterface
 

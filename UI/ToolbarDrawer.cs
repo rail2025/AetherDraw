@@ -1,13 +1,15 @@
+using AetherDraw.Core;
+using AetherDraw.DrawingLogic;
+using AetherDraw.Networking;
+using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.Game.Fate;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using AetherDraw.Core;
-using AetherDraw.DrawingLogic;
-using Dalamud.Interface.Utility;
-using Dalamud.Interface.Utility.Raii;
-using Dalamud.Bindings.ImGui;
-using Dalamud.Utility;
 
 namespace AetherDraw.UI
 {
@@ -20,6 +22,8 @@ namespace AetherDraw.UI
 
     public class ToolbarDrawer
     {
+        private readonly Plugin plugin;
+        private readonly PageManager pageManager; 
         private readonly Func<DrawMode> getCurrentDrawMode;
         private readonly Action<DrawMode> setCurrentDrawMode;
         private readonly Func<bool> getIsShapeFilled;
@@ -34,6 +38,12 @@ namespace AetherDraw.UI
         private readonly Action onUndo;
         private readonly Action onOpenEmojiPicker;
         private readonly Action onImportBackgroundUrl; // New action for URL import
+        private readonly Func<bool> getIsGridVisible;
+        private readonly Action<bool> setIsGridVisible;
+        private readonly Func<float> getGridSize;
+        private readonly Action<float> setGridSize;
+        private readonly Func<bool> getIsSnapToGrid;
+        private readonly Action<bool> setIsSnapToGrid;
         private readonly ShapeInteractionHandler shapeInteractionHandler;
         private readonly DrawingLogic.InPlaceTextEditor inPlaceTextEditor;
         private readonly UndoManager undoManager;
@@ -51,6 +61,7 @@ namespace AetherDraw.UI
         };
 
         public ToolbarDrawer(
+            Plugin plugin, PageManager pageManager, 
             Func<DrawMode> getCurrentDrawMode, Action<DrawMode> setCurrentDrawMode,
             ShapeInteractionHandler shapeInteractionHandler, DrawingLogic.InPlaceTextEditor inPlaceTextEditor,
             Action onCopySelected, Action onPasteCopied, Action onClearAll, Action onUndo,
@@ -59,8 +70,14 @@ namespace AetherDraw.UI
             Func<float> getCurrentBrushThickness, Action<float> setCurrentBrushThickness,
             Func<Vector4> getCurrentBrushColor, Action<Vector4> setCurrentBrushColor,
             Action onOpenEmojiPicker,
-            Action onImportBackgroundUrl) // Renamed for clarity
+            Action onImportBackgroundUrl,
+            Func<bool> getIsGridVisible, Action<bool> setIsGridVisible,
+            Func<float> getGridSize, Action<float> setGridSize,
+            Func<bool> getIsSnapToGrid, Action<bool> setIsSnapToGrid) 
+
         {
+            this.plugin = plugin;
+            this.pageManager = pageManager; 
             this.getCurrentDrawMode = getCurrentDrawMode ?? throw new ArgumentNullException(nameof(getCurrentDrawMode));
             this.setCurrentDrawMode = setCurrentDrawMode ?? throw new ArgumentNullException(nameof(setCurrentDrawMode));
             this.shapeInteractionHandler = shapeInteractionHandler ?? throw new ArgumentNullException(nameof(shapeInteractionHandler));
@@ -78,6 +95,12 @@ namespace AetherDraw.UI
             this.setCurrentBrushColor = setCurrentBrushColor ?? throw new ArgumentNullException(nameof(setCurrentBrushColor));
             this.onOpenEmojiPicker = onOpenEmojiPicker;
             this.onImportBackgroundUrl = onImportBackgroundUrl;
+            this.getIsGridVisible = getIsGridVisible;
+            this.setIsGridVisible = setIsGridVisible;
+            this.getGridSize = getGridSize;
+            this.setGridSize = setGridSize;
+            this.getIsSnapToGrid = getIsSnapToGrid;
+            this.setIsSnapToGrid = setIsSnapToGrid;
 
             this.mainToolbarButtons = new List<ToolbarButton>
             {
@@ -191,9 +214,66 @@ namespace AetherDraw.UI
                 onOpenEmojiPicker();
             }
 
-            if (ImGui.Button("Set BG (URL)", new Vector2(btnWidthFull, 0)))
+            if (ImGui.Button("Add Image (URL)", new Vector2(btnWidthFull, 0)))
             {
                 onImportBackgroundUrl();
+            }
+            ImGui.Separator();
+
+            // Grid Controls Section
+            bool gridVisible = getIsGridVisible();
+            if (ImGui.Checkbox("Grid", ref gridVisible))
+            {
+                setIsGridVisible(gridVisible);
+                // live sync toggle
+                if (pageManager.IsLiveMode)
+                {
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.UpdateGridVisibility,
+                        Data = new byte[] { (byte)(gridVisible ? 1 : 0) }
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                }
+            }
+            ImGui.SameLine();
+            ImGui.Text("size");
+
+            ImGui.SameLine();
+            // Create a temporary integer variable for the UI widget
+            int gridSizeInt = (int)getGridSize();
+
+            // Calculate remaining width for the input box to fit on one line
+            float labelWidth = ImGui.CalcTextSize("Pxl").X;
+            float checkboxWidth = ImGui.GetItemRectSize().X;
+            float spacing = ImGui.GetStyle().ItemSpacing.X * 2; // Spacing after checkbox and after label
+            ImGui.SetNextItemWidth(availableWidth - checkboxWidth - labelWidth - spacing);
+
+            // Use the temporary integer with InputInt
+            if (ImGui.InputInt("##GridSpacingInput", ref gridSizeInt))
+            {
+                // Clamp the integer value
+                int newSize = Math.Clamp(gridSizeInt, 10, 200);
+                // Convert the final integer back to a float to save it
+                setGridSize((float)newSize);
+                // live sync network call
+                if (pageManager.IsLiveMode)
+                {
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.UpdateGrid,
+                        Data = BitConverter.GetBytes((float)newSize)
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                }
+            }
+
+            bool snapToGrid = getIsSnapToGrid();
+            if (ImGui.Checkbox("Snap to Grid", ref snapToGrid))
+            {
+                setIsSnapToGrid(snapToGrid);
             }
 
             ImGui.Separator();

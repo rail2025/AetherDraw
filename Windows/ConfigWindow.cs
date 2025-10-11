@@ -66,6 +66,30 @@ namespace AetherDraw.Windows
                 this.configuration.DefaultBrushThickness = tempThickness;
                 this.configuration.Save();
             }
+            ImGui.Text("Grid Settings");
+
+            bool gridVisible = this.configuration.IsGridVisible;
+            if (ImGui.Checkbox("Grid Visible", ref gridVisible))
+            {
+                this.configuration.IsGridVisible = gridVisible;
+                this.configuration.Save();
+            }
+
+            int gridSize = (int)this.configuration.GridSize;
+            // Use DragInt for a slider-like feel with up/down arrows
+            if (ImGui.DragInt("Grid Spacing", ref gridSize, 1, 10, 200))
+            {
+                this.configuration.GridSize = gridSize;
+                this.configuration.Save();
+            }
+
+            bool snapToGrid = this.configuration.IsSnapToGrid;
+            if (ImGui.Checkbox("Snap to Grid (Default On)", ref snapToGrid))
+            {
+                this.configuration.IsSnapToGrid = snapToGrid;
+                this.configuration.Save();
+            }
+        
         }
     }
 }

@@ -39,6 +39,30 @@ namespace AetherDraw.Networking
         /// The payload's Data will contain the full serialized page state.
         /// </summary>
         ReplacePage,
+
+        /// <summary>
+        /// Action to add a new, blank page to the end of the page list.
+        /// The payload's Data will be empty.
+        /// </summary>
+        AddNewPage,
+
+        /// <summary>
+        /// Action to delete a page at a specific index.
+        /// The payload's Data will be empty. The PageIndex indicates which page to remove.
+        /// </summary>
+        DeletePage,
+
+        /// <summary>
+        /// Action to update the grid spacing for a page.
+        /// The payload's Data will contain a float representing the new grid size.
+        /// </summary>
+        UpdateGrid,
+
+        /// <summary>
+        /// Action to update the visibility of the grid for a page.
+        /// The payload's Data will contain a byte (0 for false, 1 for true).
+        /// </summary>
+        UpdateGridVisibility,
     }
 
     /// <summary>

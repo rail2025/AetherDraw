@@ -74,5 +74,15 @@ namespace AetherDraw.DrawingLogic
             };
             return corners;
         }
+
+        // SnapToGrid helper method
+        public static Vector2 SnapToGrid(Vector2 point, float gridSize)
+        {
+            if (gridSize <= 0) return point;
+            return new Vector2(
+                MathF.Round(point.X / gridSize) * gridSize,
+                MathF.Round(point.Y / gridSize) * gridSize
+            );
+        }
     }
 }

@@ -9,9 +9,11 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 
 namespace AetherDraw.Windows
 {
@@ -45,8 +47,24 @@ namespace AetherDraw.Windows
         private string clearConfirmText = "";
 
         private bool openEmojiInputModal = false;
-private bool openBackgroundUrlModal = false;
+        private bool openBackgroundUrlModal = false;
+        private readonly ConcurrentDictionary<Guid, bool> pendingEchoGuids = new();
         private string backgroundUrlInput = "";
+
+        // helper grid methods
+        private Vector2 SnapToGrid(Vector2 point)
+        {
+            if (!configuration.IsSnapToGrid || configuration.GridSize <= 0) return point;
+            return new Vector2(
+                MathF.Round(point.X / configuration.GridSize) * configuration.GridSize,
+                MathF.Round(point.Y / configuration.GridSize) * configuration.GridSize
+            );
+        }
+
+        private bool IsDrawingOrPlacingMode(DrawMode mode)
+        {
+            return mode != DrawMode.Select && mode != DrawMode.Eraser;
+        }
 
 
         public MainWindow(Plugin plugin, string id = "") : base($"AetherDraw Whiteboard{id}###AetherDrawMainWindow{id}")
@@ -56,7 +74,7 @@ private bool openBackgroundUrlModal = false;
             this.undoManager = new UndoManager();
             this.pageManager = new PageManager();
             this.inPlaceTextEditor = new InPlaceTextEditor(this.plugin, this.undoManager, this.pageManager);
-            this.shapeInteractionHandler = new ShapeInteractionHandler(this.plugin, this.undoManager, this.pageManager);
+            this.shapeInteractionHandler = new ShapeInteractionHandler(this.plugin, this.undoManager, this.pageManager, this.AddToPending);
             this.planIOManager = new PlanIOManager(this.pageManager, this.inPlaceTextEditor, Plugin.PluginInterface, () => this.ScaledCanvasGridSize, this.GetLayerPriority, this.pageManager.GetCurrentPageIndex);
             this.planIOManager.OnPlanLoadSuccess += HandleSuccessfulPlanLoad;
 
@@ -72,6 +90,7 @@ private bool openBackgroundUrlModal = false;
             );
 
             this.toolbarDrawer = new ToolbarDrawer(
+                this.plugin, this.pageManager,
                 () => this.currentDrawMode, (newMode) => this.currentDrawMode = newMode,
                 this.shapeInteractionHandler, this.inPlaceTextEditor,
                 this.PerformCopySelected, this.PerformPasteCopied, this.PerformClearAll, this.PerformUndo,
@@ -80,7 +99,10 @@ private bool openBackgroundUrlModal = false;
                 () => this.currentBrushThickness, (newThickness) => this.currentBrushThickness = newThickness,
                 () => this.currentBrushColor, (newColor) => this.currentBrushColor = newColor,
                 () => this.openEmojiInputModal = true,
-                () => this.openBackgroundUrlModal = true // This action opens the URL modal
+                () => this.openBackgroundUrlModal = true, // This action opens the URL modal
+                () => this.configuration.IsGridVisible, (v) => { this.configuration.IsGridVisible = v; this.configuration.Save(); },
+                () => this.configuration.GridSize, (v) => { this.configuration.GridSize = v; this.configuration.Save(); },
+                () => this.configuration.IsSnapToGrid, (v) => { this.configuration.IsSnapToGrid = v; this.configuration.Save(); }
             );
 
             this.SizeConstraints = new WindowSizeConstraints { MinimumSize = new Vector2(850f * 0.75f * ImGuiHelpers.GlobalScale, 600f * ImGuiHelpers.GlobalScale), MaximumSize = new Vector2(float.MaxValue, float.MaxValue) };
@@ -119,20 +141,25 @@ private bool openBackgroundUrlModal = false;
             // This action will be recorded for both local and live sessions.
             undoManager.RecordAction(drawables, "Import Background");
 
-            // Remove any existing background image first.
-            drawables.RemoveAll(d => d.ObjectDrawMode == DrawMode.Image);
+            // Define a smaller default size for imported images
+            var defaultImageSize = new Vector2(150f, 150f);
 
-            var backgroundImage = new DrawableImage(
+            // Remove any existing background image first.
+            //drawables.RemoveAll(d => d.ObjectDrawMode == DrawMode.Image);
+
+            var newImage = new DrawableImage(
                 DrawMode.Image,
                 imageUrl,
                 this.currentCanvasDrawSize / (2f * ImGuiHelpers.GlobalScale),
-                this.currentCanvasDrawSize / ImGuiHelpers.GlobalScale,
+                //this.currentCanvasDrawSize / ImGuiHelpers.GlobalScale,
+                defaultImageSize,
                 Vector4.One, 0f
             );
-            backgroundImage.IsPreview = false;
+            newImage.IsPreview = false;
 
             // Add the new background to the beginning of the list.
-            drawables.Insert(0, backgroundImage);
+            //drawables.Insert(0, backgroundImage);
+            drawables.Add(newImage);
 
             // If in a live session, send the entire page state to ensure everyone is synced.
             // This is the safest way to handle adding/replacing a background.
@@ -149,9 +176,12 @@ private bool openBackgroundUrlModal = false;
         }
 
         #region Network Event Handlers
-        private void HandleNetworkConnect()
+        private async void HandleNetworkConnect()
         {
             pageManager.EnterLiveMode(); // create the default page locally
+
+            // Add a small delay to allow the server to send the room history first.
+            await Task.Delay(100);
 
             var currentPageDrawables = pageManager.GetCurrentPageDrawables();
             if (currentPageDrawables != null && currentPageDrawables.Any())
@@ -172,26 +202,30 @@ private bool openBackgroundUrlModal = false;
         private void HandleStateUpdateReceived(NetworkPayload payload)
         {
             if (!pageManager.IsLiveMode) return;
-            var allPages = pageManager.GetAllPages();
-            if (payload.Action == PayloadActionType.ReplacePage)
+            // This condition is expanded to handle both AddNewPage and ReplacePage
+            if (payload.Action == PayloadActionType.ReplacePage || payload.Action == PayloadActionType.AddNewPage)
             {
-                while (allPages.Count <= payload.PageIndex)
+                var pages = pageManager.GetAllPages();
+                while (pages.Count <= payload.PageIndex)
                 {
                     pageManager.AddNewPage(false);
                 }
             }
+
+            var allPages = pageManager.GetAllPages(); // Get a fresh reference after potential additions
             if (payload.PageIndex < 0 || payload.PageIndex >= allPages.Count)
             {
                 Plugin.Log?.Warning($"Received state update for invalid page index: {payload.PageIndex}");
                 return;
             }
-            if (payload.Action == PayloadActionType.UpdateObjects)
+            // old copy paste logic
+            /*if (payload.Action == PayloadActionType.UpdateObjects)
             {
                 if (shapeInteractionHandler.DraggedObjectIds.Any())
                 {
                     return;
                 }
-            }
+            }*/
             var targetPageDrawables = allPages[payload.PageIndex].Drawables;
             try
             {
@@ -200,7 +234,13 @@ private bool openBackgroundUrlModal = false;
                     case PayloadActionType.AddObjects:
                         if (payload.Data == null) return;
                         var receivedObjects = DrawableSerializer.DeserializePageFromBytes(payload.Data);
-                        targetPageDrawables.AddRange(receivedObjects);
+                        // Filter out objects that this client has already created locally to prevent duplication from the server echo.
+                        var objectsToAdd = receivedObjects.Where(obj => !pendingEchoGuids.TryRemove(obj.UniqueId, out _)).ToList();
+
+                        if (objectsToAdd.Any())
+                        {
+                            targetPageDrawables.AddRange(objectsToAdd);
+                        }
                         break;
                     case PayloadActionType.DeleteObjects:
                         if (payload.Data == null) return;
@@ -223,7 +263,11 @@ private bool openBackgroundUrlModal = false;
                         //Plugin.Log?.Debug($"[Receiver] Current local drawable count: {targetPageDrawables.Count}");
                         foreach (var updatedObject in updatedObjects)
                         {
-                            //Plugin.Log?.Debug($"[Receiver] Processing incoming object with ID: {updatedObject.UniqueId} and Type: {updatedObject.ObjectDrawMode}");
+                            if (pendingEchoGuids.TryRemove(updatedObject.UniqueId, out _))
+                            {
+                                continue;
+                            }
+                             //Plugin.Log?.Debug($"[Receiver] Processing incoming object with ID: {updatedObject.UniqueId} and Type: {updatedObject.ObjectDrawMode}");
                             int index = targetPageDrawables.FindIndex(d => d.UniqueId == updatedObject.UniqueId);
                             if (index != -1)
                             {
@@ -245,6 +289,25 @@ private bool openBackgroundUrlModal = false;
                         if (payload.Data == null) return;
                         var fullPageState = DrawableSerializer.DeserializePageFromBytes(payload.Data);
                         allPages[payload.PageIndex].Drawables = fullPageState;
+                        break;
+                    case PayloadActionType.AddNewPage:
+                        break;
+                    case PayloadActionType.DeletePage:
+                        pageManager.DeletePageAtIndex(payload.PageIndex);
+                        break;
+                    case PayloadActionType.UpdateGrid:
+                        if (payload.Data != null && payload.Data.Length >= 4)
+                        {
+                            float newGridSize = BitConverter.ToSingle(payload.Data, 0);
+                            this.configuration.GridSize = newGridSize;
+                        }
+                        break;
+                    case PayloadActionType.UpdateGridVisibility:
+                        if (payload.Data != null && payload.Data.Length >= 1)
+                        {
+                            bool isVisible = payload.Data[0] == 1;
+                            this.configuration.IsGridVisible = isVisible;
+                        }
                         break;
                 }
             }
@@ -281,9 +344,9 @@ private bool openBackgroundUrlModal = false;
             if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
             if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
-            if (openRaidPlanImportModal) { ImGui.OpenPopup("Import from RaidPlan.io"); openRaidPlanImportModal = false; }
+            if (openRaidPlanImportModal) { ImGui.OpenPopup("Import from URL"); openRaidPlanImportModal = false; }
             if (openEmojiInputModal) { ImGui.OpenPopup("Place Emoji"); openEmojiInputModal = false; }
-            if (openBackgroundUrlModal) { ImGui.OpenPopup("Import Background URL"); openBackgroundUrlModal = false; }
+            if (openBackgroundUrlModal) { ImGui.OpenPopup("Import Image from URL"); openBackgroundUrlModal = false; }
 
 
             using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(125f * ImGuiHelpers.GlobalScale, 0), true, ImGuiWindowFlags.None))
@@ -316,7 +379,7 @@ private bool openBackgroundUrlModal = false;
         private void DrawBackgroundUrlModal()
         {
             bool pOpen = true;
-            if (ImGui.BeginPopupModal("Import Background URL", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            if (ImGui.BeginPopupModal("Import Image from URL", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
             {
                 ImGui.Text("Paste the URL of an image below.");
                 ImGui.SetNextItemWidth(300 * ImGuiHelpers.GlobalScale);
@@ -405,6 +468,9 @@ private bool openBackgroundUrlModal = false;
             }
             if (pageManager.IsLiveMode && pastedItems.Any())
             {
+                foreach (var item in pastedItems)
+                    AddToPending(item.UniqueId); 
+                
                 var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.AddObjects, Data = DrawableSerializer.SerializePageToBytes(pastedItems) };
                 _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
             }
@@ -518,7 +584,7 @@ private bool openBackgroundUrlModal = false;
                     textToLoad = "";
                     openImportTextModal = true;
                 }
-                if (ImGui.MenuItem("Import from RaidPlan.io URL..."))
+                if (ImGui.MenuItem("Import from URL..."))
                 {
                     raidPlanUrlToLoad = "";
                     openRaidPlanImportModal = true;
@@ -532,7 +598,7 @@ private bool openBackgroundUrlModal = false;
             }
             if (openRaidPlanImportModal)
             {
-                ImGui.OpenPopup("Import from RaidPlan.io");
+                ImGui.OpenPopup("Import from URL");
                 openRaidPlanImportModal = false;
             }
 
@@ -553,11 +619,11 @@ private bool openBackgroundUrlModal = false;
                 ImGui.EndPopup();
             }
 
-            if (ImGui.BeginPopupModal("Import from RaidPlan.io", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            if (ImGui.BeginPopupModal("Import from URL", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
             {
-                ImGui.Text("Enter the RaidPlan.io URL below.");
-                ImGui.InputText("##RaidPlanUrl", ref raidPlanUrlToLoad, 256);
-                if (ImGui.Button("Import##RaidPlanImport", new Vector2(120, 0)))
+                ImGui.Text("Enter the URL below.");
+                ImGui.InputText("##Url", ref raidPlanUrlToLoad, 256);
+                if (ImGui.Button("Import##URLImport", new Vector2(120, 0)))
                 {
                     if (!string.IsNullOrWhiteSpace(raidPlanUrlToLoad))
                     {
@@ -652,10 +718,25 @@ private bool openBackgroundUrlModal = false;
                 ImGui.Separator();
                 if (ImGui.Button("Yes, Delete It", new Vector2(120 * ImGuiHelpers.GlobalScale, 0)))
                 {
-                    if (pageManager.DeleteCurrentPage())
+                    if (pageManager.IsLiveMode)
                     {
-                        ResetInteractionStates();
-                        undoManager.ClearHistory();
+                        // In live mode, send a command to the server and wait for the echo.
+                        var payload = new NetworkPayload
+                        {
+                            PageIndex = pageManager.GetCurrentPageIndex(),
+                            Action = PayloadActionType.DeletePage,
+                            Data = null
+                        };
+                        _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                    }
+                    else
+                    {
+                        // In offline mode, delete the page locally immediately.
+                        if (pageManager.DeleteCurrentPage())
+                        {
+                            ResetInteractionStates();
+                            undoManager.ClearHistory();
+                        }
                     }
                     ImGui.CloseCurrentPopup();
                 }
@@ -691,27 +772,43 @@ private bool openBackgroundUrlModal = false;
         {
             Vector2 canvasSizeForImGuiDrawing = ImGui.GetContentRegionAvail();
             currentCanvasDrawSize = canvasSizeForImGuiDrawing;
-            if (canvasSizeForImGuiDrawing.X < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.X = 50f * ImGuiHelpers.GlobalScale;
-            if (canvasSizeForImGuiDrawing.Y < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.Y = 50f * ImGuiHelpers.GlobalScale;
+                if (canvasSizeForImGuiDrawing.X < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.X = 50f * ImGuiHelpers.GlobalScale;
+                if (canvasSizeForImGuiDrawing.Y < 50f * ImGuiHelpers.GlobalScale) canvasSizeForImGuiDrawing.Y = 50f * ImGuiHelpers.GlobalScale;
             ImDrawListPtr drawList = ImGui.GetWindowDrawList();
             Vector2 canvasOriginScreen = ImGui.GetCursorScreenPos();
+           
             drawList.AddRectFilled(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, ImGui.GetColorU32(new Vector4(0.15f, 0.15f, 0.17f, 1.0f)));
-            float scaledGridCellSize = ScaledCanvasGridSize;
-            if (scaledGridCellSize > 0)
+            if (configuration.IsGridVisible)
             {
-                for (float x = scaledGridCellSize; x < canvasSizeForImGuiDrawing.X; x += scaledGridCellSize) drawList.AddLine(new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y), new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y + canvasSizeForImGuiDrawing.Y), ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f)), Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
-                for (float y = scaledGridCellSize; y < canvasSizeForImGuiDrawing.Y; y += scaledGridCellSize) drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSizeForImGuiDrawing.X, canvasOriginScreen.Y + y), ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f)), Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+                float scaledGridCellSize = configuration.GridSize * ImGuiHelpers.GlobalScale;
+                if (scaledGridCellSize > 2)
+                {
+                    var gridColor = ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f));
+                    for (float x = scaledGridCellSize; x < canvasSizeForImGuiDrawing.X; x += scaledGridCellSize)
+                        drawList.AddLine(new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y), new Vector2(canvasOriginScreen.X + x, canvasOriginScreen.Y + canvasSizeForImGuiDrawing.Y), ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f)), Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+                    for (float y = scaledGridCellSize; y < canvasSizeForImGuiDrawing.Y; y += scaledGridCellSize)
+                        drawList.AddLine(new Vector2(canvasOriginScreen.X, canvasOriginScreen.Y + y), new Vector2(canvasOriginScreen.X + canvasSizeForImGuiDrawing.X, canvasOriginScreen.Y + y), ImGui.GetColorU32(new Vector4(0.3f, 0.3f, 0.3f, 1.0f)), Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
+                }
             }
             drawList.AddRect(canvasOriginScreen - Vector2.One, canvasOriginScreen + canvasSizeForImGuiDrawing + Vector2.One, ImGui.GetColorU32(new Vector4(0.4f, 0.4f, 0.45f, 1f)), 0f, ImDrawFlags.None, Math.Max(1f, 1.0f * ImGuiHelpers.GlobalScale));
-            if (inPlaceTextEditor.IsEditing) { inPlaceTextEditor.RecalculateEditorBounds(canvasOriginScreen, ImGuiHelpers.GlobalScale); inPlaceTextEditor.DrawEditorUI(); }
+                if (inPlaceTextEditor.IsEditing) { inPlaceTextEditor.RecalculateEditorBounds(canvasOriginScreen, ImGuiHelpers.GlobalScale); inPlaceTextEditor.DrawEditorUI(); }
+            
             ImGui.SetCursorScreenPos(canvasOriginScreen);
             ImGui.InvisibleButton("##AetherDrawCanvasInteractionLayer", canvasSizeForImGuiDrawing);
             Vector2 mousePosLogical = (ImGui.GetMousePos() - canvasOriginScreen) / ImGuiHelpers.GlobalScale;
+
             if (!inPlaceTextEditor.IsEditing && ImGui.IsItemHovered(ImGuiHoveredFlags.None))
             {
-                canvasController.ProcessCanvasInteraction(mousePosLogical, ImGui.GetMousePos(), canvasOriginScreen, drawList, ImGui.IsMouseDown(ImGuiMouseButton.Left), ImGui.IsMouseClicked(ImGuiMouseButton.Left), ImGui.IsMouseReleased(ImGuiMouseButton.Left), ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left), GetLayerPriority);
+                // --- SNAPPING LOGIC FOR DRAWING/PLACING NEW OBJECTS ---
+                Vector2 finalMousePosLogical = mousePosLogical;
+                if (configuration.IsSnapToGrid && IsDrawingOrPlacingMode(currentDrawMode))
+                {
+                    finalMousePosLogical = SnapToGrid(mousePosLogical);
+                }
+
+                canvasController.ProcessCanvasInteraction(finalMousePosLogical, ImGui.GetMousePos(), canvasOriginScreen, drawList, ImGui.IsMouseDown(ImGuiMouseButton.Left), ImGui.IsMouseClicked(ImGuiMouseButton.Left), ImGui.IsMouseReleased(ImGuiMouseButton.Left), ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left), GetLayerPriority);
             }
-            ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
+                ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
             var drawablesToRender = pageManager.GetCurrentPageDrawables();
             if (drawablesToRender != null && drawablesToRender.Any())
             {
@@ -728,11 +825,29 @@ private bool openBackgroundUrlModal = false;
 
         private void RequestAddNewPage()
         {
-            if (pageManager.IsLiveMode && pageManager.GetAllPages().Count >= 5) return;
-            if (pageManager.AddNewPage(true))
+            if (pageManager.IsLiveMode)
             {
-                ResetInteractionStates();
-                undoManager.ClearHistory();
+                // Prevent adding too many pages in a live session.
+                if (pageManager.GetAllPages().Count >= 30) return; // Use a reasonable limit.
+
+                // In live mode, send a command and wait for the echo.
+                var payload = new NetworkPayload
+                {
+                    // The new page will be at the end of the list, so its index is the current count.
+                    PageIndex = pageManager.GetAllPages().Count,
+                    Action = PayloadActionType.AddNewPage,
+                    Data = null
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+            }
+            else
+            {
+                // In offline mode, add the page locally immediately.
+                if (pageManager.AddNewPage(true))
+                {
+                    ResetInteractionStates();
+                    undoManager.ClearHistory();
+                }
             }
         }
         private void RequestDeleteCurrentPage()
@@ -790,6 +905,12 @@ private bool openBackgroundUrlModal = false;
                 DrawMode.Pen or DrawMode.StraightLine or DrawMode.Rectangle or DrawMode.Circle or DrawMode.Arrow or DrawMode.Cone or DrawMode.Dash or DrawMode.Donut => 2,
                 _ => 1,
             };
+        }
+        private async void AddToPending(Guid guid)
+        {
+            pendingEchoGuids.TryAdd(guid, true);
+            await Task.Delay(500);
+            pendingEchoGuids.TryRemove(guid, out _);
         }
     }
 }
