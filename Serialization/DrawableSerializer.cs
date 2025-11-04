@@ -227,6 +227,7 @@ namespace AetherDraw.Serialization
                 case DrawMode.Dot6Image:
                 case DrawMode.Dot7Image:
                 case DrawMode.Dot8Image:
+                case DrawMode.StatusIconPlaceholder:
                     var image = (DrawableImage)drawable;
                     writer.Write(image.ImageResourcePath ?? string.Empty);
                     writer.Write(image.PositionRelative.X); writer.Write(image.PositionRelative.Y);
@@ -389,6 +390,7 @@ namespace AetherDraw.Serialization
                 case DrawMode.Dot6Image:
                 case DrawMode.Dot7Image:
                 case DrawMode.Dot8Image:
+                case DrawMode.StatusIconPlaceholder:
                     string imgPath = reader.ReadString();
                     if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 imgPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());

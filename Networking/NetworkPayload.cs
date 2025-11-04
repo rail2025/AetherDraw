@@ -63,6 +63,12 @@ namespace AetherDraw.Networking
         /// The payload's Data will contain a byte (0 for false, 1 for true).
         /// </summary>
         UpdateGridVisibility,
+
+        /// <summary>
+        /// Action to move a page from one index to another.
+        /// The payload's Data will contain two ints: fromIndex and toIndex.
+        /// </summary>
+        MovePage,
     }
 
     /// <summary>

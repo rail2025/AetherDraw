@@ -3,13 +3,16 @@ using AetherDraw.DrawingLogic;
 using AetherDraw.Networking;
 using AetherDraw.Serialization;
 using AetherDraw.UI;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using Dalamud.Bindings.ImGui;
+using Lumina.Excel.Sheets;
+using Lumina.Excel.Sheets.Experimental;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -44,7 +47,37 @@ namespace AetherDraw.Windows
         private bool openRoomClosingPopup = false;
         private bool openImportTextModal = false;
         private bool openRaidPlanImportModal = false;
+        private bool isAwaitingUndoEcho = false;
         private string clearConfirmText = "";
+
+        private bool openStatusSearchPopup = false;
+        private string statusSearchInput = "";
+        private List<Lumina.Excel.Sheets.Status> statusSearchResults = new();
+
+        public interface IPlanAction
+        {
+            void Undo(MainWindow window);
+            string Description { get; }
+        }
+
+        private class PlanMovePageAction : IPlanAction
+        {
+            private readonly int fromIndex;
+            private readonly int toIndex;
+            public string Description => $"Move Page from {fromIndex + 1} to {toIndex + 1}";
+            public PlanMovePageAction(int from, int to)
+            {
+                this.fromIndex = from;
+                this.toIndex = to;
+            }
+
+            public void Undo(MainWindow window)
+            {
+                window.RequestPageMove(this.toIndex, this.fromIndex, true);
+            }
+        }
+        private readonly Stack<IPlanAction> planUndoStack = new();
+        private bool isAwaitingMovePageEcho = false;
 
         private bool openEmojiInputModal = false;
         private bool openBackgroundUrlModal = false;
@@ -73,8 +106,12 @@ namespace AetherDraw.Windows
             this.configuration = plugin.Configuration;
             this.undoManager = new UndoManager();
             this.pageManager = new PageManager();
+            //this.pageManager.InitializeDefaultPage();
+
+            this.undoManager.InitializeStacks(this.pageManager.GetAllPages().Count);
+
             this.inPlaceTextEditor = new InPlaceTextEditor(this.plugin, this.undoManager, this.pageManager);
-            this.shapeInteractionHandler = new ShapeInteractionHandler(this.plugin, this.undoManager, this.pageManager, this.AddToPending);
+            this.shapeInteractionHandler = new ShapeInteractionHandler(this.plugin, this.undoManager, this.pageManager, this.AddToPending, this.OnObjectsCommitted);
             this.planIOManager = new PlanIOManager(this.pageManager, this.inPlaceTextEditor, Plugin.PluginInterface, () => this.ScaledCanvasGridSize, this.GetLayerPriority, this.pageManager.GetCurrentPageIndex);
             this.planIOManager.OnPlanLoadSuccess += HandleSuccessfulPlanLoad;
 
@@ -94,11 +131,37 @@ namespace AetherDraw.Windows
                 () => this.currentDrawMode, (newMode) => this.currentDrawMode = newMode,
                 this.shapeInteractionHandler, this.inPlaceTextEditor,
                 this.PerformCopySelected, this.PerformPasteCopied, this.PerformClearAll, this.PerformUndo,
-                () => this.currentShapeFilled, (isFilled) => this.currentShapeFilled = isFilled,
+                () => this.currentShapeFilled, (isFilled) => {
+                    // Record state BEFORE changing fill
+                    if (selectedDrawables.Count == 1) // Only record if applying to a selection
+                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Change Fill Style");
+                    this.currentShapeFilled = isFilled;
+                    // Apply immediately if one item is selected
+                    if (selectedDrawables.Count == 1)
+                        ApplyFillToSelection(isFilled);
+                },
                 this.undoManager,
-                () => this.currentBrushThickness, (newThickness) => this.currentBrushThickness = newThickness,
-                () => this.currentBrushColor, (newColor) => this.currentBrushColor = newColor,
+                this.planUndoStack,
+                () => this.currentBrushThickness, (newThickness) => {
+                    // Record state BEFORE changing thickness
+                    if (selectedDrawables.Count == 1) // Only record if applying to a selection
+                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Change Thickness");
+                    this.currentBrushThickness = newThickness;
+                    // Apply immediately if one item is selected
+                    if (selectedDrawables.Count == 1)
+                        ApplyThicknessToSelection(newThickness);
+                },
+                () => this.currentBrushColor, (newColor) => {
+                    // Record state BEFORE changing color
+                    if (selectedDrawables.Count == 1) // Only record if applying to a selection
+                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Change Color");
+                    this.currentBrushColor = newColor;
+                    // Apply immediately if one item is selected
+                    if (selectedDrawables.Count == 1)
+                        ApplyColorToSelection(newColor);
+                },
                 () => this.openEmojiInputModal = true,
+                () => this.openStatusSearchPopup = true,
                 () => this.openBackgroundUrlModal = true, // This action opens the URL modal
                 () => this.configuration.IsGridVisible, (v) => { this.configuration.IsGridVisible = v; this.configuration.Save(); },
                 () => this.configuration.GridSize, (v) => { this.configuration.GridSize = v; this.configuration.Save(); },
@@ -110,12 +173,49 @@ namespace AetherDraw.Windows
             this.currentBrushColor = new Vector4(this.configuration.DefaultBrushColorR, this.configuration.DefaultBrushColorG, this.configuration.DefaultBrushColorB, this.configuration.DefaultBrushColorA);
             var initialThicknessPresets = new float[] { 1.5f, 4f, 7f, 10f };
             this.currentBrushThickness = initialThicknessPresets.Contains(this.configuration.DefaultBrushThickness) ? this.configuration.DefaultBrushThickness : initialThicknessPresets[1];
-            undoManager.ClearHistory();
+            //undoManager.ClearHistory();
 
             plugin.NetworkManager.OnConnected += HandleNetworkConnect;
             plugin.NetworkManager.OnDisconnected += HandleNetworkDisconnect;
             plugin.NetworkManager.OnStateUpdateReceived += HandleStateUpdateReceived;
             plugin.NetworkManager.OnRoomClosingWarning += HandleRoomClosingWarning;
+        }
+
+        private void ApplyColorToSelection(Vector4 newColor)
+        {
+            if (selectedDrawables.Count != 1) return;
+            var drawable = selectedDrawables[0];
+            drawable.Color = newColor;
+            shapeInteractionHandler.CommitObjectChanges(new List<BaseDrawable> { drawable }); // Sends network update
+        }
+
+        private void ApplyThicknessToSelection(float newThickness)
+        {
+            if (selectedDrawables.Count != 1) return;
+            var drawable = selectedDrawables[0];
+            drawable.Thickness = newThickness;
+            // Specific adjustments for Arrow arrowhead size based on thickness
+            if (drawable is DrawableArrow arrow)
+            {
+                arrow.UpdateArrowheadSize();
+            }
+            shapeInteractionHandler.CommitObjectChanges(new List<BaseDrawable> { drawable }); // Sends network update
+        }
+
+        private void ApplyFillToSelection(bool isFilled)
+        {
+            if (selectedDrawables.Count != 1) return;
+            var drawable = selectedDrawables[0];
+            drawable.IsFilled = isFilled;
+            // Adjust alpha for shapes when filling/unfilling
+            if (drawable.Color.W < 1.0f || isFilled) // Check if alpha needs adjustment
+            {
+                var tempColor = drawable.Color; // Get the struct
+                tempColor.W = isFilled ? 0.4f : 1.0f; // Modify the copy
+                drawable.Color = tempColor; // Assign the modified struct back
+            }
+            // Use CommitDragChanges instead of CommitObjectChanges
+            shapeInteractionHandler.CommitObjectChanges(new List<BaseDrawable> { drawable }); // Sends network update
         }
 
         public void Dispose()
@@ -179,6 +279,7 @@ namespace AetherDraw.Windows
         private async void HandleNetworkConnect()
         {
             pageManager.EnterLiveMode(); // create the default page locally
+            this.undoManager.InitializeStacks(this.pageManager.GetAllPages().Count);
 
             // Add a small delay to allow the server to send the room history first.
             await Task.Delay(100);
@@ -196,7 +297,11 @@ namespace AetherDraw.Windows
                 _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
             }
         }
-        private void HandleNetworkDisconnect() => pageManager.ExitLiveMode();
+        private void HandleNetworkDisconnect()
+        {
+            pageManager.ExitLiveMode();
+            this.undoManager.InitializeStacks(this.pageManager.GetAllPages().Count);
+        }
         private void HandleRoomClosingWarning() => openRoomClosingPopup = true;
 
         private void HandleStateUpdateReceived(NetworkPayload payload)
@@ -227,6 +332,45 @@ namespace AetherDraw.Windows
                 }
             }*/
             var targetPageDrawables = allPages[payload.PageIndex].Drawables;
+
+            // Record the state BEFORE applying the remote change, if it's a modifying action
+            bool isModifyingAction = payload.Action switch
+            {
+                PayloadActionType.AddObjects => true,
+                PayloadActionType.DeleteObjects => true,
+                PayloadActionType.UpdateObjects => true,
+                PayloadActionType.ClearPage => true,
+                PayloadActionType.ReplacePage => true, // Also record state before replacing
+                PayloadActionType.DeletePage => true, // Record state before deleting
+                // AddNewPage doesn't modify existing state to undo *to*, so skip recording
+                // UpdateGrid/UpdateGridVisibility are config changes, not drawable state, skip recording
+                _ => false
+            };
+
+            // Only record undo if it's a modifying action AND NOT a ReplacePage (which is used for Undo sync)
+            if (isModifyingAction && payload.Action != PayloadActionType.ReplacePage)
+            {
+                // Ensure the page exists before trying to get drawables
+                if (payload.PageIndex < allPages.Count)
+                {
+                    // For DeletePage, we record the state of the page *being* deleted
+                    var drawablesToRecord = allPages[payload.PageIndex].Drawables;
+                    // Temporarily set the active stack to the payload's target page
+                    int originalActivePage = pageManager.GetCurrentPageIndex();
+                    undoManager.SetActivePage(payload.PageIndex);
+
+                    // record even if it's an echo (like ReplacePage from undo) because state needed *before* the echo replaced it to undo back again.
+                    undoManager.RecordAction(drawablesToRecord, $"Remote {payload.Action} on Page {payload.PageIndex + 1}");
+
+                    // Restore the user's previously active page
+                    undoManager.SetActivePage(originalActivePage);
+                }
+                else if (payload.Action != PayloadActionType.DeletePage) // Don't log error if trying to record a page that's about to be deleted remotely anyway
+                {
+                    Plugin.Log?.Warning($"Tried to record undo state for remote action on non-existent page index: {payload.PageIndex}");
+                }
+            }
+
             try
             {
                 switch (payload.Action)
@@ -287,12 +431,20 @@ namespace AetherDraw.Windows
                         break;
                     case PayloadActionType.ReplacePage:
                         if (payload.Data == null) return;
+                        if (isAwaitingUndoEcho)
+                        {
+                            isAwaitingUndoEcho = false; // Clear flag
+                            Plugin.Log?.Debug("[Network] Ignored own ReplacePage echo from Undo.");
+                            return; // Stop processing this message
+                        }
                         var fullPageState = DrawableSerializer.DeserializePageFromBytes(payload.Data);
                         allPages[payload.PageIndex].Drawables = fullPageState;
                         break;
                     case PayloadActionType.AddNewPage:
+                        this.undoManager.AddStack(payload.PageIndex);
                         break;
                     case PayloadActionType.DeletePage:
+                        this.undoManager.RemoveStack(payload.PageIndex);
                         pageManager.DeletePageAtIndex(payload.PageIndex);
                         break;
                     case PayloadActionType.UpdateGrid:
@@ -309,6 +461,36 @@ namespace AetherDraw.Windows
                             this.configuration.IsGridVisible = isVisible;
                         }
                         break;
+                    case PayloadActionType.MovePage:
+                        if (payload.Data == null) return;
+                        using (var ms = new MemoryStream(payload.Data))
+                        using (var reader = new BinaryReader(ms))
+                        {
+                            // Read the 8-byte packet
+                            int fromIndex = reader.ReadInt32();
+                            int toIndex = reader.ReadInt32();
+                            Plugin.Log?.Debug($"[MainWindow] HandleStateUpdate(MovePage): Received move from {fromIndex} to {toIndex}.");
+
+                            // Check if we are the sender of an Undo move.
+                            if (this.isAwaitingMovePageEcho)
+                            {
+                                // This is our own undo echo.
+                                this.isAwaitingMovePageEcho = false;
+                                Plugin.Log?.Debug($"[MainWindow] Ignoring own Undo echo.");
+                                return; // We already applied this state locally.
+                            }
+
+                            // This is a NEW move from another client (or an echo of our own NEW move).
+                            // 1. Push the action to the stack for undo.
+                            planUndoStack.Push(new PlanMovePageAction(fromIndex, toIndex));
+                            Plugin.Log?.Debug($"[MainWindow] Pushed new MovePage action.");
+
+                            // 2. Apply the state change.
+                            this.undoManager.MoveStack(fromIndex, toIndex);
+                            pageManager.MovePageAndRenumber(fromIndex, toIndex);
+                            ResetInteractionStates();
+                        }
+                        break;
                 }
             }
             catch (Exception ex)
@@ -321,7 +503,8 @@ namespace AetherDraw.Windows
         private void HandleSuccessfulPlanLoad()
         {
             ResetInteractionStates();
-            undoManager.ClearHistory();
+            this.undoManager.InitializeStacks(pageManager.GetAllPages().Count);
+            planUndoStack.Clear();
             if (pageManager.IsLiveMode)
             {
                 var allLoadedPages = pageManager.GetAllPages();
@@ -346,6 +529,7 @@ namespace AetherDraw.Windows
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
             if (openRaidPlanImportModal) { ImGui.OpenPopup("Import from URL"); openRaidPlanImportModal = false; }
             if (openEmojiInputModal) { ImGui.OpenPopup("Place Emoji"); openEmojiInputModal = false; }
+            if (openStatusSearchPopup) { ImGui.OpenPopup("Status Search"); openStatusSearchPopup = false; }
             if (openBackgroundUrlModal) { ImGui.OpenPopup("Import Image from URL"); openBackgroundUrlModal = false; }
 
 
@@ -373,6 +557,7 @@ namespace AetherDraw.Windows
             planIOManager.DrawFileDialogs();
             DrawConfirmationPopups();
             DrawEmojiInputModal();
+            DrawStatusSearchPopup();
             DrawBackgroundUrlModal();
         }
 
@@ -400,6 +585,79 @@ namespace AetherDraw.Windows
                     backgroundUrlInput = "";
                     ImGui.CloseCurrentPopup();
                 }
+                ImGui.EndPopup();
+            }
+        }
+
+        private void DrawStatusSearchPopup()
+        {
+            bool pOpen = true;
+            ImGui.SetNextWindowSize(new Vector2(350 * ImGuiHelpers.GlobalScale, 400 * ImGuiHelpers.GlobalScale));
+            if (ImGui.BeginPopupModal("Status Search", ref pOpen, ImGuiWindowFlags.None))
+            {
+                ImGui.Text("Search for a status icon by name:");
+
+                if (ImGui.InputText("##StatusSearch", ref statusSearchInput, 100))
+                {
+                    if (string.IsNullOrWhiteSpace(statusSearchInput))
+                    {
+                        statusSearchResults.Clear();
+                    }
+                    else
+                    {
+                        var statusSheet = Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.Status>();
+                        if (statusSheet != null)
+                        {
+                            string lowerSearch = statusSearchInput.ToLowerInvariant();
+                            statusSearchResults = statusSheet
+                                .Where(s => s.Icon > 0 && !string.IsNullOrEmpty(s.Name.ToString()) && s.Name.ToString().ToLowerInvariant().Contains(lowerSearch))
+                                .Take(50) // Limit results to 50
+                                .ToList();
+                        }
+                    }
+                }
+
+                ImGui.Separator();
+
+                using (var child = ImRaii.Child("##statusresults", new Vector2(-1, -ImGui.GetFrameHeightWithSpacing() - 5), true, ImGuiWindowFlags.HorizontalScrollbar))
+                {
+                    if (child)
+                    {
+                        int columns = (int)(ImGui.GetContentRegionAvail().X / (32 * ImGuiHelpers.GlobalScale + ImGui.GetStyle().ItemSpacing.X));
+                        if (columns < 1) columns = 1;
+                        int i = 0;
+
+                        foreach (var status in statusSearchResults)
+                        {
+                            string iconPath = $"luminaicon:{status.Icon}";
+                            var iconTex = TextureManager.GetTexture(iconPath);
+
+                            if (iconTex != null)
+                            {
+                                if ((i % columns) != 0) ImGui.SameLine();
+
+                                if (ImGui.ImageButton(iconTex.Handle, new Vector2(32 * ImGuiHelpers.GlobalScale, 32 * ImGuiHelpers.GlobalScale)))
+                                {
+                                    canvasController.StartPlacingStatusIcon(status.Icon);
+                                    ImGui.CloseCurrentPopup();
+                                }
+                                if (ImGui.IsItemHovered())
+                                {
+                                    ImGui.SetTooltip($"{status.Name} (ID: {status.RowId})");
+                                }
+                                i++;
+                            }
+                        }
+                    }
+                }
+
+                if (ImGui.Button("Close"))
+                {
+                    statusSearchInput = "";
+                    statusSearchResults.Clear(); 
+                    ImGui.CloseCurrentPopup();
+                }
+
                 ImGui.EndPopup();
             }
         }
@@ -494,14 +752,25 @@ namespace AetherDraw.Windows
         }
         private void PerformUndo()
         {
-            var undoneState = undoManager.Undo();
-            if (undoneState == null) return;
-            pageManager.SetCurrentPageDrawables(undoneState);
-            ResetInteractionStates();
-            if (pageManager.IsLiveMode)
+            if (planUndoStack.Count > 0)
             {
-                var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(undoneState) };
-                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                var lastPlanAction = planUndoStack.Pop();
+                Plugin.Log?.Debug($"[MainWindow] Undoing Plan Action: {lastPlanAction.Description}");
+                lastPlanAction.Undo(this);
+            }
+            else if (undoManager.CanUndo())
+            {
+                Plugin.Log?.Debug($"[MainWindow] Undoing Drawing Action.");
+                var undoneState = undoManager.Undo();
+                if (undoneState == null) return;
+
+                pageManager.SetCurrentPageDrawables(undoneState);
+                ResetInteractionStates();
+                if (pageManager.IsLiveMode)
+                {
+                    var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(undoneState) };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                }
             }
         }
 
@@ -513,7 +782,7 @@ namespace AetherDraw.Windows
             DrawActionButtons();
         }
 
-        private void DrawPageTabs()
+        private unsafe void DrawPageTabs()
         {
             using var pageTabsChild = ImRaii.Child("PageTabsSubRegion", new Vector2(0, ImGui.GetFrameHeightWithSpacing() + ImGui.GetStyle().ItemSpacing.Y), false, ImGuiWindowFlags.HorizontalScrollbar);
             if (!pageTabsChild) return;
@@ -535,11 +804,32 @@ namespace AetherDraw.Windows
                 }
                 using (ImRaii.PushColor(ImGuiCol.Button, isSelectedPage ? activeColor : normalColor))
                 {
-                    if (ImGui.Button($"{pageName}##Page{i}", new Vector2(ImGui.CalcTextSize(pageName).X + ImGui.GetStyle().FramePadding.X * 2.0f, ImGui.GetFrameHeight())))
+                    var buttonSize = new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight());
+                    if (ImGui.Button($"{pageName}##Page{i}", buttonSize))
                     {
                         if (!isSelectedPage) RequestSwitchToPage(i);
                     }
                 }
+
+                if (ImGui.BeginDragDropSource())
+                {
+                    int draggedIndex = i;
+                    ImGui.SetDragDropPayload("AETHERDRAW_PAGE_DRAG", new ReadOnlySpan<byte>(&draggedIndex, sizeof(int)), ImGuiCond.None);
+                    ImGui.Text($"Moving Page {pageName}");
+                    ImGui.EndDragDropSource();
+                }
+
+                if (ImGui.BeginDragDropTarget())
+                {
+                    ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("AETHERDRAW_PAGE_DRAG");
+                    if (payload.Data != null && payload.DataSize == sizeof(int))
+                    {
+                        int fromIndex = *(int*)payload.Data;
+                        RequestPageMove(fromIndex, i);
+                    }
+                    ImGui.EndDragDropTarget();
+                }
+
                 ImGui.SameLine(0, 3f * ImGuiHelpers.GlobalScale);
             }
             if (ImGui.Button("+##AddPage", new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()))) RequestAddNewPage();
@@ -552,6 +842,7 @@ namespace AetherDraw.Windows
             }
             if (currentPages.Count > 1)
             {
+                int currentPageIndex = pageManager.GetCurrentPageIndex(); // Get current page index for the buttons
                 ImGui.SameLine();
                 using (ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.6f, 0.2f, 0.2f, 1.0f)))
                 using (ImRaii.PushColor(ImGuiCol.ButtonHovered, new Vector4(0.7f, 0.3f, 0.3f, 1.0f)))
@@ -559,6 +850,29 @@ namespace AetherDraw.Windows
                 {
                     if (ImGui.Button("X##DeletePage", new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()))) RequestDeleteCurrentPage();
                 }
+                ImGui.SameLine();
+                using (ImRaii.Disabled(currentPageIndex == 0))
+                {
+                    if (ImGui.Button("<##MovePageLeft", new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()))) RequestPageMove(currentPageIndex, currentPageIndex - 1);
+                }
+                ImGui.SameLine(0, 3f * ImGuiHelpers.GlobalScale);
+                using (ImRaii.Disabled(currentPageIndex == currentPages.Count - 1))
+                {
+                    if (ImGui.Button(">##MovePageRight", new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight()))) RequestPageMove(currentPageIndex, currentPageIndex + 1);
+                }
+            }
+
+            ImGui.SameLine();
+            ImGui.InvisibleButton("##PageDropTargetEnd", new Vector2(Math.Max(50f * ImGuiHelpers.GlobalScale, ImGui.GetContentRegionAvail().X), ImGui.GetFrameHeight()));
+            if (ImGui.BeginDragDropTarget())
+            {
+                ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("AETHERDRAW_PAGE_DRAG");
+                if (payload.Data != null && payload.DataSize == sizeof(int))
+                { 
+                    int fromIndex = *(int*)payload.Data;
+                    RequestPageMove(fromIndex, currentPages.Count - 1);
+                }
+                ImGui.EndDragDropTarget();
             }
         }
 
@@ -720,6 +1034,8 @@ namespace AetherDraw.Windows
                 {
                     if (pageManager.IsLiveMode)
                     {
+                        this.undoManager.RemoveStack(pageManager.GetCurrentPageIndex()); 
+                        isAwaitingUndoEcho = true;
                         // In live mode, send a command to the server and wait for the echo.
                         var payload = new NetworkPayload
                         {
@@ -732,10 +1048,10 @@ namespace AetherDraw.Windows
                     else
                     {
                         // In offline mode, delete the page locally immediately.
+                        this.undoManager.RemoveStack(pageManager.GetCurrentPageIndex());
                         if (pageManager.DeleteCurrentPage())
                         {
                             ResetInteractionStates();
-                            undoManager.ClearHistory();
                         }
                     }
                     ImGui.CloseCurrentPopup();
@@ -845,8 +1161,9 @@ namespace AetherDraw.Windows
                 // In offline mode, add the page locally immediately.
                 if (pageManager.AddNewPage(true))
                 {
+                    this.undoManager.AddStack(pageManager.GetAllPages().Count - 1);
+                    this.undoManager.SetActivePage(pageManager.GetCurrentPageIndex());
                     ResetInteractionStates();
-                    undoManager.ClearHistory();
                 }
             }
         }
@@ -880,7 +1197,7 @@ namespace AetherDraw.Windows
             if (pageManager.SwitchToPage(newPageIndex))
             {
                 ResetInteractionStates();
-                undoManager.ClearHistory();
+                this.undoManager.SetActivePage(newPageIndex);
             }
         }
 
@@ -911,6 +1228,74 @@ namespace AetherDraw.Windows
             pendingEchoGuids.TryAdd(guid, true);
             await Task.Delay(500);
             pendingEchoGuids.TryRemove(guid, out _);
+        }
+        private void OnObjectsCommitted(List<BaseDrawable> committedDrawables)
+        {
+            if (pageManager.IsLiveMode && committedDrawables.Any())
+            {
+                //logging for id tracing
+                foreach (var drawable in committedDrawables)
+                {
+                    Plugin.Log?.Debug($"[Sender] Sending UpdateObjects for object with ID: {drawable.UniqueId} and Type: {drawable.ObjectDrawMode}");
+                }
+                var payload = new NetworkPayload
+                {
+                    PageIndex = pageManager.GetCurrentPageIndex(),
+                    Action = PayloadActionType.UpdateObjects,
+                    Data = DrawableSerializer.SerializePageToBytes(committedDrawables)
+                };
+                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+            }
+        }
+        private void RequestPageMove(int fromIndex, int toIndex, bool isUndo = false)
+        {
+            if (fromIndex == toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= pageManager.GetAllPages().Count || toIndex >= pageManager.GetAllPages().Count)
+                return;
+            Plugin.Log?.Debug($"[MainWindow] RequestPageMove from {fromIndex} to {toIndex}. IsUndo: {isUndo}");
+
+            // OFFLINE logic:
+            if (!plugin.NetworkManager.IsConnected)
+            {
+                if (!isUndo)
+                {
+                    planUndoStack.Push(new PlanMovePageAction(fromIndex, toIndex));
+                    Plugin.Log?.Debug($"[MainWindow] (Offline) Pushed MovePage action to Plan Undo Stack.");
+                }
+                Plugin.Log?.Debug($"[MainWindow] (Offline) Moving local state.");
+                this.undoManager.MoveStack(fromIndex, toIndex);
+                pageManager.MovePageAndRenumber(fromIndex, toIndex);
+                ResetInteractionStates();
+                return;
+            }
+
+            // ONLINE logic:
+            // Both NEW moves and UNDO moves must send a packet to the server.
+
+            if (isUndo)
+            {
+                // This is an UNDO action.
+                // Set the flag so we ignore our own echo.
+                this.isAwaitingMovePageEcho = true;
+                Plugin.Log?.Debug($"[MainWindow] (Online-Undo) Moving local state and sending packet.");
+                // We must apply the state change locally *now*.
+                this.undoManager.MoveStack(fromIndex, toIndex);
+                pageManager.MovePageAndRenumber(fromIndex, toIndex);
+                ResetInteractionStates();
+            }
+            else
+            {
+                // This is a NEW action.
+                Plugin.Log?.Debug($"[MainWindow] (Online) Sending MovePage packet.");
+                // We wait for the echo to apply the state change.
+            }
+
+            // Send an 8-BYTE packet in all online cases.
+            using var ms = new MemoryStream();
+            using var writer = new BinaryWriter(ms);
+            writer.Write(fromIndex);
+            writer.Write(toIndex);
+            var payload = new NetworkPayload { PageIndex = 0, Action = PayloadActionType.MovePage, Data = ms.ToArray() };
+            _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
         }
     }
 }

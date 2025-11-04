@@ -1,15 +1,20 @@
 using AetherDraw;
 using Dalamud.Interface.Textures.TextureWraps;
+using SixLabors.ImageSharp.Formats;
 using SkiaSharp;
 using Svg.Skia;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using Lumina.Data.Files;
 using System.Reflection;
 using System.Threading.Tasks;
+using Dalamud.Interface.Textures;
+using Lumina.Data;
 
 namespace AetherDraw.DrawingLogic
 {
@@ -32,6 +37,38 @@ namespace AetherDraw.DrawingLogic
         {
             if (Plugin.TextureProvider == null || string.IsNullOrEmpty(resourcePath)) return null;
             if (FailedDownloads.Contains(resourcePath)) return null;
+
+            if (resourcePath.StartsWith("luminaicon:"))
+            {
+          
+                try
+                {
+                    if (uint.TryParse(resourcePath.AsSpan("luminaicon:".Length), out uint iconId))
+                    {
+                        // Construct the internal game path for the icon
+                        var iconPath = $"ui/icon/{iconId / 1000 * 1000:000000}/{iconId:000000}.tex";
+
+                        // Use GetTexture (which IS a method of ITextureProvider)
+                        var iconTex = Plugin.TextureProvider.GetFromGame(iconPath);
+
+                        if (iconTex != null)
+                        {
+                            // Convert it to IDalamudTextureWrap using GetWrapOrDefault()
+                            var wrappedTex = iconTex.GetWrapOrDefault();
+                           
+                            return wrappedTex;
+                        }
+                    }
+                    FailedDownloads.Add(resourcePath); // Failed to parse or get icon
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    Plugin.Log?.Error(ex, $"[TextureManager] Failed to load Lumina icon: {resourcePath}");
+                    FailedDownloads.Add(resourcePath);
+                    return null;
+                }
+            }
 
             if (resourcePath.StartsWith("emoji:"))
             {
@@ -157,7 +194,7 @@ namespace AetherDraw.DrawingLogic
             try
             {
                 byte[]? rawImageBytes = null;
-                if (resourcePath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+                if(resourcePath.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
                     using var request = new HttpRequestMessage(HttpMethod.Get, resourcePath);
                     if (resourcePath.Contains("raidplan.io"))

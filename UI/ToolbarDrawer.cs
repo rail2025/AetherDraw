@@ -1,6 +1,7 @@
 using AetherDraw.Core;
 using AetherDraw.DrawingLogic;
 using AetherDraw.Networking;
+using AetherDraw.Windows;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
@@ -37,7 +38,8 @@ namespace AetherDraw.UI
         private readonly Action onClearAll;
         private readonly Action onUndo;
         private readonly Action onOpenEmojiPicker;
-        private readonly Action onImportBackgroundUrl; // New action for URL import
+        private readonly Action onOpenStatusSearchPopup; // New action for Status Search
+        private readonly Action onImportBackgroundUrl;
         private readonly Func<bool> getIsGridVisible;
         private readonly Action<bool> setIsGridVisible;
         private readonly Func<float> getGridSize;
@@ -47,6 +49,7 @@ namespace AetherDraw.UI
         private readonly ShapeInteractionHandler shapeInteractionHandler;
         private readonly DrawingLogic.InPlaceTextEditor inPlaceTextEditor;
         private readonly UndoManager undoManager;
+        private readonly Stack<MainWindow.IPlanAction> planUndoStack;
         private readonly List<ToolbarButton> mainToolbarButtons;
         private readonly Dictionary<DrawMode, DrawMode> activeSubModeMap;
         private readonly Dictionary<DrawMode, string> iconPaths;
@@ -67,9 +70,11 @@ namespace AetherDraw.UI
             Action onCopySelected, Action onPasteCopied, Action onClearAll, Action onUndo,
             Func<bool> getIsShapeFilled, Action<bool> setIsShapeFilled,
             UndoManager undoManager,
+            Stack<MainWindow.IPlanAction> planUndoStack,
             Func<float> getCurrentBrushThickness, Action<float> setCurrentBrushThickness,
             Func<Vector4> getCurrentBrushColor, Action<Vector4> setCurrentBrushColor,
             Action onOpenEmojiPicker,
+            Action onOpenStatusSearchPopup,
             Action onImportBackgroundUrl,
             Func<bool> getIsGridVisible, Action<bool> setIsGridVisible,
             Func<float> getGridSize, Action<float> setGridSize,
@@ -89,11 +94,13 @@ namespace AetherDraw.UI
             this.getIsShapeFilled = getIsShapeFilled ?? throw new ArgumentNullException(nameof(getIsShapeFilled));
             this.setIsShapeFilled = setIsShapeFilled ?? throw new ArgumentNullException(nameof(setIsShapeFilled));
             this.undoManager = undoManager ?? throw new ArgumentNullException(nameof(undoManager));
+            this.planUndoStack = planUndoStack ?? throw new ArgumentNullException(nameof(planUndoStack));
             this.getCurrentBrushThickness = getCurrentBrushThickness ?? throw new ArgumentNullException(nameof(getCurrentBrushThickness));
             this.setCurrentBrushThickness = setCurrentBrushThickness ?? throw new ArgumentNullException(nameof(setCurrentBrushThickness));
             this.getCurrentBrushColor = getCurrentBrushColor ?? throw new ArgumentNullException(nameof(getCurrentBrushColor));
             this.setCurrentBrushColor = setCurrentBrushColor ?? throw new ArgumentNullException(nameof(setCurrentBrushColor));
             this.onOpenEmojiPicker = onOpenEmojiPicker;
+            this.onOpenStatusSearchPopup = onOpenStatusSearchPopup;
             this.onImportBackgroundUrl = onImportBackgroundUrl;
             this.getIsGridVisible = getIsGridVisible;
             this.setIsGridVisible = setIsGridVisible;
@@ -113,7 +120,8 @@ namespace AetherDraw.UI
                 new() { Primary = DrawMode.Waymark1Image, SubModes = new List<DrawMode> { DrawMode.Waymark1Image, DrawMode.Waymark2Image, DrawMode.Waymark3Image, DrawMode.Waymark4Image }, Tooltip = "Waymarks 1-4" },
                 new() { Primary = DrawMode.StackImage, SubModes = new List<DrawMode> { DrawMode.StackImage, DrawMode.SpreadImage, DrawMode.LineStackImage, DrawMode.FlareImage, DrawMode.DonutAoEImage, DrawMode.CircleAoEImage, DrawMode.BossImage }, Tooltip = "Mechanic Icons" },
                 new() { Primary = DrawMode.TextTool, SubModes = new List<DrawMode>(), Tooltip = "Text Tool" },
-                new() { Primary = DrawMode.Dot3Image, SubModes = new List<DrawMode> { DrawMode.Dot1Image, DrawMode.Dot2Image, DrawMode.Dot3Image, DrawMode.Dot4Image, DrawMode.Dot5Image, DrawMode.Dot6Image, DrawMode.Dot7Image, DrawMode.Dot8Image }, Tooltip = "Colored Dots" }
+                new() { Primary = DrawMode.Dot3Image, SubModes = new List<DrawMode> { DrawMode.Dot1Image, DrawMode.Dot2Image, DrawMode.Dot3Image, DrawMode.Dot4Image, DrawMode.Dot5Image, DrawMode.Dot6Image, DrawMode.Dot7Image, DrawMode.Dot8Image }, Tooltip = "Colored Dots" },
+                new() { Primary = DrawMode.StatusIconPlaceholder, SubModes = new List<DrawMode>(), Tooltip = "Status Icon" }
             };
 
             this.activeSubModeMap = new Dictionary<DrawMode, DrawMode>();
@@ -167,6 +175,7 @@ namespace AetherDraw.UI
                 { DrawMode.Dot8Image, "PluginImages.svg.8dot.svg" },
                 { DrawMode.TextTool, "" },
                 { DrawMode.EmojiImage, "" },
+                { DrawMode.StatusIconPlaceholder, "PluginImages.toolbar.StatusPlaceholder.png" },
             };
 
             this.toolDisplayNames = new Dictionary<DrawMode, string>
@@ -176,6 +185,7 @@ namespace AetherDraw.UI
                 { DrawMode.Triangle, "Triangle" },
                 { DrawMode.TextTool, "TEXT" },
                 { DrawMode.EmojiImage, "EMOJI" },
+                { DrawMode.StatusIconPlaceholder, "Status" },
             };
         }
 
@@ -204,7 +214,7 @@ namespace AetherDraw.UI
             ImGui.SameLine();
             if (ImGui.Button("Paste", new Vector2(btnWidthHalf, 0))) onPasteCopied();
 
-            if (undoManager.CanUndo()) { if (ImGui.Button("Undo", new Vector2(btnWidthFull, 0))) onUndo(); }
+            if (undoManager.CanUndo() || planUndoStack.Count > 0) { if (ImGui.Button("Undo", new Vector2(btnWidthFull, 0))) onUndo(); }
             else { using (ImRaii.Disabled()) ImGui.Button("Undo", new Vector2(btnWidthFull, 0)); }
 
             if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0))) onClearAll();
@@ -296,7 +306,11 @@ namespace AetherDraw.UI
                 {
                     if (ImGui.Button($"##{group.Primary}", iconButtonSize))
                     {
-                        if (group.SubModes.Any())
+                        if (group.Primary == DrawMode.StatusIconPlaceholder)
+                        {
+                            onOpenStatusSearchPopup();
+                        }
+                        else if(group.SubModes.Any())
                         {
                             setCurrentDrawMode(activeModeInGroup);
                         }

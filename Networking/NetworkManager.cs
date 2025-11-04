@@ -16,6 +16,7 @@ namespace AetherDraw.Networking
     {
         private ClientWebSocket? webSocket;
         private CancellationTokenSource? cancellationTokenSource;
+        
 
         /// <summary>
         /// Occurs when the client successfully connects to the server.

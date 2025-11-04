@@ -31,6 +31,7 @@ namespace AetherDraw.Core
         private BaseDrawable? currentDrawingObjectInternal = null;
         private double lastEraseTime = 0;
         private string? emojiToPlace = null; // New field for placing emojis
+        private uint? statusIconToPlace = null;
 
         private const float DefaultUnscaledFontSize = 16f;
         private const float DefaultUnscaledTextWrapWidth = 200f;
@@ -74,6 +75,11 @@ namespace AetherDraw.Core
             setCurrentDrawMode(DrawMode.EmojiImage);
             TextureManager.PreloadEmojiTexture(emoji);
         }
+        public void StartPlacingStatusIcon(uint iconId)
+        {
+            this.statusIconToPlace = iconId;
+            setCurrentDrawMode(DrawMode.StatusIconPlaceholder);
+        }
 
         public BaseDrawable? GetCurrentDrawingObjectForPreview() => currentDrawingObjectInternal;
 
@@ -116,6 +122,9 @@ namespace AetherDraw.Core
                     break;
                 case DrawMode.EmojiImage:
                     HandleEmojiPlacement(mousePosLogical, isLMBClickedOnCanvas, drawList);
+                    break;
+                case DrawMode.StatusIconPlaceholder:
+                    HandleStatusIconPlacement(mousePosLogical, isLMBClickedOnCanvas, drawList);
                     break;
                 default:
                     if (IsImagePlacementMode(getCurrentDrawMode()))
@@ -171,6 +180,56 @@ namespace AetherDraw.Core
                 }
 
                 emojiToPlace = null;
+                setCurrentDrawMode(DrawMode.Select);
+            }
+        }
+
+        private void HandleStatusIconPlacement(Vector2 mousePosLogical, bool isLMBClickedOnCanvas, ImDrawListPtr drawList)
+        {
+            if (statusIconToPlace == null) return;
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+
+            string iconPath = $"luminaicon:{statusIconToPlace.Value}";
+            var tex = TextureManager.GetTexture(iconPath);
+            if (tex != null && tex.Handle != IntPtr.Zero)
+            {
+                var previewSize = DefaultUnscaledImageSize * ImGuiHelpers.GlobalScale;
+                var screenPos = ImGui.GetMousePos() - (previewSize / 2);
+                ImGui.GetForegroundDrawList().AddImage(tex.Handle, screenPos, screenPos + previewSize);
+            }
+            else
+            {
+                ImGui.SetTooltip("Loading icon...");
+            }
+
+            if (isLMBClickedOnCanvas)
+            {
+                var newImage = new DrawableImage(
+                    DrawMode.StatusIconPlaceholder,
+                    iconPath,
+                    mousePosLogical,
+                    DefaultUnscaledImageSize,
+                    Vector4.One,
+                    0f
+                );
+                newImage.IsPreview = false;
+
+                var currentDrawables = pageManager.GetCurrentPageDrawables();
+                undoManager.RecordAction(currentDrawables, "Place Status Icon");
+                currentDrawables.Add(newImage);
+
+                if (pageManager.IsLiveMode)
+                {
+                    var payload = new NetworkPayload
+                    {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.AddObjects,
+                        Data = Serialization.DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { newImage })
+                    };
+                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                }
+
+                statusIconToPlace = null;
                 setCurrentDrawMode(DrawMode.Select);
             }
         }

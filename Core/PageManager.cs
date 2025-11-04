@@ -34,6 +34,7 @@ namespace AetherDraw.Core
         private List<PageData> livePages = new List<PageData>();
         private int currentPageIndex = 0;
         private PageData? pageClipboard = null;
+        private PageData? activePageObject = null;
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
 
         /// <summary>
@@ -49,12 +50,13 @@ namespace AetherDraw.Core
             InitializeDefaultPage();
         }
 
-        private void InitializeDefaultPage()
+        public void InitializeDefaultPage()
         {
             if (!localPages.Any())
             {
                 localPages.Add(CreateDefaultPage("1"));
                 currentPageIndex = 0;
+                this.activePageObject = this.GetAllPages().FirstOrDefault();
             }
         }
 
@@ -103,6 +105,7 @@ namespace AetherDraw.Core
             livePages.Clear();
             livePages.Add(CreateDefaultPage("1"));
             currentPageIndex = 0;
+            this.activePageObject = this.GetAllPages().FirstOrDefault();
             Plugin.Log?.Info("[PageManager] Entered live mode. Created initial live page with default layout.");
         }
 
@@ -120,7 +123,10 @@ namespace AetherDraw.Core
         /// Gets the list of all pages for the current mode (local or live).
         /// </summary>
         /// <returns>A list of <see cref="PageData"/>.</returns>
-        public List<PageData> GetAllPages() => IsLiveMode ? livePages : localPages;
+        public List<PageData> GetAllPages()
+        {
+            return IsLiveMode ? livePages : localPages;
+        }
 
         /// <summary>
         /// Gets the index of the currently active page.
@@ -266,6 +272,7 @@ namespace AetherDraw.Core
             var pages = GetAllPages();
             if (newPageIndex < 0 || newPageIndex >= pages.Count) return false;
             if (!forceSwitch && newPageIndex == currentPageIndex) return true;
+            this.activePageObject = pages[newPageIndex];
             currentPageIndex = newPageIndex;
             return true;
         }
@@ -284,6 +291,35 @@ namespace AetherDraw.Core
             {
                 InitializeDefaultPage();
             }
+            this.activePageObject = this.GetAllPages().FirstOrDefault();
+        }
+
+        public void MovePageAndRenumber(int fromIndex, int toIndex)
+        {
+            Plugin.Log?.Debug($"[PageManager] MovePage: Moving from {fromIndex} to {toIndex}.");
+            var pages = GetAllPages();
+            if (fromIndex < 0 || fromIndex >= pages.Count || toIndex < 0 || toIndex >= pages.Count)
+            {
+                Plugin.Log?.Error($"[PageManager] MovePage: Invalid indices. From: {fromIndex}, To: {toIndex}");
+                return;
+            }
+
+            var pageToMove = pages[fromIndex];
+            pages.RemoveAt(fromIndex);
+            pages.Insert(toIndex, pageToMove);
+
+            for (int i = 0; i < pages.Count; i++)
+            {
+                pages[i].Name = (i + 1).ToString();
+            }
+
+            int newActiveIndex = -1;
+            if (this.activePageObject != null)
+            {
+                newActiveIndex = pages.IndexOf(this.activePageObject);
+            }
+            this.currentPageIndex = (newActiveIndex != -1) ? newActiveIndex : 0;
+            Plugin.Log?.Debug($"[PageManager] User's active view restored to new index {this.currentPageIndex}.");
         }
     }
 }

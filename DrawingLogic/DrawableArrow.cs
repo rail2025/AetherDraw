@@ -59,6 +59,17 @@ namespace AetherDraw.DrawingLogic
             this.EndPointRelative = newPointRelative;
         }
 
+        public void UpdateArrowheadSize()
+        {
+            // Re-calculate arrowhead dimensions based on the current thickness
+            // (Using the same logic as in the constructor)
+            const float defaultLengthFactor = 5.0f;
+            const float defaultWidthFactor = 3.0f;
+            const float minAbsoluteDim = 5.0f;
+
+            this.ArrowheadLengthOffset = MathF.Max(minAbsoluteDim, this.Thickness * defaultLengthFactor);
+            this.ArrowheadWidthScale = defaultWidthFactor; // Assuming this doesn't need to change dynamically, just length
+        }
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
             var displayColorVec = IsSelected ? new Vector4(1, 1, 0, 1) : (IsHovered ? new Vector4(0, 1, 1, 1) : Color);

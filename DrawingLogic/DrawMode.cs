@@ -71,6 +71,8 @@ namespace AetherDraw.DrawingLogic
         Dot5Image,
         Dot6Image,
         Dot7Image,
-        Dot8Image
+        Dot8Image,
+
+        StatusIconPlaceholder = 58,
     }
 }

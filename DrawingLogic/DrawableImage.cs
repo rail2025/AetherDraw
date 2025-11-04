@@ -40,9 +40,21 @@ namespace AetherDraw.DrawingLogic
 
         public override void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
         {
-            textureWrapCache ??= TextureManager.GetTexture(this.ImageResourcePath);
+            IDalamudTextureWrap? textureToDraw;
 
-            if (textureWrapCache == null || textureWrapCache.Handle == IntPtr.Zero)
+            if (this.ImageResourcePath.StartsWith("luminaicon:"))
+            {
+                // Lumina icons are volatile and managed by Dalamud. DO NOT CACHE.
+                textureToDraw = TextureManager.GetTexture(this.ImageResourcePath);
+            }
+            else
+            {
+                // For all other types (embedded, emoji, http), use the local cache.
+                textureWrapCache ??= TextureManager.GetTexture(this.ImageResourcePath);
+                textureToDraw = textureWrapCache;
+            }
+
+            if (textureToDraw == null || textureToDraw.Handle == IntPtr.Zero)
             {
                 Vector2 screenPosCenter = (this.PositionRelative * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
                 Vector2 scaledDrawSize = this.DrawSize * ImGuiHelpers.GlobalScale;
@@ -61,7 +73,7 @@ namespace AetherDraw.DrawingLogic
                 quadVertices[i] = (quadVertices[i] * ImGuiHelpers.GlobalScale) + canvasOriginScreen;
             }
 
-            drawList.AddImageQuad(textureWrapCache.Handle, quadVertices[0], quadVertices[1], quadVertices[2], quadVertices[3],
+            drawList.AddImageQuad(textureToDraw.Handle, quadVertices[0], quadVertices[1], quadVertices[2], quadVertices[3],
                                   Vector2.Zero, Vector2.UnitX, Vector2.One, Vector2.UnitY, tintColorU32);
         }
 

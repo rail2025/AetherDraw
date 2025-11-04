@@ -39,6 +39,7 @@ namespace AetherDraw.DrawingLogic
         public List<Guid> DraggedObjectIds { get; } = new List<Guid>();
 
         private readonly Action<Guid> onObjectUpdateSent;
+        private readonly Action<List<BaseDrawable>> _onObjectsCommittedCallback;
 
         #region Public State for Drag Operations
         public Vector2 dragStartMousePosLogical;
@@ -66,13 +67,14 @@ namespace AetherDraw.DrawingLogic
         /// <param name="plugin">The main plugin instance.</param>
         /// <param name="undoManagerInstance">The application's UndoManager.</param>
         /// <param name="pageManagerInstance">The application's PageManager.</param>
-        public ShapeInteractionHandler(Plugin plugin, UndoManager undoManagerInstance, PageManager pageManagerInstance, Action<Guid> onObjectUpdateSent)
+        public ShapeInteractionHandler(Plugin plugin, UndoManager undoManagerInstance, PageManager pageManagerInstance, Action<Guid> onObjectUpdateSent, Action<List<BaseDrawable>> onObjectsCommittedCallback)
         {
             this.plugin = plugin;
             this.configuration = plugin.Configuration;
             this.undoManager = undoManagerInstance ?? throw new ArgumentNullException(nameof(undoManagerInstance));
             this.pageManager = pageManagerInstance ?? throw new ArgumentNullException(nameof(pageManagerInstance));
             this.onObjectUpdateSent = onObjectUpdateSent;
+            this._onObjectsCommittedCallback = onObjectsCommittedCallback;
             this.handleColorDefault = ImGui.GetColorU32(new Vector4(0.8f, 0.8f, 0.8f, 0.9f));
             this.handleColorHover = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 0.5f, 1.0f));
             this.handleColorRotation = ImGui.GetColorU32(new Vector4(0.5f, 1.0f, 0.5f, 0.9f));
@@ -206,6 +208,18 @@ namespace AetherDraw.DrawingLogic
                 return true;
             }
             return false;
+        }
+
+        public void CommitObjectChanges(List<BaseDrawable> drawablesToCommit)
+        {
+            if (drawablesToCommit == null || !drawablesToCommit.Any()) return;
+
+            // Mark objects for network echo cancellation
+            foreach (var drawable in drawablesToCommit)
+                onObjectUpdateSent?.Invoke(drawable.UniqueId);
+
+            // Invoke the callback that MainWindow provided, which handles network sending
+            _onObjectsCommittedCallback?.Invoke(drawablesToCommit);
         }
 
         private void DrawMarqueeVisuals(Vector2 mousePosLogical, Vector2 mousePosScreen, Vector2 canvasOriginScreen, ImDrawListPtr drawList)
