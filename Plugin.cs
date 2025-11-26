@@ -15,9 +15,12 @@ namespace AetherDraw
         [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
         [PluginService] internal static IClientState ClientState { get; private set; } = null!;
         [PluginService] internal static IPluginLog Log { get; private set; } = null!;
+        [PluginService] internal static IFramework Framework { get; private set; } = null!;
         [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
         [PluginService] internal static ITextureProvider? TextureProvider { get; private set; } = null!;
         [PluginService] internal static IPartyList? PartyList { get; private set; } = null!;
+
+        [PluginService] internal static IKeyState KeyState { get; private set; } = null!;
 
         public string Name => "AetherDraw";
         private const string CommandName = "/aetherdraw";
@@ -28,11 +31,14 @@ namespace AetherDraw
         public readonly WindowSystem WindowSystem = new("AetherDraw");
 
         private ConfigWindow ConfigWindow { get; init; }
-        private MainWindow MainWindow { get; init; }
+        public MainWindow MainWindow { get; init; }
         private LiveSessionWindow LiveSessionWindow { get; init; }
+        public PropertiesWindow PropertiesWindow { get; init; }
         private MainWindow? secondWindow;
 
         public NetworkManager NetworkManager { get; init; }
+        public DiscoveryClient DiscoveryClient { get; init; }
+        public DiscoveryWindow DiscoveryWindow { get; init; }
 
         public Plugin()
         {
@@ -40,15 +46,22 @@ namespace AetherDraw
             this.Configuration.Initialize(PluginInterface);
 
             this.NetworkManager = new NetworkManager();
+            this.DiscoveryClient = new DiscoveryClient();
+
             this.ConfigWindow = new ConfigWindow(this);
             this.MainWindow = new MainWindow(this);
             this.LiveSessionWindow = new LiveSessionWindow(this);
+            this.PropertiesWindow = new PropertiesWindow(this);
+            this.DiscoveryWindow = new DiscoveryWindow(this);
 
-            
+
 
             this.WindowSystem.AddWindow(this.ConfigWindow);
             this.WindowSystem.AddWindow(this.MainWindow);
             this.WindowSystem.AddWindow(this.LiveSessionWindow);
+            this.WindowSystem.AddWindow(this.PropertiesWindow);
+            this.WindowSystem.AddWindow(this.DiscoveryWindow);
+
 
             CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
             {
@@ -77,10 +90,12 @@ namespace AetherDraw
             CommandManager.RemoveHandler(SecondWindowCommandName);
 
             this.NetworkManager.Dispose();
+            this.DiscoveryClient.Dispose();
 
             this.ConfigWindow.Dispose();
             this.MainWindow.Dispose();
             this.LiveSessionWindow.Dispose();
+            this.PropertiesWindow.Dispose();
             this.secondWindow?.Dispose();
             this.WindowSystem.RemoveAllWindows();
 
@@ -114,5 +129,7 @@ namespace AetherDraw
         public void ToggleMainUI() => this.MainWindow.IsOpen = !this.MainWindow.IsOpen;
 
         public void ToggleLiveSessionUI() => this.LiveSessionWindow.IsOpen = !this.LiveSessionWindow.IsOpen;
+        public void TogglePropertiesUI() => this.PropertiesWindow.IsOpen = !this.PropertiesWindow.IsOpen;
+        public void ToggleDiscoveryUI() => this.DiscoveryWindow.IsOpen = !this.DiscoveryWindow.IsOpen;
     }
 }

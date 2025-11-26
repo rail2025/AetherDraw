@@ -47,6 +47,18 @@ namespace AetherDraw.Core
         private const int MaxUndoLevels = 30; // Arbitrary limit for undo history
 
         /// <summary>
+        /// Ensures we have an undo stack for every page up to the requested count.
+        /// Matches the behavior of the JS _ensureStacks helper.
+        /// </summary>
+        private void EnsureStacks(int count)
+        {
+            while (undoStacks.Count < count)
+            {
+                undoStacks.Add(new Stack<UndoAction>());
+            }
+        }
+
+        /// <summary>
         // Initializes or re-initializes the undo stacks to match the number of pages.
         /// </summary>
         public void InitializeStacks(int pageCount)
@@ -65,6 +77,9 @@ namespace AetherDraw.Core
         /// </summary>
         public void SetActivePage(int index)
         {
+            // Auto-expand stacks if switching to a valid page index that doesn't have a stack yet.
+            EnsureStacks(index + 1);
+
             if (index < 0 || index >= undoStacks.Count)
             {
                 AetherDraw.Plugin.Log?.Error($"[UndoManager] SetActivePage: Invalid index {index}.");
@@ -130,6 +145,8 @@ namespace AetherDraw.Core
         /// <param name="actionDescription">A brief description of the action being performed.</param>
         public void RecordAction(List<BaseDrawable> currentDrawables, string actionDescription)
         {
+            EnsureStacks(activeStackIndex + 1);
+
             if (undoStacks.Count == 0 || activeStackIndex < 0 || activeStackIndex >= undoStacks.Count)
             {
                 AetherDraw.Plugin.Log?.Error($"[UndoManager] RecordAction: Cannot record, invalid state. Stacks: {undoStacks.Count}, Active: {activeStackIndex}");

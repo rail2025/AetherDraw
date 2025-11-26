@@ -4,6 +4,7 @@ using AetherDraw.Networking;
 using AetherDraw.Serialization;
 using AetherDraw.UI;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
@@ -54,12 +55,20 @@ namespace AetherDraw.Windows
         private string statusSearchInput = "";
         private List<Lumina.Excel.Sheets.Status> statusSearchResults = new();
 
+        private bool wasUpArrowDown;
+        private bool wasDownArrowDown;
+        private bool wasLeftArrowDown;
+        private bool wasRightArrowDown;
+
         public interface IPlanAction
         {
             void Undo(MainWindow window);
             string Description { get; }
         }
-
+        public void LoadPlanFromUrlSafe(string url)
+        {
+            _ = planIOManager.RequestLoadPlanFromUrl(url);
+        }
         private class PlanMovePageAction : IPlanAction
         {
             private readonly int fromIndex;
@@ -83,6 +92,14 @@ namespace AetherDraw.Windows
         private bool openBackgroundUrlModal = false;
         private readonly ConcurrentDictionary<Guid, bool> pendingEchoGuids = new();
         private string backgroundUrlInput = "";
+
+        private int previousSelectionCount = 0;
+
+        // for properties window
+        public List<BaseDrawable> SelectedDrawables => selectedDrawables;
+        public ShapeInteractionHandler InteractionHandler => shapeInteractionHandler;
+        public UndoManager UndoManager => undoManager;
+        public PageManager PageManager => pageManager;
 
         // helper grid methods
         private Vector2 SnapToGrid(Vector2 point)
@@ -524,6 +541,8 @@ namespace AetherDraw.Windows
         {
             TextureManager.DoMainThreadWork();
 
+            HandleKeyboardNudging();
+
             if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
             if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
@@ -542,6 +561,7 @@ namespace AetherDraw.Windows
             {
                 if (rightPaneRaii)
                 {
+                
                     float bottomControlsHeight = ImGui.GetFrameHeightWithSpacing() * 2 + ImGui.GetStyle().WindowPadding.Y * 2 + ImGui.GetStyle().ItemSpacing.Y;
                     float canvasAvailableHeight = ImGui.GetContentRegionAvail().Y - bottomControlsHeight - ImGui.GetStyle().ItemSpacing.Y;
                     canvasAvailableHeight = Math.Max(canvasAvailableHeight, 50f * ImGuiHelpers.GlobalScale);
@@ -559,7 +579,18 @@ namespace AetherDraw.Windows
             DrawEmojiInputModal();
             DrawStatusSearchPopup();
             DrawBackgroundUrlModal();
+
+            // Auto-popup Properties Window logic
+            if (this.selectedDrawables.Count > 0 && this.previousSelectionCount == 0)
+            {
+                if (plugin.PropertiesWindow != null)
+                {
+                    plugin.PropertiesWindow.IsOpen = true;
+                }
+            }
+            this.previousSelectionCount = this.selectedDrawables.Count;
         }
+
 
         private void DrawBackgroundUrlModal()
         {
@@ -889,6 +920,10 @@ namespace AetherDraw.Windows
             }
             if (ImGui.BeginPopup("LoadPopup"))
             {
+                if (ImGui.MenuItem("Browse Community Plans"))
+                {
+                    plugin.ToggleDiscoveryUI();
+                }
                 if (ImGui.MenuItem("Load from File..."))
                 {
                     planIOManager.RequestLoadPlan();
@@ -1123,13 +1158,35 @@ namespace AetherDraw.Windows
                 }
 
                 canvasController.ProcessCanvasInteraction(finalMousePosLogical, ImGui.GetMousePos(), canvasOriginScreen, drawList, ImGui.IsMouseDown(ImGuiMouseButton.Left), ImGui.IsMouseClicked(ImGuiMouseButton.Left), ImGui.IsMouseReleased(ImGuiMouseButton.Left), ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left), GetLayerPriority);
+                if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
+                {
+                    if (hoveredDrawable != null)
+                    {
+                        // If right-clicking an unselected item, select it exclusively
+                        if (!selectedDrawables.Contains(hoveredDrawable))
+                        {
+                            foreach (var d in selectedDrawables) d.IsSelected = false;
+                            selectedDrawables.Clear();
+                            hoveredDrawable.IsSelected = true;
+                            selectedDrawables.Add(hoveredDrawable);
+                        }
+                        ImGui.OpenPopup("CanvasContextMenu");
+                    }
+                    else if (clipboard.Any())
+                    {
+                        ImGui.OpenPopup("CanvasContextMenu");
+                    }
+                }
             }
-                ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
+
+            DrawCanvasContextMenu();
+
+            ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
             var drawablesToRender = pageManager.GetCurrentPageDrawables();
             if (drawablesToRender != null && drawablesToRender.Any())
             {
-                var sortedDrawables = drawablesToRender.OrderBy(d => GetLayerPriority(d.ObjectDrawMode)).ToList();
-                foreach (var drawable in sortedDrawables)
+                // iterate the list directly to respect the manual order set by the layers panel.
+                foreach (var drawable in drawablesToRender)
                 {
                     if (inPlaceTextEditor.IsEditing && inPlaceTextEditor.IsCurrentlyEditing(drawable)) continue;
                     drawable.Draw(drawList, canvasOriginScreen);
@@ -1137,6 +1194,86 @@ namespace AetherDraw.Windows
             }
             canvasController.GetCurrentDrawingObjectForPreview()?.Draw(drawList, canvasOriginScreen);
             ImGui.PopClipRect();
+        }
+
+        private void DrawCanvasContextMenu()
+        {
+            if (ImGui.BeginPopup("CanvasContextMenu"))
+            {
+                if (selectedDrawables.Any())
+                {
+                    if (ImGui.MenuItem(selectedDrawables.Any(d => d.IsLocked) ? "Unlock" : "Lock"))
+                    {
+                        bool newState = !selectedDrawables.First().IsLocked;
+                        foreach (var d in selectedDrawables) d.IsLocked = newState;
+                        shapeInteractionHandler.CommitObjectChanges(new List<BaseDrawable>(selectedDrawables));
+                    }
+
+                    if (ImGui.BeginMenu("Arrange"))
+                    {
+                        if (ImGui.MenuItem("Bring to Front"))
+                        {
+                            var pageDrawables = pageManager.GetCurrentPageDrawables();
+                            undoManager.RecordAction(pageDrawables, "Bring to Front");
+                            foreach (var d in selectedDrawables) pageDrawables.Remove(d);
+                            pageDrawables.AddRange(selectedDrawables);
+
+                            if (pageManager.IsLiveMode)
+                            {
+                                var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(pageDrawables) };
+                                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                            }
+                        }
+                        if (ImGui.MenuItem("Send to Back"))
+                        {
+                            var pageDrawables = pageManager.GetCurrentPageDrawables();
+                            undoManager.RecordAction(pageDrawables, "Send to Back");
+                            foreach (var d in selectedDrawables) pageDrawables.Remove(d);
+                            pageDrawables.InsertRange(0, selectedDrawables);
+
+                            if (pageManager.IsLiveMode)
+                            {
+                                var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(pageDrawables) };
+                                _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                            }
+                        }
+                        ImGui.EndMenu();
+                    }
+
+                    ImGui.Separator();
+                    if (ImGui.MenuItem("Copy")) PerformCopySelected();
+                    if (ImGui.MenuItem("Delete"))
+                    {
+                        var pageDrawables = pageManager.GetCurrentPageDrawables();
+                        undoManager.RecordAction(pageDrawables, "Delete Selection");
+
+                        using var ms = new MemoryStream();
+                        using var writer = new BinaryWriter(ms);
+                        writer.Write(selectedDrawables.Count);
+                        foreach (var d in selectedDrawables)
+                        {
+                            writer.Write(d.UniqueId.ToByteArray());
+                            pageDrawables.Remove(d);
+                        }
+
+                        if (pageManager.IsLiveMode)
+                        {
+                            var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.DeleteObjects, Data = ms.ToArray() };
+                            _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                        }
+                        selectedDrawables.Clear();
+                        hoveredDrawable = null;
+                    }
+                }
+
+                if (clipboard.Any())
+                {
+                    ImGui.Separator();
+                    if (ImGui.MenuItem("Paste")) PerformPasteCopied();
+                }
+
+                ImGui.EndPopup();
+            }
         }
 
         private void RequestAddNewPage()
@@ -1296,6 +1433,63 @@ namespace AetherDraw.Windows
             writer.Write(toIndex);
             var payload = new NetworkPayload { PageIndex = 0, Action = PayloadActionType.MovePage, Data = ms.ToArray() };
             _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+        }
+        private void HandleKeyboardNudging()
+        {
+            // 1. Validation: Don't nudge if editing text or nothing selected
+            if (inPlaceTextEditor.IsEditing) return;
+            if (selectedDrawables.Count == 0) return;
+
+            // 2. Poll Input
+            // Assumption: Plugin.KeyState exposes the IDalamudKeyState service
+            var keyState = Plugin.KeyState;
+
+            // Check if keys are down
+            bool isAnyArrowDown = keyState[VirtualKey.UP] || keyState[VirtualKey.DOWN] ||
+                                  keyState[VirtualKey.LEFT] || keyState[VirtualKey.RIGHT];
+
+            if (isAnyArrowDown)
+            {
+                // Force the window to take focus.
+                ImGui.SetWindowFocus();
+
+                // Reinforce the capture flag
+                ImGui.GetIO().WantCaptureKeyboard = true;
+            }
+
+            bool isShift = keyState[VirtualKey.SHIFT];
+            float moveAmount = isShift ? 10.0f : 1.0f;
+            Vector2 delta = Vector2.Zero;
+
+            // 3. Check for Rising Edge (Press)
+            if (CheckKey(VirtualKey.UP, ref wasUpArrowDown)) delta.Y -= moveAmount;
+            if (CheckKey(VirtualKey.DOWN, ref wasDownArrowDown)) delta.Y += moveAmount;
+            if (CheckKey(VirtualKey.LEFT, ref wasLeftArrowDown)) delta.X -= moveAmount;
+            if (CheckKey(VirtualKey.RIGHT, ref wasRightArrowDown)) delta.X += moveAmount;
+
+            // 4. Apply Nudge
+            if (delta != Vector2.Zero)
+            {
+                // Record Undo *before* moving
+                undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Nudge Object");
+
+                foreach (var d in selectedDrawables)
+                {
+                    if (!d.IsLocked) d.Translate(delta);
+                }
+
+                // Send network update
+                shapeInteractionHandler.CommitObjectChanges(new List<BaseDrawable>(selectedDrawables));
+            }
+        }
+
+        // move helper method
+        private bool CheckKey(VirtualKey key, ref bool wasDown)
+        {
+            bool isDown = Plugin.KeyState[key];
+            bool pressed = isDown && !wasDown;
+            wasDown = isDown;
+            return pressed;
         }
     }
 }

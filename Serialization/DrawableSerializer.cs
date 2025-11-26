@@ -14,7 +14,7 @@ namespace AetherDraw.Serialization
     public static class DrawableSerializer
     {
         // Versioning for the serialization format. Increment if the format changes.
-        private const int SERIALIZATION_VERSION = 1;
+        private const int SERIALIZATION_VERSION = 3;
 
         /// <summary>
         /// A reasonable upper limit for the number of drawable objects on a single page to prevent malicious data from crashing the client.
@@ -73,7 +73,7 @@ namespace AetherDraw.Serialization
                 {
                     if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return deserializedDrawables;
                     int version = reader.ReadInt32();
-                    if (version != SERIALIZATION_VERSION)
+                    if (version > SERIALIZATION_VERSION)
                     {
                         AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Deserialization version mismatch. Expected {SERIALIZATION_VERSION}, got {version}.");
                         return deserializedDrawables;
@@ -91,7 +91,7 @@ namespace AetherDraw.Serialization
 
                     for (int i = 0; i < drawableCount; i++)
                     {
-                        BaseDrawable? drawable = DeserializeSingleDrawable(reader);
+                        BaseDrawable? drawable = DeserializeSingleDrawable(reader, version);
                         if (drawable != null)
                         {
                             deserializedDrawables.Add(drawable);
@@ -126,6 +126,8 @@ namespace AetherDraw.Serialization
             writer.Write(drawable.Thickness); // This is unscaled
             writer.Write(drawable.IsFilled);
             writer.Write(drawable.UniqueId.ToByteArray()); // Serialize the UniqueId for network identification
+            writer.Write(drawable.Name ?? drawable.ObjectDrawMode.ToString());
+            writer.Write(drawable.IsLocked);
 
             // 3. Write Type-Specific Properties
             switch (drawable.ObjectDrawMode)
@@ -250,7 +252,7 @@ namespace AetherDraw.Serialization
         /// <summary>
         /// Deserializes a single BaseDrawable object from the reader.
         /// </summary>
-        private static BaseDrawable? DeserializeSingleDrawable(BinaryReader reader)
+        private static BaseDrawable? DeserializeSingleDrawable(BinaryReader reader, int version)
         {
             if (reader.BaseStream.Position >= reader.BaseStream.Length) return null;
             DrawMode mode = (DrawMode)reader.ReadByte();
@@ -261,6 +263,31 @@ namespace AetherDraw.Serialization
             float thickness = reader.ReadSingle();
             bool isFilled = reader.ReadBoolean();
             Guid uniqueId = new Guid(reader.ReadBytes(16));
+            string name = "Object";
+            if (version >= 2)
+            {
+                try
+                {
+                    if (reader.BaseStream.Position < reader.BaseStream.Length)
+                        name = reader.ReadString();
+                }
+                catch (EndOfStreamException) { name = "Object"; }
+            }
+            else
+            {
+                name = mode.ToString();
+            }
+
+            bool isLocked = false;
+            if (version >= 3)
+            {
+                try
+                {
+                    if (reader.BaseStream.Position < reader.BaseStream.Length)
+                        isLocked = reader.ReadBoolean();
+                }
+                catch (EndOfStreamException) { isLocked = false; }
+            }
             BaseDrawable? drawable = null;
 
             switch (mode)
@@ -418,6 +445,7 @@ namespace AetherDraw.Serialization
                 drawable.Thickness = thickness;
                 drawable.IsFilled = isFilled;
                 drawable.IsPreview = false;
+                drawable.IsLocked = isLocked;
             }
             return drawable;
         }

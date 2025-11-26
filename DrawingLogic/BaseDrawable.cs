@@ -19,6 +19,7 @@ namespace AetherDraw.DrawingLogic
         public Vector4 Color { get; set; }
         public float Thickness { get; set; }
         public bool IsFilled { get; set; }
+        public bool IsLocked { get; set; } = false;
         public bool IsPreview { get; set; }
         public bool IsSelected { get; set; } = false;
         public bool IsHovered { get; set; } = false;
@@ -31,6 +32,11 @@ namespace AetherDraw.DrawingLogic
         {
             this.UniqueId = Guid.NewGuid();
         }
+
+        /// <summary>
+        /// Optional user-defined name for the object, displayed in the Layers list.
+        /// </summary>
+        public string? Name { get; set; }
 
         // Abstract method for ImGui drawing.
         public abstract void Draw(ImDrawListPtr drawList, Vector2 canvasOriginScreen);
@@ -55,9 +61,11 @@ namespace AetherDraw.DrawingLogic
         {
             // UniqueId is not copied; the clone gets its own new UniqueId upon its construction.
             target.ObjectDrawMode = this.ObjectDrawMode;
+            target.Name = this.Name;
             target.Color = this.Color;
             target.Thickness = this.Thickness;
             target.IsFilled = this.IsFilled;
+            target.IsLocked = this.IsLocked;
             target.IsPreview = false; // Cloned objects are generally not previews by default
             target.IsSelected = false;
             target.IsHovered = false;

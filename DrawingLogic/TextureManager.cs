@@ -79,11 +79,25 @@ namespace AetherDraw.DrawingLogic
                     {
                         LoadedTextures.TryRemove(resourcePath, out _);
                         tex?.Dispose();
-                        return null;
+                        // Fall through to regeneration logic below
                     }
-                    return tex;
+                    else
+                    {
+                        return tex;
+                    }
                 }
-                // If not found, it's assumed PreloadEmojiTexture was called and it's in the queue.
+
+                // Lazy Load: If not in cache and not pending, trigger generation now.
+                if (!PendingDownloads.Contains(resourcePath))
+                {
+                    string emojiChar = resourcePath.Substring("emoji:".Length);
+                    if (!string.IsNullOrEmpty(emojiChar))
+                    {
+                        Plugin.Log?.Debug($"[TextureManager] Lazy-loading emoji texture: {emojiChar}");
+                        PendingDownloads.Add(resourcePath);
+                        Task.Run(() => GenerateAndLoadEmojiTexture(emojiChar, resourcePath));
+                    }
+                }
                 return null;
             }
 

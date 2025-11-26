@@ -347,6 +347,18 @@ namespace AetherDraw.UI
                             drawList.AddText(new Vector2(center.X - textSize.X / 2, max.Y - textSize.Y - (iconButtonSize.Y * 0.1f)), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
                         }
                     }
+                    // Draw Caret for SubModes
+                    if (group.SubModes.Any())
+                    {
+                        var arrowSize = 6f * ImGuiHelpers.GlobalScale;
+                        var padding = 4f * ImGuiHelpers.GlobalScale;
+
+                        Vector2 p1 = new Vector2(max.X - arrowSize - padding, max.Y - arrowSize - padding);
+                        Vector2 p2 = new Vector2(max.X - padding, max.Y - arrowSize - padding);
+                        Vector2 p3 = new Vector2(max.X - arrowSize * 0.5f - padding, max.Y - padding);
+
+                        drawList.AddTriangleFilled(p1, p2, p3, ImGui.GetColorU32(ImGuiCol.Text));
+                    }
                 }
                 if (ImGui.IsItemHovered()) ImGui.SetTooltip(group.Tooltip);
 
@@ -405,6 +417,14 @@ namespace AetherDraw.UI
                     setCurrentBrushColor(ColorPalette[i]);
                 if (ColorPalette[i] == getCurrentBrushColor())
                     ImGui.GetForegroundDrawList().AddRect(ImGui.GetItemRectMin(), ImGui.GetItemRectMax(), ImGui.GetColorU32(new Vector4(1, 1, 0, 1)), 0, ImDrawFlags.None, 2f);
+            }
+
+            ImGui.Separator();
+
+            // New Properties Toggle Button
+            if (ImGui.Button("Properties Window", new Vector2(btnWidthFull, 0)))
+            {
+                plugin.TogglePropertiesUI();
             }
 
             float availableHeight = ImGui.GetContentRegionAvail().Y;

@@ -282,21 +282,24 @@ namespace AetherDraw.DrawingLogic
         private void UpdateHoveredObject(List<BaseDrawable> allDrawables, Func<DrawMode, int> layerPriority, ref BaseDrawable? hovered, Vector2 mousePos)
         {
             hovered = null;
-            var sortedForHover = allDrawables.OrderByDescending(d => layerPriority(d.ObjectDrawMode));
-            foreach (var drawable in sortedForHover)
+            // Since the Layers Panel modifies this list, iterating it directly allows manual overrides to work.
+            // We iterate Backwards so the last item in the list (visually on top) is checked first.
+            for (int i = allDrawables.Count - 1; i >= 0; i--)
             {
+                var drawable = allDrawables[i];
                 if (drawable.IsHit(mousePos, LogicalHandleInteractionRadius * 0.8f))
                 {
                     hovered = drawable;
                     drawable.IsHovered = true;
-                    break;
+                    break; // Stop at the first (top-most) item hit
                 }
             }
         }
 
         private void InitiateDrag(BaseDrawable? singleSelectedItem, List<BaseDrawable> selectedList, BaseDrawable? hovered, bool onHandle, Vector2 mousePos)
         {
-            if (onHandle && singleSelectedItem != null)
+            // Block handle interaction if the item is locked
+            if (onHandle && singleSelectedItem != null && !singleSelectedItem.IsLocked)
             {
                 StartHandleDrag(singleSelectedItem, mousePos);
             }
@@ -386,7 +389,8 @@ namespace AetherDraw.DrawingLogic
                     {
                         foreach (var selected in selectedList)
                         {
-                            selected.Translate(dragDelta);
+                            // Only move objects that are NOT locked
+                            if (!selected.IsLocked) selected.Translate(dragDelta);
                         }
                         // This update is crucial for incremental dragging
                         dragStartMousePosLogical = mousePos;

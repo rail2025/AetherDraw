@@ -222,5 +222,51 @@ namespace AetherDraw.Serialization
                 }
             }
         }
+        /// <summary>
+        /// Serializes a list of GUIDs (used for delete operations) into a byte array.
+        /// </summary>
+        public static byte[] SerializeGuids(List<Guid> guids)
+        {
+            if (guids == null) return Array.Empty<byte>();
+
+            using (var memoryStream = new MemoryStream())
+            using (var writer = new BinaryWriter(memoryStream))
+            {
+                writer.Write(guids.Count);
+                foreach (var guid in guids)
+                {
+                    writer.Write(guid.ToByteArray());
+                }
+                return memoryStream.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Deserializes a byte array into a list of GUIDs.
+        /// </summary>
+        public static List<Guid> DeserializeGuids(byte[] data)
+        {
+            var guids = new List<Guid>();
+            if (data == null || data.Length < 4) return guids;
+
+            using (var memoryStream = new MemoryStream(data))
+            using (var reader = new BinaryReader(memoryStream))
+            {
+                try
+                {
+                    int count = reader.ReadInt32();
+                    // Sanity check
+                    if (count < 0 || count > 10000) return guids;
+
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (reader.BaseStream.Position + 16 > reader.BaseStream.Length) break;
+                        guids.Add(new Guid(reader.ReadBytes(16)));
+                    }
+                }
+                catch (Exception) { /* Handle corruption gracefully */ }
+            }
+            return guids;
+        }
     }
 }

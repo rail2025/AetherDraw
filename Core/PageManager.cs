@@ -38,6 +38,11 @@ namespace AetherDraw.Core
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
 
         /// <summary>
+        /// Gets the UndoManager instance associated with this PageManager.
+        /// </summary>
+        public UndoManager UndoManager { get; private set; } = new UndoManager();
+
+        /// <summary>
         /// Gets or sets a value indicating whether the manager is in a live network session.
         /// </summary>
         public bool IsLiveMode { get; set; } = false;
@@ -57,6 +62,8 @@ namespace AetherDraw.Core
                 localPages.Add(CreateDefaultPage("1"));
                 currentPageIndex = 0;
                 this.activePageObject = this.GetAllPages().FirstOrDefault();
+
+                UndoManager.InitializeStacks(localPages.Count);
             }
         }
 
@@ -105,6 +112,7 @@ namespace AetherDraw.Core
             livePages.Clear();
             livePages.Add(CreateDefaultPage("1"));
             currentPageIndex = 0;
+            UndoManager.InitializeStacks(livePages.Count);
             this.activePageObject = this.GetAllPages().FirstOrDefault();
             Plugin.Log?.Info("[PageManager] Entered live mode. Created initial live page with default layout.");
         }
@@ -189,7 +197,10 @@ namespace AetherDraw.Core
         {
             var pages = GetAllPages();
             int newPageNumber = pages.Any() ? pages.Select(p => int.TryParse(p.Name, out int num) ? num : 0).DefaultIfEmpty(0).Max() + 1 : 1;
+            // Add sync for UndoManager
+            int newIndex = pages.Count;
             pages.Add(CreateDefaultPage(newPageNumber.ToString()));
+            UndoManager.AddStack(newIndex);
 
             if (switchToPage)
             {
@@ -206,6 +217,9 @@ namespace AetherDraw.Core
         {
             var pages = GetAllPages();
             if (pages.Count <= 1) return false;
+
+            UndoManager.RemoveStack(currentPageIndex);
+
             pages.RemoveAt(currentPageIndex);
             currentPageIndex = Math.Max(0, Math.Min(currentPageIndex, pages.Count - 1));
             return true;
@@ -215,6 +229,8 @@ namespace AetherDraw.Core
         {
             var pages = GetAllPages();
             if (index < 0 || index >= pages.Count || pages.Count <= 1) return false;
+
+            UndoManager.RemoveStack(index);
 
             pages.RemoveAt(index);
 
@@ -274,6 +290,10 @@ namespace AetherDraw.Core
             if (!forceSwitch && newPageIndex == currentPageIndex) return true;
             this.activePageObject = pages[newPageIndex];
             currentPageIndex = newPageIndex;
+
+            // Sync active stack
+            UndoManager.SetActivePage(currentPageIndex);
+
             return true;
         }
 
@@ -287,6 +307,9 @@ namespace AetherDraw.Core
             pages.Clear();
             pages.AddRange(loadedPagesData);
             currentPageIndex = 0;
+
+            UndoManager.InitializeStacks(pages.Count);
+
             if (!pages.Any())
             {
                 InitializeDefaultPage();
@@ -307,6 +330,8 @@ namespace AetherDraw.Core
             var pageToMove = pages[fromIndex];
             pages.RemoveAt(fromIndex);
             pages.Insert(toIndex, pageToMove);
+
+            UndoManager.MoveStack(fromIndex, toIndex);
 
             for (int i = 0; i < pages.Count; i++)
             {

@@ -14,6 +14,8 @@ namespace AetherDraw.Networking
     /// </summary>
     public class NetworkManager : IDisposable
     {
+        public const string ApiBaseUrl = "https://aetherdraw-server.onrender.com";
+
         private ClientWebSocket? webSocket;
         private CancellationTokenSource? cancellationTokenSource;
         
