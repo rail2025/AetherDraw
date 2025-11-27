@@ -3,9 +3,9 @@
     "Name": "AetherDraw",
     "Punchline": "A realtime multi-user whiteboard raid planner. Compatible with aetherdraw.me",
     "Description": "Whiteboard raid planner for encounters. Use /aetherdraw to open. Supports realtime multi-user, multi-platform collaboration. Also available at aetherdraw.me when plugins are down!!",
-    "Changelog": "v2.4.1.0:Added Community Plan Browser (Search & Load).\nv2.4.0.0:Added Status Icon search, per-page undo, page re-ordering, and live property editing.\nv2.3.1.0:Changed BG to image import, page sync fixes.",
+    "Changelog": "v2.4.2.0: Overhauled Load/Import window with tabs. Added ability to 'Append' plans (merge pages) from files or URLs. Replaced old Load popup.\nv2.4.1.0:Added Community Plan Browser (Search & Load).\nv2.4.0.0:Added Status Icon search, per-page undo, page re-ordering, and live property editing.\nv2.3.1.0:Changed BG to image import, page sync fixes.",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.4.1.0",
+    "AssemblyVersion": "2.4.2.0",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [

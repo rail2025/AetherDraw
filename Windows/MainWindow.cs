@@ -5,6 +5,7 @@ using AetherDraw.Serialization;
 using AetherDraw.UI;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
+using Dalamud.Interface;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
@@ -42,18 +43,34 @@ namespace AetherDraw.Windows
         private float ScaledCanvasGridSize => 40f * ImGuiHelpers.GlobalScale;
         private Vector2 currentCanvasDrawSize;
         private string textToLoad = "";
-        private string raidPlanUrlToLoad = "";
         private bool openClearConfirmPopup = false;
         private bool openDeletePageConfirmPopup = false;
         private bool openRoomClosingPopup = false;
         private bool openImportTextModal = false;
-        private bool openRaidPlanImportModal = false;
         private bool isAwaitingUndoEcho = false;
         private string clearConfirmText = "";
 
         private bool openStatusSearchPopup = false;
         private string statusSearchInput = "";
         private List<Lumina.Excel.Sheets.Status> statusSearchResults = new();
+
+        private string accountKeyInput = "";
+        private bool openAccountCreatedModal = false;
+        private string newCreatedAccountKey = "";
+
+        private bool openSaveModal = false;
+        private int saveMode = 0; // 0 = Private, 1 = Public
+        private string savePlanName = "";
+        private string saveCreatorName = ""; // Auto-filled from Config if available
+        private int saveRaidTierIndex = 0;
+        private string saveCustomTier = "";
+        private readonly string[] saveRaidTiers = { "(None)", "M9S", "M10S", "M11S", "M12S", "M5S", "M6S", "M7S", "M8S", "Custom" };
+        private string saveStatusMessage = "";
+        private string lastSavedUrl = "";
+
+        private bool openMyPlansModal = false;
+        private List<MyPlan> myPlansList = new();
+        private bool isFetchingPlans = false;
 
         private bool wasUpArrowDown;
         private bool wasDownArrowDown;
@@ -100,6 +117,7 @@ namespace AetherDraw.Windows
         public ShapeInteractionHandler InteractionHandler => shapeInteractionHandler;
         public UndoManager UndoManager => undoManager;
         public PageManager PageManager => pageManager;
+        public PlanIOManager PlanIOManager => planIOManager;
 
         // helper grid methods
         private Vector2 SnapToGrid(Vector2 point)
@@ -546,7 +564,6 @@ namespace AetherDraw.Windows
             if (openClearConfirmPopup) { ImGui.OpenPopup("Confirm Clear All"); openClearConfirmPopup = false; }
             if (openDeletePageConfirmPopup) { ImGui.OpenPopup("Confirm Delete Page"); openDeletePageConfirmPopup = false; }
             if (openRoomClosingPopup) { ImGui.OpenPopup("Room Closing"); openRoomClosingPopup = false; }
-            if (openRaidPlanImportModal) { ImGui.OpenPopup("Import from URL"); openRaidPlanImportModal = false; }
             if (openEmojiInputModal) { ImGui.OpenPopup("Place Emoji"); openEmojiInputModal = false; }
             if (openStatusSearchPopup) { ImGui.OpenPopup("Status Search"); openStatusSearchPopup = false; }
             if (openBackgroundUrlModal) { ImGui.OpenPopup("Import Image from URL"); openBackgroundUrlModal = false; }
@@ -579,6 +596,10 @@ namespace AetherDraw.Windows
             DrawEmojiInputModal();
             DrawStatusSearchPopup();
             DrawBackgroundUrlModal();
+            DrawAccountCreatedModal();
+            DrawMyPlansModal();
+            DrawSaveModal();
+
 
             // Auto-popup Properties Window logic
             if (this.selectedDrawables.Count > 0 && this.previousSelectionCount == 0)
@@ -910,107 +931,27 @@ namespace AetherDraw.Windows
         private void DrawActionButtons()
         {
             float availableWidth = ImGui.GetContentRegionAvail().X;
-            int numberOfActionButtons = 4;
+            int numberOfActionButtons = 5;
             float totalSpacing = ImGui.GetStyle().ItemSpacing.X * (numberOfActionButtons - 1);
             float actionButtonWidth = (availableWidth - totalSpacing) / numberOfActionButtons;
 
-            if (ImGui.Button("Load##LoadButton", new Vector2(actionButtonWidth, 0)))
+            if (ImGui.Button("Load/Search##LoadButton", new Vector2(actionButtonWidth, 0)))
             {
-                ImGui.OpenPopup("LoadPopup");
-            }
-            if (ImGui.BeginPopup("LoadPopup"))
-            {
-                if (ImGui.MenuItem("Browse Community Plans"))
-                {
-                    plugin.ToggleDiscoveryUI();
-                }
-                if (ImGui.MenuItem("Load from File..."))
-                {
-                    planIOManager.RequestLoadPlan();
-                }
-                if (ImGui.MenuItem("Load from Text..."))
-                {
-                    textToLoad = "";
-                    openImportTextModal = true;
-                }
-                if (ImGui.MenuItem("Import from URL..."))
-                {
-                    raidPlanUrlToLoad = "";
-                    openRaidPlanImportModal = true;
-                }
-                ImGui.EndPopup();
-            }
-            if (openImportTextModal)
-            {
-                ImGui.OpenPopup("Import From Text");
-                openImportTextModal = false;
-            }
-            if (openRaidPlanImportModal)
-            {
-                ImGui.OpenPopup("Import from URL");
-                openRaidPlanImportModal = false;
-            }
-
-            bool pOpen = true;
-            if (ImGui.BeginPopupModal("Import From Text", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
-            {
-                ImGui.Text("Paste the plan's Base64 text below.");
-                ImGui.InputTextMultiline("##TextToLoad", ref textToLoad, 100000, new Vector2(400 * ImGuiHelpers.GlobalScale, 200 * ImGuiHelpers.GlobalScale));
-                if (ImGui.Button("Import", new Vector2(120, 0)))
-                {
-                    if (!string.IsNullOrWhiteSpace(textToLoad))
-                        planIOManager.RequestLoadPlanFromText(textToLoad);
-                    ImGui.CloseCurrentPopup();
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Cancel"))
-                    ImGui.CloseCurrentPopup();
-                ImGui.EndPopup();
-            }
-
-            if (ImGui.BeginPopupModal("Import from URL", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
-            {
-                ImGui.Text("Enter the URL below.");
-                ImGui.InputText("##Url", ref raidPlanUrlToLoad, 256);
-                if (ImGui.Button("Import##URLImport", new Vector2(120, 0)))
-                {
-                    if (!string.IsNullOrWhiteSpace(raidPlanUrlToLoad))
-                    {
-                        _ = planIOManager.RequestLoadPlanFromUrl(raidPlanUrlToLoad);
-                    }
-                    ImGui.CloseCurrentPopup();
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Cancel##RaidPlanCancel"))
-                {
-                    ImGui.CloseCurrentPopup();
-                }
-                ImGui.EndPopup();
+                plugin.ToggleDiscoveryUI();
             }
 
             ImGui.SameLine();
 
-            if (ImGui.Button("Save##SaveButton", new Vector2(actionButtonWidth, 0)))
+            if (ImGui.Button("Save/Publish##SaveButton", new Vector2(actionButtonWidth, 0)))
             {
-                ImGui.OpenPopup("SavePopup");
+                // Pre-fill creator name if not set
+                if (string.IsNullOrEmpty(saveCreatorName) && !string.IsNullOrEmpty(configuration.AccountKey))
+                {
+                }
+                saveStatusMessage = ""; // Reset status
+                openSaveModal = true;
             }
-            if (ImGui.BeginPopup("SavePopup"))
-            {
-                if (ImGui.MenuItem("Save Plan to File..."))
-                {
-                    planIOManager.RequestSavePlan();
-                }
-                if (ImGui.MenuItem("Copy Plan to Clipboard"))
-                {
-                    planIOManager.CopyCurrentPlanToClipboardCompressed();
-                }
-                ImGui.Separator();
-                if (ImGui.MenuItem("Export as Images (for WDIGViewer)"))
-                {
-                    planIOManager.RequestSaveImage(this.currentCanvasDrawSize);
-                }
-                ImGui.EndPopup();
-            }
+           
 
             ImGui.SameLine();
 
@@ -1028,6 +969,19 @@ namespace AetherDraw.Windows
                     else plugin.ToggleLiveSessionUI();
                 }
             }
+            // --- Account Button ---
+            ImGui.SameLine();
+            // Highlight button if logged in
+            bool isLoggedIn = !string.IsNullOrEmpty(configuration.AccountKey);
+            using (ImRaii.PushColor(ImGuiCol.Button, isLoggedIn ? new Vector4(0.2f, 0.6f, 0.3f, 1.0f) : ImGui.GetStyle().Colors[(int)ImGuiCol.Button]))
+            {
+                if (ImGui.Button("Account##AccountButton", new Vector2(actionButtonWidth, 0)))
+                {
+                    ImGui.OpenPopup("AccountPopup");
+                }
+            }
+            DrawAccountMenu();
+
             var fileError = planIOManager.LastFileDialogError;
             if (!string.IsNullOrEmpty(fileError)) { ImGui.Spacing(); ImGui.TextColored(new Vector4(1.0f, 0.3f, 0.3f, 1.0f), fileError); }
         }
@@ -1490,6 +1444,362 @@ namespace AetherDraw.Windows
             bool pressed = isDown && !wasDown;
             wasDown = isDown;
             return pressed;
+        }
+        private void DrawAccountMenu()
+        {
+            if (ImGui.BeginPopup("AccountPopup"))
+            {
+                if (string.IsNullOrEmpty(configuration.AccountKey))
+                {
+                    ImGui.Text("Log In or Create Account");
+                    ImGui.Separator();
+
+                    ImGui.SetNextItemWidth(200 * ImGuiHelpers.GlobalScale);
+                    ImGui.InputTextWithHint("##AccKeyInput", "Enter Account Key...", ref accountKeyInput, 100);
+
+                    if (ImGui.Button("Log In", new Vector2(-1, 0)))
+                    {
+                        if (plugin.AccountManager.ValidateKey(accountKeyInput))
+                        {
+                            configuration.AccountKey = accountKeyInput;
+                            configuration.Save();
+                            accountKeyInput = "";
+                            ImGui.CloseCurrentPopup();
+                        }
+                    }
+
+                    ImGui.Separator();
+                    ImGui.TextDisabled("No account?");
+                    if (ImGui.Button("Create New Account", new Vector2(-1, 0)))
+                    {
+                        newCreatedAccountKey = plugin.AccountManager.GenerateNewKey();
+                        if (!string.IsNullOrEmpty(newCreatedAccountKey))
+                        {
+                            openAccountCreatedModal = true;
+                            ImGui.CloseCurrentPopup();
+                        }
+                    }
+                }
+                else
+                {
+                    ImGui.TextColored(new Vector4(0.4f, 1.0f, 0.4f, 1.0f), "Logged In");
+
+                    // Safety display
+                    string displayKey = configuration.AccountKey;
+                    if (!string.IsNullOrEmpty(displayKey) && displayKey.Contains('-'))
+                    {
+                        var parts = displayKey.Split('-');
+                        displayKey = parts.Length > 2 ? $"{parts[0]}-{parts[1]}..." : displayKey;
+                    }
+
+                    ImGui.TextDisabled(displayKey);
+
+                    ImGui.Separator();
+
+                    if (ImGui.MenuItem("My Plans"))
+                    {
+                        // Close the menu immediately so it doesn't get stuck
+                        ImGui.CloseCurrentPopup();
+
+                        // Open modal immediately to show loading state if needed
+                        openMyPlansModal = true;
+                        isFetchingPlans = true;
+                        myPlansList.Clear();
+
+                        // Fetch plans in background
+                        Task.Run(async () =>
+                        {
+                            var plans = await plugin.AccountManager.GetMyPlansAsync(configuration.AccountKey);
+                                myPlansList = plans;
+                                isFetchingPlans = false;
+                        });
+                    }
+
+                    ImGui.Separator();
+                    if (ImGui.Selectable("Log Out"))
+                    {
+                        configuration.AccountKey = string.Empty;
+                        configuration.Save();
+                    }
+                }
+                ImGui.EndPopup();
+            }
+        }
+
+        private void DrawAccountCreatedModal()
+        {
+            if (openAccountCreatedModal)
+            {
+                ImGui.OpenPopup("Account Created");
+                openAccountCreatedModal = false;
+            }
+
+            bool pOpen = true;
+            if (ImGui.BeginPopupModal("Account Created", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "SAVE YOUR ACCOUNT KEY!");
+                ImGui.Text("This is the ONLY time you will see this key.");
+                ImGui.Text("If you lose it, you lose access to your saved plans.");
+                ImGui.Separator();
+
+                ImGui.PushFont(UiBuilder.MonoFont);
+                ImGui.InputText("##NewKeyDisplay", ref newCreatedAccountKey, 128, ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AutoSelectAll);
+                ImGui.PopFont();
+
+                ImGui.Spacing();
+
+                if (ImGui.Button("Copy to Clipboard", new Vector2(120 * ImGuiHelpers.GlobalScale, 0)))
+                {
+                    ImGui.SetClipboardText(newCreatedAccountKey);
+                }
+
+                ImGui.SameLine();
+
+                if (ImGui.Button("I Saved It (Log In)", new Vector2(140 * ImGuiHelpers.GlobalScale, 0)))
+                {
+                    configuration.AccountKey = newCreatedAccountKey;
+                    configuration.Save();
+                    newCreatedAccountKey = "";
+                    ImGui.CloseCurrentPopup();
+                }
+
+                ImGui.EndPopup();
+            }
+        }
+
+        private void DrawMyPlansModal()
+        {
+            if (openMyPlansModal)
+            {
+                ImGui.OpenPopup("My Saved Plans");
+                openMyPlansModal = false;
+            }
+
+            bool pOpen = true;
+            ImGui.SetNextWindowSize(new Vector2(400 * ImGuiHelpers.GlobalScale, 500 * ImGuiHelpers.GlobalScale), ImGuiCond.FirstUseEver);
+            if (ImGui.BeginPopupModal("My Saved Plans", ref pOpen, ImGuiWindowFlags.None))
+            {
+                if (isFetchingPlans)
+                {
+                    ImGui.Text("Fetching plans from server...");
+                }
+                else if (myPlansList.Count == 0)
+                {
+                    ImGui.TextDisabled("No saved plans found for this account.");
+                }
+                else
+                {
+                    ImGui.TextDisabled($"{myPlansList.Count} plans found:");
+                    ImGui.Separator();
+
+                    // Scrollable list area
+                    using (var child = ImRaii.Child("MyPlansList", new Vector2(0, -40 * ImGuiHelpers.GlobalScale), true))
+                    {
+                        if (child)
+                        {
+                            foreach (var plan in myPlansList)
+                            {
+                                string displayName = string.IsNullOrEmpty(plan.PlanName) ? "Untitled Plan" : plan.PlanName;
+                                if (ImGui.Button($"{displayName}##{plan.Id}", new Vector2(-1, 0)))
+                                {
+                                    // Construct URL for PlanIOManager
+                                    string url = $"{Networking.NetworkManager.ApiBaseUrl}/?plan={plan.Id}";
+
+                                    // Trigger load
+                                    _ = planIOManager.RequestLoadPlanFromUrl(url);
+
+                                    ImGui.CloseCurrentPopup();
+                                }
+                                if (ImGui.IsItemHovered())
+                                {
+                                    ImGui.SetTooltip($"ID: {plan.Id}");
+                                }
+                            }
+                        }
+                    }
+                }
+
+                ImGui.Separator();
+                if (ImGui.Button("Close", new Vector2(-1, 0)))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+
+                ImGui.EndPopup();
+            }
+        }
+
+        private void DrawSaveModal()
+        {
+            if (openSaveModal)
+            {
+                ImGui.OpenPopup("Save / Publish Plan");
+                openSaveModal = false;
+            }
+
+            bool pOpen = true;
+            ImGui.SetNextWindowSize(new Vector2(450 * ImGuiHelpers.GlobalScale, 0));
+            if (ImGui.BeginPopupModal("Save / Publish Plan", ref pOpen, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                // 1. Save to File (Always available)
+                if (ImGui.Button("Save to File (Private)", new Vector2(-1, 0)))
+                {
+                    planIOManager.RequestSavePlan();
+                    ImGui.CloseCurrentPopup();
+                }
+
+                if (ImGui.Button("Export as Images (PNG)", new Vector2(-1, 0)))
+                {
+                    planIOManager.RequestSaveImage(this.currentCanvasDrawSize);
+                    ImGui.CloseCurrentPopup();
+                }
+
+                ImGui.Separator();
+
+                // 2. Mode Toggle
+                ImGui.Text("Save Destination:");
+                if (ImGui.RadioButton("Save to Private URL", ref saveMode, 0)) { }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Get a private, shareable link.");
+
+                if (ImGui.RadioButton("Publish as Public Plan", ref saveMode, 1)) { }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("Make it discoverable by the community.");
+
+                ImGui.Spacing();
+                ImGui.Separator();
+
+                // 3. Inputs based on Mode
+                bool isPublic = saveMode == 1;
+
+                // Raid Tier (Public Only)
+                if (isPublic)
+                {
+                    ImGui.Text("Raid Tier (Required)");
+                    ImGui.SetNextItemWidth(-1);
+                    ImGui.Combo("##RaidTierCombo", ref saveRaidTierIndex, saveRaidTiers, saveRaidTiers.Length);
+
+                    if (saveRaidTiers[saveRaidTierIndex] == "Custom")
+                    {
+                        ImGui.SetNextItemWidth(-1);
+                        ImGui.InputTextWithHint("##CustomTier", "Enter custom tag (e.g. UCOB)", ref saveCustomTier, 20);
+                    }
+                }
+
+                // Plan Name
+                string nameLabel = isPublic ? "Search Keywords (Required)" : "Plan Name (Optional)";
+                string nameHint = isPublic ? "e.g., p3-uptime-MyName-braindead" : "e.g., My Private P3 Strat";
+                ImGui.Text(nameLabel);
+                ImGui.SetNextItemWidth(-1);
+                ImGui.InputTextWithHint("##PlanNameInput", nameHint, ref savePlanName, 50);
+
+                // Creator Name (Public Only)
+                if (isPublic)
+                {
+                    ImGui.Text("Creator Display Name (Optional)");
+                    ImGui.SetNextItemWidth(-1);
+                    ImGui.InputTextWithHint("##CreatorNameInput", "Your name (e.g. Cinderella)", ref saveCreatorName, 30);
+                }
+
+                // 4. Validation & Preview
+                bool isValid = true;
+                string validationError = "";
+
+                if (isPublic)
+                {
+                    if (saveRaidTierIndex == 0) { isValid = false; } // (None) selected
+                    if (saveRaidTiers[saveRaidTierIndex] == "Custom" && string.IsNullOrWhiteSpace(saveCustomTier)) { isValid = false; }
+                    if (string.IsNullOrWhiteSpace(savePlanName)) { isValid = false; }
+
+                    if (!isValid) validationError = "Please fill in all required fields.";
+                }
+
+                // Link Preview (Visual only)
+                ImGui.Spacing();
+                ImGui.TextDisabled("Preview:");
+                string previewUrl = "aetherdraw.me?plan=";
+                if (isPublic)
+                {
+                    string tier = saveRaidTiers[saveRaidTierIndex] == "Custom" ? saveCustomTier : saveRaidTiers[saveRaidTierIndex];
+                    if (tier == "(None)") tier = "";
+                    if (!string.IsNullOrEmpty(tier)) previewUrl += tier + "-";
+                    if (!string.IsNullOrEmpty(savePlanName)) previewUrl += savePlanName.Replace(" ", "-") + "-";
+                }
+                previewUrl += "[unique-id]";
+                ImGui.TextDisabled(previewUrl);
+
+                if (!string.IsNullOrEmpty(validationError))
+                {
+                    ImGui.TextColored(new Vector4(1, 0.3f, 0.3f, 1), validationError);
+                }
+
+                if (!string.IsNullOrEmpty(saveStatusMessage))
+                {
+                    ImGui.TextColored(new Vector4(1, 0.8f, 0.2f, 1), saveStatusMessage);
+                }
+
+                ImGui.Spacing();
+
+                // 5. Action Buttons
+                using (ImRaii.Disabled(!isValid))
+                {
+                    string btnLabel = isPublic ? "Publish Publicly" : "Save to URL";
+                    if (ImGui.Button(btnLabel, new Vector2(-1, 0)))
+                    {
+                        saveStatusMessage = "Saving...";
+                        lastSavedUrl = "";
+
+                        // Capture values for thread safety
+                        string pName = savePlanName;
+                        string pCreator = saveCreatorName;
+                        string pTag = saveRaidTiers[saveRaidTierIndex] == "Custom" ? saveCustomTier : saveRaidTiers[saveRaidTierIndex];
+                        if (pTag == "(None)") pTag = "";
+                        string pKey = configuration.AccountKey;
+                        bool isPub = isPublic;
+
+                        Task.Run(async () =>
+                        {
+                            try
+                            {
+                                string url;
+                                if (isPub)
+                                {
+                                    url = await planIOManager.SubmitPublicPlanAsync(pName, pTag, pCreator, "COMMUNITY", pKey);
+                                }
+                                else
+                                {
+                                    url = await planIOManager.SubmitPrivatePlanAsync(pName, pKey);
+                                }
+                                lastSavedUrl = url;
+                                saveStatusMessage = "Plan Saved Successfully!";
+                            }
+                            catch (Exception ex)
+                            {
+                                saveStatusMessage = $"Error: {ex.Message}";
+                            }
+                        });
+                    }
+                }
+
+                if (ImGui.Button("Close", new Vector2(-1, 0)))
+                {
+                    ImGui.CloseCurrentPopup();
+                }
+
+                if (!string.IsNullOrEmpty(lastSavedUrl))
+                {
+                    ImGui.Separator();
+                    ImGui.TextColored(new Vector4(0.4f, 1.0f, 0.4f, 1.0f), "Link Generated:");
+                    ImGui.SetNextItemWidth(-1);
+                    ImGui.InputText("##SavedUrl", ref lastSavedUrl, 256, ImGuiInputTextFlags.ReadOnly | ImGuiInputTextFlags.AutoSelectAll);
+
+                    if (ImGui.Button("Copy Link", new Vector2(-1, 0)))
+                    {
+                        ImGui.SetClipboardText(lastSavedUrl);
+                        saveStatusMessage = "Copied to clipboard!";
+                    }
+                }
+
+                ImGui.EndPopup();
+            }
         }
     }
 }

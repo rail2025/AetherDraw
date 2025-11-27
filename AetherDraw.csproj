@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.4.1.0</AssemblyVersion>
+        <AssemblyVersion>2.4.2.0</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
@@ -11,7 +11,7 @@
         <Description>A realtime multi-user whiteboard raid planner plugin to draw encounter strategies. Supports url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.4.1.0</Version>
+        <Version>2.4.2.0</Version>
         <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
 

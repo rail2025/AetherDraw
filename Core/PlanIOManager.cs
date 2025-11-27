@@ -60,6 +60,13 @@ namespace AetherDraw.Core
             fileDialogManager.OpenFileDialog("Load AetherDraw Plan", "AetherDraw Plan{.adp}", HandleLoadPlanDialogResult, 1, initialPath, true);
         }
 
+        public void RequestAppendPlan()
+        {
+            LastFileDialogError = string.Empty;
+            string initialPath = GetInitialDialogPath();
+            fileDialogManager.OpenFileDialog("Append AetherDraw Plan", "AetherDraw Plan{.adp}", HandleAppendPlanDialogResult, 1, initialPath, true);
+        }
+
         public void RequestSavePlan()
         {
             LastFileDialogError = string.Empty;
@@ -173,15 +180,34 @@ namespace AetherDraw.Core
 
         public async Task RequestLoadPlanFromUrl(string url)
         {
+            var pages = await FetchPagesFromUrl(url);
+            if (pages != null && pages.Any())
+            {
+                pageManager.LoadPages(pages);
+                OnPlanLoadSuccess?.Invoke();
+            }
+        }
+
+        public async Task RequestAppendPlanFromUrl(string url)
+        {
+            var pages = await FetchPagesFromUrl(url);
+            if (pages != null && pages.Any())
+            {
+                pageManager.AppendPages(pages);
+                OnPlanLoadSuccess?.Invoke();
+            }
+        }
+
+        private async Task<List<PageData>?> FetchPagesFromUrl(string url)
+        {
             LastFileDialogError = "Importing from URL...";
             string correctedUrl = url.Trim();
-
             try
             {
                 if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out Uri? uri))
                 {
                     LastFileDialogError = "Invalid URL format.";
-                    return;
+                    return null;
                 }
 
                 // Case 1: AetherDraw URL
@@ -191,24 +217,20 @@ namespace AetherDraw.Core
                     if (match.Success)
                     {
                         string planId = match.Groups[1].Value;
-                        // Construct the direct url
                         string apiUrl = $"https://aetherdraw-server.onrender.com/plan/load/{planId}";
-
-                        // Fetch the raw plan data directly from the server
                         byte[] planDataBytes = await HttpClient.GetByteArrayAsync(apiUrl);
-
                         var loadedPlan = PlanSerializer.DeserializePlanFromBytes(planDataBytes);
+
                         if (loadedPlan != null && loadedPlan.Pages != null)
                         {
-                            pageManager.LoadPages(loadedPlan.Pages);
                             LastFileDialogError = "Successfully imported AetherDraw plan.";
-                            OnPlanLoadSuccess?.Invoke();
+                            return loadedPlan.Pages;
                         }
                         else
                         {
                             LastFileDialogError = "Failed to deserialize plan data from AetherDraw URL.";
+                            return null;
                         }
-                        return; // Import complete.
                     }
                 }
 
@@ -219,32 +241,51 @@ namespace AetherDraw.Core
                 }
 
                 // Case 3: RaidPlan.io or Raw Pastebin.
-                // Re-validate the URI in case it was changed (for pastebin).
                 if (!Uri.TryCreate(correctedUrl, UriKind.Absolute, out Uri? contentUri))
                 {
                     LastFileDialogError = "Invalid URL format.";
-                    return;
+                    return null;
                 }
 
                 string content = await HttpClient.GetStringAsync(contentUri);
                 if (contentUri.Host.Contains("raidplan.io"))
                 {
-                    await ProcessRaidPlanInBackend(content);
+                    return await ProcessRaidPlanInBackend(content);
                 }
                 else
                 {
-                    // This handles raw pastebin content.
-                    RequestLoadPlanFromText(content);
+                    // Case 4: Raw text/base64 (Pastebin raw)
+                    // Inline logic similar to RequestLoadPlanFromText to return pages instead of void
+                    if (string.IsNullOrWhiteSpace(content)) return null;
+                    byte[] receivedBytes = Convert.FromBase64String(content);
+                    byte[] decompressedBytes;
+                    try
+                    {
+                        using var inputStream = new MemoryStream(receivedBytes);
+                        using var outputStream = new MemoryStream();
+                        using (var gzipStream = new GZipStream(inputStream, CompressionMode.Decompress))
+                            gzipStream.CopyTo(outputStream);
+                        decompressedBytes = outputStream.ToArray();
+                    }
+                    catch (InvalidDataException) { decompressedBytes = receivedBytes; }
+
+                    var loadedPlan = PlanSerializer.DeserializePlanFromBytes(decompressedBytes);
+                    if (loadedPlan != null && loadedPlan.Pages != null)
+                    {
+                        LastFileDialogError = "Plan loaded successfully from text.";
+                        return loadedPlan.Pages;
+                    }
                 }
             }
             catch (Exception ex)
             {
                 LastFileDialogError = "Could not retrieve or process data from URL.";
-                Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading from URL {correctedUrl}.");
+                Plugin.Log?.Error(ex, $"[PlanIOManager] Error fetching from URL {correctedUrl}.");
             }
+            return null;
         }
 
-        private async Task ProcessRaidPlanInBackend(string htmlContent)
+        private async Task<List<PageData>?> ProcessRaidPlanInBackend(string htmlContent)
         {
             Plugin.Log?.Debug($"[PlanIOManager] Starting background processing of HTML content (length: {htmlContent.Length}).");
             LastFileDialogError = "Parsing and translating plan...";
@@ -256,34 +297,17 @@ namespace AetherDraw.Core
                     var htmlDoc = new HtmlDocument();
                     htmlDoc.LoadHtml(htmlContent);
 
-                    Plugin.Log?.Debug("[PlanIOManager] Searching for og:image meta tag...");
                     var imageNode = htmlDoc.DocumentNode.SelectSingleNode("//meta[@property='og:image']");
-                    // Make backgroundImageUrl nullable to match the possible null value returned by GetAttributeValue
                     string? backgroundImageUrl = null;
                     if (imageNode != null)
                     {
                         backgroundImageUrl = imageNode.GetAttributeValue("content", "") ?? null;
                     }
 
-                    if (backgroundImageUrl != null)
-                    {
-                        Plugin.Log?.Info($"[PlanIOManager] Found background image in meta tag: {backgroundImageUrl}");
-                    }
-                    else
-                    {
-                        Plugin.Log?.Warning("[PlanIOManager] Could not find og:image meta tag in HTML.");
-                    }
-
-                    Plugin.Log?.Debug("[PlanIOManager] Searching for __NEXT_DATA__ script block...");
                     var scriptNode = htmlDoc.DocumentNode.SelectSingleNode("//script[@id='__NEXT_DATA__']");
                     var jsonData = scriptNode?.InnerHtml.Trim();
-                    if (string.IsNullOrEmpty(jsonData))
-                    {
-                        Plugin.Log?.Error("[PlanIOManager] Could not find '__NEXT_DATA__' script block.");
-                        return new List<PageData>(); // Returning an empty list instead of default
-                    }
+                    if (string.IsNullOrEmpty(jsonData)) return new List<PageData>();
 
-                    Plugin.Log?.Debug("[PlanIOManager] Parsing JSON data...");
                     using (var doc = JsonDocument.Parse(jsonData))
                     {
                         if (doc.RootElement.TryGetProperty("props", out var props) &&
@@ -292,14 +316,9 @@ namespace AetherDraw.Core
                         {
                             var planJson = planElement.GetRawText();
                             var raidPlan = JsonSerializer.Deserialize<AetherDraw.RaidPlan.Models.RaidPlan>(planJson);
-                            if (raidPlan == null)
-                            {
-                                Plugin.Log?.Error("[PlanIOManager] Failed to deserialize RaidPlan from JSON.");
-                                return new List<PageData>(); // Returning an empty list instead of default
-                            }
+                            if (raidPlan == null) return new List<PageData>();
 
                             var translator = new RaidPlanTranslator();
-                            Plugin.Log?.Debug($"[PlanIOManager] Calling translator with fallback URL: '{backgroundImageUrl ?? "null"}'");
                             return translator.Translate(raidPlan, backgroundImageUrl);
                         }
                     }
@@ -307,25 +326,138 @@ namespace AetherDraw.Core
                 catch (Exception ex)
                 {
                     Plugin.Log?.Error(ex, "[PlanIOManager] Error processing the HTML content.");
-                    return new List<PageData>(); // Return empty list in case of failure
+                    return new List<PageData>();
                 }
-
-                Plugin.Log?.Error("[PlanIOManager] Failed to find plan data in JSON structure.");
-                return default; // more null warning 
+                return new List<PageData>();
             });
 
             if (resultingPages != null && resultingPages.Any())
             {
-                pageManager.LoadPages(resultingPages);
                 LastFileDialogError = $"Successfully imported {resultingPages.Count} pages.";
-                OnPlanLoadSuccess?.Invoke();
+                return resultingPages;
             }
             else
             {
                 LastFileDialogError = "Failed to parse or translate RaidPlan data.";
+                return new List<PageData>();
             }
         }
 
+        public async Task<string> SubmitPublicPlanAsync(string planName, string bossTag, string creatorName, string planType, string accountKey)
+        {
+            LastFileDialogError = "Submitting public plan...";
+            try
+            {
+                var currentPages = pageManager.GetAllPages();
+                if (currentPages == null || !currentPages.Any())
+                    throw new InvalidOperationException("Cannot submit an empty plan.");
+
+                // Serialize plan data
+                byte[]? planBytes = PlanSerializer.SerializePlanToBytes(currentPages, planName);
+                if (planBytes == null || planBytes.Length == 0)
+                    throw new InvalidOperationException("Failed to serialize plan data.");
+
+                using var content = new MultipartFormDataContent();
+
+                // Add file data (matches 'file, _, err := r.FormFile("data")' in handlers.go)
+                var fileContent = new ByteArrayContent(planBytes);
+                fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+                content.Add(fileContent, "data", "plan.adp");
+
+                // Add metadata fields required by handlers.go
+                content.Add(new StringContent(planType ?? "PRIVATE"), "plan_type");
+                content.Add(new StringContent(bossTag ?? ""), "boss_tag");
+                content.Add(new StringContent(planName ?? "Untitled Plan"), "plan_name");
+                content.Add(new StringContent(creatorName ?? ""), "plan_owner");
+
+                if (!string.IsNullOrEmpty(accountKey))
+                {
+                    content.Add(new StringContent(accountKey), "accountKey");
+                }
+
+                // Post to server
+                var response = await HttpClient.PostAsync("https://aetherdraw-server.onrender.com/plan/submit", content);
+                string responseString = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    // Check for specific name conflict error (403 Forbidden)
+                    if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                    {
+                        throw new Exception("This creator name is already in use by another user.");
+                    }
+                    throw new Exception($"Server error {(int)response.StatusCode}: {response.ReasonPhrase}");
+                }
+
+                // Parse success response for ID
+                using var doc = JsonDocument.Parse(responseString);
+                if (doc.RootElement.TryGetProperty("id", out var idElement))
+                {
+                    string id = idElement.GetString() ?? "";
+                    string url = $"https://aetherdraw.me/?plan={id}";
+                    LastFileDialogError = "Public plan submitted successfully!";
+                    return url;
+                }
+
+                throw new Exception("Invalid server response (missing ID).");
+            }
+            catch (Exception ex)
+            {
+                LastFileDialogError = $"Submission failed: {ex.Message}";
+                Plugin.Log?.Error(ex, "[PlanIOManager] Error submitting public plan.");
+                throw;
+            }
+        }
+        public async Task<string> SubmitPrivatePlanAsync(string planName, string accountKey)
+        {
+            LastFileDialogError = "Submitting private plan...";
+            try
+            {
+                var currentPages = pageManager.GetAllPages();
+                if (currentPages == null || !currentPages.Any())
+                    throw new InvalidOperationException("Cannot submit an empty plan.");
+
+                byte[]? planBytes = PlanSerializer.SerializePlanToBytes(currentPages, planName);
+                if (planBytes == null || planBytes.Length == 0)
+                    throw new InvalidOperationException("Failed to serialize plan data.");
+
+                string base64Data = Convert.ToBase64String(planBytes);
+                var payload = new
+                {
+                    name = planName ?? "Untitled Plan",
+                    data = base64Data,
+                    accountKey = accountKey ?? ""
+                };
+
+                string jsonPayload = JsonSerializer.Serialize(payload);
+                var content = new StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+
+                var response = await HttpClient.PostAsync("https://aetherdraw-server.onrender.com/plan/save", content);
+                string responseString = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new Exception($"Server error {(int)response.StatusCode}: {response.ReasonPhrase}");
+                }
+
+                using var doc = JsonDocument.Parse(responseString);
+                if (doc.RootElement.TryGetProperty("id", out var idElement))
+                {
+                    string id = idElement.GetString() ?? "";
+                    string url = $"https://aetherdraw.me/?plan={id}";
+                    LastFileDialogError = "Private plan saved successfully!";
+                    return url;
+                }
+
+                throw new Exception("Invalid server response (missing ID).");
+            }
+            catch (Exception ex)
+            {
+                LastFileDialogError = $"Save failed: {ex.Message}";
+                Plugin.Log?.Error(ex, "[PlanIOManager] Error submitting private plan.");
+                throw;
+            }
+        }
         private string GetInitialDialogPath()
         {
             string path = pluginInterface.GetPluginConfigDirectory();
@@ -345,6 +477,18 @@ namespace AetherDraw.Core
             else if (!success)
             {
                 LastFileDialogError = "Load operation cancelled or failed.";
+            }
+        }
+
+        private void HandleAppendPlanDialogResult(bool success, List<string> paths)
+        {
+            if (success && paths != null && paths.Count > 0 && !string.IsNullOrEmpty(paths[0]))
+            {
+                ActuallyAppendPlanFromFile(paths[0]);
+            }
+            else if (!success)
+            {
+                LastFileDialogError = "Append operation cancelled or failed.";
             }
         }
 
@@ -429,6 +573,34 @@ namespace AetherDraw.Core
             {
                 Plugin.Log?.Error(ex, $"[PlanIOManager] Error loading plan from {filePath}.");
                 LastFileDialogError = $"Error loading plan: {ex.Message}";
+            }
+        }
+
+        private void ActuallyAppendPlanFromFile(string filePath)
+        {
+            LastFileDialogError = string.Empty;
+            if (!File.Exists(filePath))
+            {
+                LastFileDialogError = "Plan file not found.";
+                return;
+            }
+            try
+            {
+                byte[] fileData = File.ReadAllBytes(filePath);
+                var loadedPlan = PlanSerializer.DeserializePlanFromBytes(fileData);
+                if (loadedPlan == null || loadedPlan.Pages == null)
+                {
+                    LastFileDialogError = "Failed to read plan file.";
+                    return;
+                }
+                pageManager.AppendPages(loadedPlan.Pages!);
+                LastFileDialogError = $"Plan '{loadedPlan.PlanName}' appended.";
+                OnPlanLoadSuccess?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log?.Error(ex, $"[PlanIOManager] Error appending plan from {filePath}.");
+                LastFileDialogError = $"Error appending plan: {ex.Message}";
             }
         }
 

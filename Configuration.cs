@@ -20,6 +20,8 @@ namespace AetherDraw
         public float GridSize { get; set; } = 40f;
         public bool IsSnapToGrid { get; set; } = true;
 
+        public string AccountKey { get; set; } = string.Empty;
+
 
         [NonSerialized]
         private IDalamudPluginInterface? pluginInterface; // Renamed from _pluginInterface

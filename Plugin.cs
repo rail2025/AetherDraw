@@ -6,6 +6,7 @@ using Dalamud.Plugin.Services;
 using AetherDraw.Windows;
 using AetherDraw.DrawingLogic;
 using AetherDraw.Networking;
+using AetherDraw.Core;
 
 namespace AetherDraw
 {
@@ -38,7 +39,8 @@ namespace AetherDraw
 
         public NetworkManager NetworkManager { get; init; }
         public DiscoveryClient DiscoveryClient { get; init; }
-        public DiscoveryWindow DiscoveryWindow { get; init; }
+        public LoadSearchWindow DiscoveryWindow { get; init; }
+        public AccountManager AccountManager { get; init; }
 
         public Plugin()
         {
@@ -47,12 +49,13 @@ namespace AetherDraw
 
             this.NetworkManager = new NetworkManager();
             this.DiscoveryClient = new DiscoveryClient();
+            this.AccountManager = new AccountManager();
 
             this.ConfigWindow = new ConfigWindow(this);
             this.MainWindow = new MainWindow(this);
             this.LiveSessionWindow = new LiveSessionWindow(this);
             this.PropertiesWindow = new PropertiesWindow(this);
-            this.DiscoveryWindow = new DiscoveryWindow(this);
+            this.DiscoveryWindow = new LoadSearchWindow(this);
 
 
 
@@ -91,6 +94,7 @@ namespace AetherDraw
 
             this.NetworkManager.Dispose();
             this.DiscoveryClient.Dispose();
+            this.AccountManager.Dispose();
 
             this.ConfigWindow.Dispose();
             this.MainWindow.Dispose();

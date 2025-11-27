@@ -317,6 +317,22 @@ namespace AetherDraw.Core
             this.activePageObject = this.GetAllPages().FirstOrDefault();
         }
 
+        /// <summary>
+        /// Appends a list of pages to the end of the current page list.
+        /// </summary>
+        /// <param name="newPages">The list of pages to append.</param>
+        public void AppendPages(List<PageData> newPages)
+        {
+            if (newPages == null || !newPages.Any()) return;
+
+            var pages = GetAllPages();
+            foreach (var page in newPages)
+            {
+                pages.Add(page);
+                UndoManager.AddStack(pages.Count - 1);
+            }
+            Plugin.Log?.Info($"[PageManager] Appended {newPages.Count} pages.");
+        }
         public void MovePageAndRenumber(int fromIndex, int toIndex)
         {
             Plugin.Log?.Debug($"[PageManager] MovePage: Moving from {fromIndex} to {toIndex}.");
