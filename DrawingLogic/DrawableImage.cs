@@ -16,7 +16,20 @@ namespace AetherDraw.DrawingLogic
 {
     public class DrawableImage : BaseDrawable
     {
-        public string ImageResourcePath { get; private set; }
+        private string _imageResourcePath = string.Empty;
+
+        public string ImageResourcePath
+        {
+            get => _imageResourcePath;
+            set
+            {
+                if (_imageResourcePath != value)
+                {
+                    _imageResourcePath = value;
+                    textureWrapCache = null; // Force texture reload
+                }
+            }
+        }
         public Vector2 PositionRelative { get; set; }
         public Vector2 DrawSize { get; set; }
         public float RotationAngle { get; set; } = 0f;

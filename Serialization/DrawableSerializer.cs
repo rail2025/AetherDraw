@@ -183,6 +183,13 @@ namespace AetherDraw.Serialization
                         writer.Write(triangle.Vertices[i].Y);
                     }
                     break;
+                case DrawMode.Pie:
+                    var pie = (DrawablePie)drawable;
+                    writer.Write(pie.CenterRelative.X); writer.Write(pie.CenterRelative.Y);
+                    writer.Write(pie.Radius);
+                    writer.Write(pie.RotationAngle);
+                    writer.Write(pie.SweepAngle);
+                    break;
                 case DrawMode.EmojiImage:
                 case DrawMode.Image:
                 case DrawMode.BossImage:
@@ -370,6 +377,19 @@ namespace AetherDraw.Serialization
                     var v2 = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     var v3 = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     drawable = new DrawableTriangle(v1, v2, v3, color);
+                    break;
+                case DrawMode.Pie: // [Added] Deserialization for Pie
+                    if (reader.BaseStream.Position + sizeof(float) * 4 > reader.BaseStream.Length) return null;
+                    Vector2 pieCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                    float pieRadius = reader.ReadSingle();
+                    float pieRotation = reader.ReadSingle();
+                    float pieSweep = reader.ReadSingle();
+                    drawable = new DrawablePie(pieCenter, color, thickness, isFilled)
+                    {
+                        Radius = pieRadius,
+                        RotationAngle = pieRotation,
+                        SweepAngle = pieSweep
+                    };
                     break;
                 case DrawMode.EmojiImage:
                 case DrawMode.Image:

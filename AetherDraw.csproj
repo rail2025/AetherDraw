@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.4.2.0</AssemblyVersion>
+        <AssemblyVersion>2.4.3.0</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
@@ -11,9 +11,45 @@
         <Description>A realtime multi-user whiteboard raid planner plugin to draw encounter strategies. Supports url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.4.2.0</Version>
+        <Version>2.4.3.0</Version>
         <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\dnc.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\ignore1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\ignore2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\mch.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\brd.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\bind1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\bind2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\bind3.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\ast.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\blm.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\caster.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\drg.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\drk.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\gnb.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\mnk.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\nin.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\pct.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\pld.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\rdm.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\rpr.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\sam.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\sch.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\sge.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\smn.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\vpr.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\war.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\whm.png" />
+    </ItemGroup>
 
     <ItemGroup>
       <EmbeddedResource Include="PluginImages\toolbar\StatusPlaceholder.png" />

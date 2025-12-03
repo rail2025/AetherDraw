@@ -25,7 +25,7 @@ namespace AetherDraw.DrawingLogic
         /// <summary>
         /// Defines the type of drag operation currently being performed by the user.
         /// </summary>
-        public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize, TriangleResize }
+        public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize, TriangleResize, PieCenter, PieRadius, PieStart, PieEnd }
 
         /// <summary>
         /// The current drag operation state.
@@ -52,6 +52,7 @@ namespace AetherDraw.DrawingLogic
         public Vector2 dragStartTextPositionLogical;
         public Vector2 dragStartTextBoundingBoxSizeLogical;
         public float dragStartFontSizeLogical;
+        public float dragStartSweepAngleLogical;
         public int draggedHandleIndex = -1;
         #endregion
 
@@ -275,6 +276,7 @@ namespace AetherDraw.DrawingLogic
                 case DrawableText dText: InteractionHandlerHelpers.ProcessTextHandles(dText, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableArrow dArrow: InteractionHandlerHelpers.ProcessArrowHandles(dArrow, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableCone dCone: InteractionHandlerHelpers.ProcessConeHandles(dCone, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawablePie dPie: InteractionHandlerHelpers.ProcessPieHandles(dPie, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
             }
             return mouseOverAny;
         }
@@ -368,6 +370,16 @@ namespace AetherDraw.DrawingLogic
                     else if (draggedHandleIndex == 1) { initialType = ActiveDragType.ConeBase; dragStartPoint1Logical = dCone.ApexRelative; dragStartPoint2Logical = dCone.BaseCenterRelative; }
                     else if (draggedHandleIndex == 2) { initialType = ActiveDragType.ConeRotate; dragStartObjectPivotLogical = dCone.ApexRelative; }
                     break;
+                case DrawablePie dPie:
+                    dragStartObjectPivotLogical = dPie.CenterRelative;
+                    dragStartValueLogical = dPie.Radius;
+                    dragStartRotationAngle = dPie.RotationAngle;
+                    dragStartSweepAngleLogical = dPie.SweepAngle;
+                    if (draggedHandleIndex == 0) initialType = ActiveDragType.PieCenter;
+                    else if (draggedHandleIndex == 1) initialType = ActiveDragType.PieRadius;
+                    else if (draggedHandleIndex == 2) initialType = ActiveDragType.PieStart;
+                    else if (draggedHandleIndex == 3) initialType = ActiveDragType.PieEnd;
+                    break;
             }
 
             if (initialType != ActiveDragType.None)
@@ -415,6 +427,10 @@ namespace AetherDraw.DrawingLogic
                     case ActiveDragType.ConeApex: InteractionHandlerHelpers.UpdateConeApexDrag((DrawableCone)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.ConeBase: InteractionHandlerHelpers.UpdateConeBaseDrag((DrawableCone)singleSelectedItem, mousePos); break;
                     case ActiveDragType.ConeRotate: InteractionHandlerHelpers.UpdateRotationDrag(singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.PieCenter: InteractionHandlerHelpers.UpdatePieCenterDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.PieRadius: InteractionHandlerHelpers.UpdatePieRadiusDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.PieStart: InteractionHandlerHelpers.UpdatePieStartDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.PieEnd: InteractionHandlerHelpers.UpdatePieEndDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
                 }
             }
         }

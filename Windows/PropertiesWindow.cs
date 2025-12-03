@@ -39,6 +39,39 @@ namespace AetherDraw.Windows
 
         public void Dispose() { }
 
+        // Define the mapping of Roles to their Jobs
+        private static readonly Dictionary<DrawMode, List<DrawMode>> RoleToJobMap = new()
+        {
+            { DrawMode.RoleTankImage,   new List<DrawMode> { DrawMode.JobPldImage, DrawMode.JobWarImage, DrawMode.JobDrkImage, DrawMode.JobGnbImage } },
+            { DrawMode.RoleHealerImage, new List<DrawMode> { DrawMode.JobWhmImage, DrawMode.JobSchImage, DrawMode.JobAstImage, DrawMode.JobSgeImage } },
+            { DrawMode.RoleMeleeImage,  new List<DrawMode> { DrawMode.JobMnkImage, DrawMode.JobDrgImage, DrawMode.JobNinImage, DrawMode.JobSamImage, DrawMode.JobRprImage, DrawMode.JobVprImage } },
+            { DrawMode.RoleRangedImage, new List<DrawMode> { DrawMode.JobBrdImage, DrawMode.JobMchImage, DrawMode.JobDncImage } },
+            { DrawMode.RoleCasterImage, new List<DrawMode> { DrawMode.JobBlmImage, DrawMode.JobSmnImage, DrawMode.JobRdmImage, DrawMode.JobPctImage } }
+        };
+
+        // Helper to find which list a specific DrawMode belongs to
+        private List<DrawMode>? GetJobListForMode(DrawMode currentMode)
+        {
+            // Check if it is a Role itself
+            if (RoleToJobMap.ContainsKey(currentMode)) return RoleToJobMap[currentMode];
+
+            // Check if it is a Job within a Role
+            foreach (var kvp in RoleToJobMap)
+            {
+                if (kvp.Value.Contains(currentMode)) return kvp.Value;
+            }
+            return null;
+        }
+
+        private string GetIconPath(DrawMode mode)
+        {
+            // Quick lookup helper - ideally this would be shared from ToolbarDrawer but we can reconstruct the pattern easily
+            if (mode == DrawMode.RoleCasterImage) return "PluginImages.toolbar.caster.png";
+            // Map the jobs
+            string name = mode.ToString().Replace("Job", "").Replace("Image", "").ToLower();
+            return $"PluginImages.toolbar.{name}.png";
+        }
+
         public override void Draw()
         {
             var mainWindow = plugin.MainWindow;
@@ -69,6 +102,53 @@ namespace AetherDraw.Windows
             ImGui.SameLine();
             ImGui.TextDisabled("(?)");
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("Locked objects cannot be selected or moved on the canvas.");
+
+            // --- JOB SWAP UI ---
+            // Check if we have a single selected item that is a Role or Job
+            if (selected.Count == 1 && selected[0] is DrawableImage dImg)
+            {
+                var jobList = GetJobListForMode(dImg.ObjectDrawMode);
+                if (jobList != null)
+                {
+                    ImGui.Separator();
+                    ImGui.Text("Swap Job Icon");
+
+                    float availW = ImGui.GetContentRegionAvail().X;
+                    float gap = ImGui.GetStyle().ItemSpacing.X;
+                    // spacing : (Width - (TotalGapSpace)) / ItemCount
+                    // If 4 items, there are 3 gaps.
+                    float btnSize = (availW - (gap * (jobList.Count - 1))) / jobList.Count;
+
+                    // Sanity check to prevent huge buttons if list is small (e.g., 1 item)
+                    btnSize = Math.Min(btnSize, 40f * ImGuiHelpers.GlobalScale);
+
+                    Vector2 btnVec = new Vector2(btnSize, btnSize);
+
+                    for (int i = 0; i < jobList.Count; i++)
+                    {
+                        var jobMode = jobList[i];
+                        // Only add SameLine if it's NOT the first item
+                        if (i > 0) ImGui.SameLine();
+
+                        var tex = TextureManager.GetTexture(GetIconPath(jobMode));
+                        if (tex != null)
+                        {
+                            if (ImGui.ImageButton(tex.Handle, btnVec))
+                            {
+                                dImg.ObjectDrawMode = jobMode;
+                                dImg.ImageResourcePath = GetIconPath(jobMode);
+
+                                mainWindow.UndoManager.RecordAction(mainWindow.PageManager.GetCurrentPageDrawables(), "Swap Job Icon");
+                                mainWindow.InteractionHandler.CommitObjectChanges(new List<BaseDrawable>(selected));
+                            }
+                            if (ImGui.IsItemHovered()) ImGui.SetTooltip(jobMode.ToString().Replace("Job", "").Replace("Image", ""));
+                        }
+                    }
+                    // Remove trailing SameLine
+                    ImGui.NewLine();
+                }
+            }
+            // -------------------
 
             ImGui.Separator();
 

@@ -123,6 +123,29 @@ namespace AetherDraw.DrawingLogic
             Vector2 rotHandleLogical = logicalRotatedBaseCenter + axisDir * (DrawableRectangle.UnscaledRotationHandleExtraOffset * 0.75f);
             if (handler.DrawAndCheckHandle(drawList, rotHandleLogical, canvasOrigin, mousePos, ref mouseOverAny, handler.handleColorRotation, handler.handleColorRotationHover)) handler.draggedHandleIndex = 2;
         }
+        public static void ProcessPieHandles(DrawablePie dPie, Vector2 mousePos, Vector2 canvasOrigin, ImDrawListPtr drawList, ShapeInteractionHandler handler, ref bool mouseOverAny)
+        {
+            // 0: Center Handle
+            if (handler.DrawAndCheckHandle(drawList, dPie.CenterRelative, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handler.handleColorResize, handler.handleColorResizeHover))
+                handler.draggedHandleIndex = 0;
+
+            // 1: Radius Handle (placed at mid-angle of the sweep)
+            float midAngle = dPie.RotationAngle + (dPie.SweepAngle / 2f);
+            Vector2 radiusHandlePos = dPie.CenterRelative + new Vector2(MathF.Cos(midAngle), MathF.Sin(midAngle)) * dPie.Radius;
+            if (handler.DrawAndCheckHandle(drawList, radiusHandlePos, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeEw, handler.handleColorResize, handler.handleColorResizeHover))
+                handler.draggedHandleIndex = 1;
+
+            // 2: Start Angle Handle (Rotation) - Placed at the start of the arc
+            Vector2 startHandlePos = dPie.CenterRelative + new Vector2(MathF.Cos(dPie.RotationAngle), MathF.Sin(dPie.RotationAngle)) * dPie.Radius;
+            if (handler.DrawAndCheckHandle(drawList, startHandlePos, canvasOrigin, mousePos, ref mouseOverAny, handler.handleColorRotation, handler.handleColorRotationHover))
+                handler.draggedHandleIndex = 2;
+
+            // 3: End Angle Handle (Sweep) - Placed at the end of the arc
+            float endAngle = dPie.RotationAngle + dPie.SweepAngle;
+            Vector2 endHandlePos = dPie.CenterRelative + new Vector2(MathF.Cos(endAngle), MathF.Sin(endAngle)) * dPie.Radius;
+            if (handler.DrawAndCheckHandle(drawList, endHandlePos, canvasOrigin, mousePos, ref mouseOverAny, handler.handleColorSpecial, handler.handleColorSpecialHover))
+                handler.draggedHandleIndex = 3;
+        }
         #endregion
 
         #region Drag Update Logic
@@ -266,6 +289,47 @@ namespace AetherDraw.DrawingLogic
             Vector2 mouseRelativeToApex = mousePos - dCone.ApexRelative;
             Vector2 unrotatedMouseRelativeToApex = HitDetection.ImRotate(mouseRelativeToApex, MathF.Cos(-dCone.RotationAngle), MathF.Sin(-dCone.RotationAngle));
             dCone.SetBaseCenter(dCone.ApexRelative + unrotatedMouseRelativeToApex);
+        }
+
+        public static void UpdatePieCenterDrag(DrawablePie dPie, Vector2 mousePos, ShapeInteractionHandler handler)
+        {
+            dPie.CenterRelative = handler.dragStartObjectPivotLogical + (mousePos - handler.dragStartMousePosLogical);
+        }
+
+        public static void UpdatePieRadiusDrag(DrawablePie dPie, Vector2 mousePos, ShapeInteractionHandler handler)
+        {
+            float dist = Vector2.Distance(mousePos, dPie.CenterRelative);
+            dPie.Radius = Math.Max(5f, dist);
+        }
+
+        public static void UpdatePieStartDrag(DrawablePie dPie, Vector2 mousePos, ShapeInteractionHandler handler)
+        {
+            Vector2 diff = mousePos - dPie.CenterRelative;
+            float angle = MathF.Atan2(diff.Y, diff.X);
+
+            // Normalize logic: calculate shortest path or just raw angle? 
+            // Raw angle is fine for start rotation.
+            dPie.RotationAngle = angle;
+        }
+
+        public static void UpdatePieEndDrag(DrawablePie dPie, Vector2 mousePos, ShapeInteractionHandler handler)
+        {
+            Vector2 diff = mousePos - dPie.CenterRelative;
+            float angleCurrent = MathF.Atan2(diff.Y, diff.X);
+
+            // We need the difference between the mouse angle and the Pie's start rotation
+            // to determine the new sweep.
+            float relativeAngle = angleCurrent - dPie.RotationAngle;
+
+            // Normalize to [0, 2PI] to enforce CCW sweep direction
+            const float TwoPI = MathF.PI * 2f;
+            while (relativeAngle < 0) relativeAngle += TwoPI;
+            while (relativeAngle >= TwoPI) relativeAngle -= TwoPI;
+
+            // Clamp minimum sweep to avoid invisible slices
+            if (relativeAngle < 0.01f) relativeAngle = 0.01f;
+
+            dPie.SweepAngle = relativeAngle;
         }
         #endregion
     }

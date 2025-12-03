@@ -112,10 +112,11 @@ namespace AetherDraw.UI
             this.mainToolbarButtons = new List<ToolbarButton>
             {
                 new() { Primary = DrawMode.Pen, SubModes = new List<DrawMode> { DrawMode.Pen, DrawMode.StraightLine, DrawMode.Dash }, Tooltip = "Drawing Tools" },
-                new() { Primary = DrawMode.Rectangle, SubModes = new List<DrawMode> { DrawMode.Rectangle, DrawMode.Circle, DrawMode.Arrow, DrawMode.Cone, DrawMode.Triangle }, Tooltip = "Shape Tools" },
+                new() { Primary = DrawMode.Rectangle, SubModes = new List<DrawMode> { DrawMode.Rectangle, DrawMode.Circle, DrawMode.Arrow, DrawMode.Cone, DrawMode.Triangle, DrawMode.Pie }, Tooltip = "Shape Tools" },
                 new() { Primary = DrawMode.SquareImage, SubModes = new List<DrawMode> { DrawMode.SquareImage, DrawMode.CircleMarkImage, DrawMode.TriangleImage, DrawMode.PlusImage }, Tooltip = "Placeable Shapes" },
-                new() { Primary = DrawMode.RoleTankImage, SubModes = new List<DrawMode> { DrawMode.RoleTankImage, DrawMode.RoleHealerImage, DrawMode.RoleMeleeImage, DrawMode.RoleRangedImage }, Tooltip = "Role Icons" },
-                new() { Primary = DrawMode.Party1Image, SubModes = new List<DrawMode> { DrawMode.Party1Image, DrawMode.Party2Image, DrawMode.Party3Image, DrawMode.Party4Image, DrawMode.Party5Image, DrawMode.Party6Image, DrawMode.Party7Image, DrawMode.Party8Image }, Tooltip = "Party Number Icons" },
+                new() { Primary = DrawMode.RoleTankImage, SubModes = new List<DrawMode> { DrawMode.RoleTankImage, DrawMode.RoleHealerImage, DrawMode.RoleMeleeImage, DrawMode.RoleRangedImage, DrawMode.RoleCasterImage }, Tooltip = "Role Icons" },
+                new() { Primary = DrawMode.Party1Image, SubModes = new List<DrawMode> { DrawMode.Party1Image, DrawMode.Party2Image, DrawMode.Party3Image, DrawMode.Party4Image, DrawMode.Party5Image, DrawMode.Party6Image, DrawMode.Party7Image, DrawMode.Party8Image,DrawMode.Bind1Image, DrawMode.Bind2Image, DrawMode.Bind3Image,
+                    DrawMode.Ignore1Image, DrawMode.Ignore2Image }, Tooltip = "Party Number Icons" },
                 new() { Primary = DrawMode.WaymarkAImage, SubModes = new List<DrawMode> { DrawMode.WaymarkAImage, DrawMode.WaymarkBImage, DrawMode.WaymarkCImage, DrawMode.WaymarkDImage }, Tooltip = "Waymarks A-D" },
                 new() { Primary = DrawMode.Waymark1Image, SubModes = new List<DrawMode> { DrawMode.Waymark1Image, DrawMode.Waymark2Image, DrawMode.Waymark3Image, DrawMode.Waymark4Image }, Tooltip = "Waymarks 1-4" },
                 new() { Primary = DrawMode.StackImage, SubModes = new List<DrawMode> { DrawMode.StackImage, DrawMode.SpreadImage, DrawMode.LineStackImage, DrawMode.FlareImage, DrawMode.DonutAoEImage, DrawMode.CircleAoEImage, DrawMode.BossImage }, Tooltip = "Mechanic Icons" },
@@ -133,7 +134,7 @@ namespace AetherDraw.UI
             this.iconPaths = new Dictionary<DrawMode, string>
             {
                 { DrawMode.Pen, "" }, { DrawMode.StraightLine, "" }, { DrawMode.Dash, "" },
-                { DrawMode.Rectangle, "" }, { DrawMode.Circle, "" }, { DrawMode.Arrow, "" }, { DrawMode.Cone, "" }, { DrawMode.Triangle, ""},
+                { DrawMode.Rectangle, "" }, { DrawMode.Circle, "" }, { DrawMode.Arrow, "" }, { DrawMode.Cone, "" }, { DrawMode.Triangle, ""}, { DrawMode.Pie, "" },
                 { DrawMode.SquareImage, "PluginImages.toolbar.Square.png" },
                 { DrawMode.CircleMarkImage, "PluginImages.toolbar.CircleMark.png" },
                 { DrawMode.TriangleImage, "PluginImages.toolbar.Triangle.png" },
@@ -150,6 +151,11 @@ namespace AetherDraw.UI
                 { DrawMode.Party6Image, "PluginImages.toolbar.Party6.png" },
                 { DrawMode.Party7Image, "PluginImages.toolbar.Party7.png" },
                 { DrawMode.Party8Image, "PluginImages.toolbar.Party8.png" },
+                { DrawMode.Bind1Image, "PluginImages.toolbar.bind1.png" },
+                { DrawMode.Bind2Image, "PluginImages.toolbar.bind2.png" },
+                { DrawMode.Bind3Image, "PluginImages.toolbar.bind3.png" },
+                { DrawMode.Ignore1Image, "PluginImages.toolbar.ignore1.png" },
+                { DrawMode.Ignore2Image, "PluginImages.toolbar.ignore2.png" },
                 { DrawMode.WaymarkAImage, "PluginImages.toolbar.A.png" },
                 { DrawMode.WaymarkBImage, "PluginImages.toolbar.B.png" },
                 { DrawMode.WaymarkCImage, "PluginImages.toolbar.C.png" },
@@ -176,6 +182,20 @@ namespace AetherDraw.UI
                 { DrawMode.TextTool, "" },
                 { DrawMode.EmojiImage, "" },
                 { DrawMode.StatusIconPlaceholder, "PluginImages.toolbar.StatusPlaceholder.png" },
+                { DrawMode.RoleCasterImage, "PluginImages.toolbar.caster.png" },
+
+                // Added Job Icons
+                { DrawMode.JobPldImage, "PluginImages.toolbar.pld.png" }, { DrawMode.JobWarImage, "PluginImages.toolbar.war.png" },
+                { DrawMode.JobDrkImage, "PluginImages.toolbar.drk.png" }, { DrawMode.JobGnbImage, "PluginImages.toolbar.gnb.png" },
+                { DrawMode.JobWhmImage, "PluginImages.toolbar.whm.png" }, { DrawMode.JobSchImage, "PluginImages.toolbar.sch.png" },
+                { DrawMode.JobAstImage, "PluginImages.toolbar.ast.png" }, { DrawMode.JobSgeImage, "PluginImages.toolbar.sge.png" },
+                { DrawMode.JobMnkImage, "PluginImages.toolbar.mnk.png" }, { DrawMode.JobDrgImage, "PluginImages.toolbar.drg.png" },
+                { DrawMode.JobNinImage, "PluginImages.toolbar.nin.png" }, { DrawMode.JobSamImage, "PluginImages.toolbar.sam.png" },
+                { DrawMode.JobRprImage, "PluginImages.toolbar.rpr.png" }, { DrawMode.JobVprImage, "PluginImages.toolbar.vpr.png" },
+                { DrawMode.JobBrdImage, "PluginImages.toolbar.brd.png" }, { DrawMode.JobMchImage, "PluginImages.toolbar.mch.png" },
+                { DrawMode.JobDncImage, "PluginImages.toolbar.dnc.png" },
+                { DrawMode.JobBlmImage, "PluginImages.toolbar.blm.png" }, { DrawMode.JobSmnImage, "PluginImages.toolbar.smn.png" },
+                { DrawMode.JobRdmImage, "PluginImages.toolbar.rdm.png" }, { DrawMode.JobPctImage, "PluginImages.toolbar.pct.png" },
             };
 
             this.toolDisplayNames = new Dictionary<DrawMode, string>
@@ -364,7 +384,8 @@ namespace AetherDraw.UI
 
                 if (group.SubModes.Any() && ImGui.BeginPopupContextItem($"popup_{group.Primary}", ImGuiPopupFlags.MouseButtonLeft))
                 {
-                    foreach (var subMode in group.SubModes)
+                    // Helper function to draw a single item, keeping the logic DRY
+                    void DrawPopupItem(DrawMode subMode)
                     {
                         string subPath = iconPaths.GetValueOrDefault(subMode, "");
                         var subTex = subPath != "" ? TextureManager.GetTexture(subPath) : null;
@@ -386,6 +407,34 @@ namespace AetherDraw.UI
                                 activeSubModeMap[group.Primary] = subMode;
                                 ImGui.CloseCurrentPopup();
                             }
+                        }
+                    }
+
+                    // Special Layout for Party Icons (4, 4, 5 Grid)
+                    if (group.Primary == DrawMode.Party1Image && group.SubModes.Count >= 13)
+                    {
+                        ImGui.BeginGroup(); // Column 1 (1-4)
+                        for (int k = 0; k < 4; k++) DrawPopupItem(group.SubModes[k]);
+                        ImGui.EndGroup();
+
+                        ImGui.SameLine();
+
+                        ImGui.BeginGroup(); // Column 2 (5-8)
+                        for (int k = 4; k < 8; k++) DrawPopupItem(group.SubModes[k]);
+                        ImGui.EndGroup();
+
+                        ImGui.SameLine();
+
+                        ImGui.BeginGroup(); // Column 3 (Bind/Ignore)
+                        for (int k = 8; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
+                        ImGui.EndGroup();
+                    }
+                    else
+                    {
+                        // Standard Vertical List for other tools
+                        foreach (var subMode in group.SubModes)
+                        {
+                            DrawPopupItem(subMode);
                         }
                     }
                     ImGui.EndPopup();

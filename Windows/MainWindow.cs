@@ -42,11 +42,11 @@ namespace AetherDraw.Windows
         private bool currentShapeFilled = false;
         private float ScaledCanvasGridSize => 40f * ImGuiHelpers.GlobalScale;
         private Vector2 currentCanvasDrawSize;
-        private string textToLoad = "";
+        //private string textToLoad = "";
         private bool openClearConfirmPopup = false;
         private bool openDeletePageConfirmPopup = false;
         private bool openRoomClosingPopup = false;
-        private bool openImportTextModal = false;
+        //private bool openImportTextModal = false;
         private bool isAwaitingUndoEcho = false;
         private string clearConfirmText = "";
 
@@ -1393,48 +1393,38 @@ namespace AetherDraw.Windows
             // 1. Validation: Don't nudge if editing text or nothing selected
             if (inPlaceTextEditor.IsEditing) return;
             if (selectedDrawables.Count == 0) return;
+            if (ImGui.IsAnyItemActive()) return;
+            ImGui.GetIO().WantTextInput = true;
 
-            // 2. Poll Input
-            // Assumption: Plugin.KeyState exposes the IDalamudKeyState service
-            var keyState = Plugin.KeyState;
-
-            // Check if keys are down
-            bool isAnyArrowDown = keyState[VirtualKey.UP] || keyState[VirtualKey.DOWN] ||
-                                  keyState[VirtualKey.LEFT] || keyState[VirtualKey.RIGHT];
-
-            if (isAnyArrowDown)
-            {
-                // Force the window to take focus.
-                ImGui.SetWindowFocus();
-
-                // Reinforce the capture flag
-                ImGui.GetIO().WantCaptureKeyboard = true;
-            }
-
-            bool isShift = keyState[VirtualKey.SHIFT];
+            bool up = ImGui.IsKeyDown(ImGuiKey.UpArrow);
+            bool down = ImGui.IsKeyDown(ImGuiKey.DownArrow);
+            bool left = ImGui.IsKeyDown(ImGuiKey.LeftArrow);
+            bool right = ImGui.IsKeyDown(ImGuiKey.RightArrow);
+            bool isShift = ImGui.IsKeyDown(ImGuiKey.ModShift);
+            
             float moveAmount = isShift ? 10.0f : 1.0f;
             Vector2 delta = Vector2.Zero;
 
-            // 3. Check for Rising Edge (Press)
-            if (CheckKey(VirtualKey.UP, ref wasUpArrowDown)) delta.Y -= moveAmount;
-            if (CheckKey(VirtualKey.DOWN, ref wasDownArrowDown)) delta.Y += moveAmount;
-            if (CheckKey(VirtualKey.LEFT, ref wasLeftArrowDown)) delta.X -= moveAmount;
-            if (CheckKey(VirtualKey.RIGHT, ref wasRightArrowDown)) delta.X += moveAmount;
+            if (up && !wasUpArrowDown) delta.Y -= moveAmount;
+            if (down && !wasDownArrowDown) delta.Y += moveAmount;
+            if (left && !wasLeftArrowDown) delta.X -= moveAmount;
+            if (right && !wasRightArrowDown) delta.X += moveAmount;
 
-            // 4. Apply Nudge
+            wasUpArrowDown = up;
+            wasDownArrowDown = down;
+            wasLeftArrowDown = left;
+            wasRightArrowDown = right;
+
             if (delta != Vector2.Zero)
             {
-                // Record Undo *before* moving
                 undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), "Nudge Object");
-
                 foreach (var d in selectedDrawables)
                 {
                     if (!d.IsLocked) d.Translate(delta);
                 }
-
-                // Send network update
                 shapeInteractionHandler.CommitObjectChanges(new List<BaseDrawable>(selectedDrawables));
             }
+
         }
 
         // move helper method

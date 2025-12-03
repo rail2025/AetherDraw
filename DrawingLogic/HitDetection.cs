@@ -53,6 +53,25 @@ namespace AetherDraw.DrawingLogic
             if (Vector2.DistanceSquared(cC, t3) < cR * cR) return true;
             return false;
         }
+        public static bool IsPointInCircularSector(Vector2 pt, Vector2 center, float radius, float startAngleRad, float sweepAngleRad)
+        {
+            if (radius <= 0) return false;
+            // 1. Check distance
+            if (Vector2.DistanceSquared(pt, center) > radius * radius) return false;
+
+            // 2. Check angle
+            Vector2 diff = pt - center;
+            float angle = MathF.Atan2(diff.Y, diff.X);
+
+            // Normalize angle difference to [0, 2PI)
+            float angleRelativeToStart = angle - startAngleRad;
+            const float TwoPI = MathF.PI * 2f;
+
+            angleRelativeToStart %= TwoPI;
+            if (angleRelativeToStart < 0) angleRelativeToStart += TwoPI;
+
+            return angleRelativeToStart <= sweepAngleRad;
+        }
 
         // Methods moved from MainWindow.cs (made public)
         public static Vector2 ImRotate(Vector2 v, float cosA, float sinA)

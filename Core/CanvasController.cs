@@ -329,8 +329,10 @@ namespace AetherDraw.Core
                 DrawMode.SpreadIcon or DrawMode.TetherIcon or DrawMode.BossIconPlaceholder or DrawMode.AddMobIcon or
                 DrawMode.Party1Image or DrawMode.Party2Image or DrawMode.Party3Image or DrawMode.Party4Image or
                 DrawMode.Party5Image or DrawMode.Party6Image or DrawMode.Party7Image or DrawMode.Party8Image or
+                DrawMode.Bind1Image or DrawMode.Bind2Image or DrawMode.Bind3Image or
+                DrawMode.Ignore1Image or DrawMode.Ignore2Image or
                 DrawMode.TriangleImage or DrawMode.SquareImage or DrawMode.CircleMarkImage or DrawMode.PlusImage or
-                DrawMode.Dot1Image or DrawMode.Dot2Image or DrawMode.Dot3Image or DrawMode.Dot4Image or DrawMode.Dot5Image or DrawMode.Dot6Image or DrawMode.Dot7Image or DrawMode.Dot8Image
+                DrawMode.Dot1Image or DrawMode.Dot2Image or DrawMode.Dot3Image or DrawMode.Dot4Image or DrawMode.Dot5Image or DrawMode.Dot6Image or DrawMode.Dot7Image or DrawMode.Dot8Image or DrawMode.RoleCasterImage
                 => true,
                 _ => false,
             };
@@ -367,6 +369,7 @@ namespace AetherDraw.Core
                     case DrawMode.RoleHealerImage: imagePath = "PluginImages.toolbar.Healer.JPG"; break;
                     case DrawMode.RoleMeleeImage: imagePath = "PluginImages.toolbar.Melee.JPG"; break;
                     case DrawMode.RoleRangedImage: imagePath = "PluginImages.toolbar.Ranged.JPG"; break;
+                    case DrawMode.RoleCasterImage: imagePath = "PluginImages.toolbar.caster.png"; break;
                     case DrawMode.Party1Image: imagePath = "PluginImages.toolbar.Party1.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party2Image: imagePath = "PluginImages.toolbar.Party2.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party3Image: imagePath = "PluginImages.toolbar.Party3.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
@@ -375,6 +378,11 @@ namespace AetherDraw.Core
                     case DrawMode.Party6Image: imagePath = "PluginImages.toolbar.Party6.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party7Image: imagePath = "PluginImages.toolbar.Party7.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Party8Image: imagePath = "PluginImages.toolbar.Party8.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Bind1Image: imagePath = "PluginImages.toolbar.bind1.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Bind2Image: imagePath = "PluginImages.toolbar.bind2.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Bind3Image: imagePath = "PluginImages.toolbar.bind3.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Ignore1Image: imagePath = "PluginImages.toolbar.ignore1.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
+                    case DrawMode.Ignore2Image: imagePath = "PluginImages.toolbar.ignore2.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.SquareImage: imagePath = "PluginImages.toolbar.Square.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.CircleMarkImage: imagePath = "PluginImages.toolbar.CircleMark.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.TriangleImage: imagePath = "PluginImages.toolbar.Triangle.png"; imageUnscaledSize = new Vector2(25f, 25f); break;
@@ -392,6 +400,7 @@ namespace AetherDraw.Core
                     case DrawMode.Dot6Image: imagePath = "PluginImages.svg.6dot.svg"; imageTint = new Vector4(1.0f, 0.3f, 0.3f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Dot7Image: imagePath = "PluginImages.svg.7dot.svg"; imageTint = new Vector4(0.3f, 0.5f, 1.0f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
                     case DrawMode.Dot8Image: imagePath = "PluginImages.svg.8dot.svg"; imageTint = new Vector4(1.0f, 0.3f, 0.3f, 1.0f); imageUnscaledSize = new Vector2(25f, 25f); break;
+
                 }
 
                 if (!string.IsNullOrEmpty(imagePath))
@@ -456,6 +465,7 @@ namespace AetherDraw.Core
                     case DrawMode.Donut:
                     case DrawMode.Triangle:
                     case DrawMode.Arrow:
+                    case DrawMode.Pie:
                         finalColor.W = 0.4f;
                         break;
                 }
@@ -471,6 +481,7 @@ namespace AetherDraw.Core
                 DrawMode.Arrow => new DrawableArrow(startPosLogical, finalColor, thickness),
                 DrawMode.Cone => new DrawableCone(startPosLogical, finalColor, thickness, isFilled),
                 DrawMode.Triangle => new DrawableTriangle(startPosLogical, finalColor, thickness, isFilled),
+                DrawMode.Pie => new DrawablePie(startPosLogical, finalColor, thickness, isFilled),
                 _ => null,
             };
         }
@@ -491,6 +502,7 @@ namespace AetherDraw.Core
             else if (currentDrawingObjectInternal is DrawableRectangle r && (Math.Abs(r.StartPointRelative.X - r.EndPointRelative.X) < 2f || Math.Abs(r.StartPointRelative.Y - r.EndPointRelative.Y) < 2f)) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableArrow arrow && Vector2.DistanceSquared(arrow.StartPointRelative, arrow.EndPointRelative) < 4f) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableCone co && Vector2.DistanceSquared(co.ApexRelative, co.BaseCenterRelative) < 4f) isValidObject = false;
+            else if (currentDrawingObjectInternal is DrawablePie pie && pie.Radius < 1.5f) isValidObject = false;
 
             if (isValidObject)
             {

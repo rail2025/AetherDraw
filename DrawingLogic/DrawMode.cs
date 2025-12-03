@@ -12,6 +12,7 @@ namespace AetherDraw.DrawingLogic
         Dash,
         Donut,
         Triangle,
+        
 
         // Tools
         Select,
@@ -74,5 +75,23 @@ namespace AetherDraw.DrawingLogic
         Dot8Image,
 
         StatusIconPlaceholder = 58,
+        Pie = 59,
+        RoleCasterImage,
+        // Tank
+        JobPldImage, JobWarImage, JobDrkImage, JobGnbImage,
+        // Healer
+        JobWhmImage, JobSchImage, JobAstImage, JobSgeImage,
+        // Melee
+        JobMnkImage, JobDrgImage, JobNinImage, JobSamImage, JobRprImage, JobVprImage,
+        // Ranged
+        JobBrdImage, JobMchImage, JobDncImage,
+        // Caster
+        JobBlmImage, JobSmnImage, JobRdmImage, JobPctImage,
+
+        Bind1Image,
+        Bind2Image,
+        Bind3Image,
+        Ignore1Image,
+        Ignore2Image,
     }
 }
