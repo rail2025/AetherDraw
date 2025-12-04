@@ -237,6 +237,33 @@ namespace AetherDraw.Serialization
                 case DrawMode.Dot7Image:
                 case DrawMode.Dot8Image:
                 case DrawMode.StatusIconPlaceholder:
+                case DrawMode.RoleCasterImage:
+                case DrawMode.JobPldImage:
+                case DrawMode.JobWarImage:
+                case DrawMode.JobDrkImage:
+                case DrawMode.JobGnbImage:
+                case DrawMode.JobWhmImage:
+                case DrawMode.JobSchImage:
+                case DrawMode.JobAstImage:
+                case DrawMode.JobSgeImage:
+                case DrawMode.JobMnkImage:
+                case DrawMode.JobDrgImage:
+                case DrawMode.JobNinImage:
+                case DrawMode.JobSamImage:
+                case DrawMode.JobRprImage:
+                case DrawMode.JobVprImage:
+                case DrawMode.JobBrdImage:
+                case DrawMode.JobMchImage:
+                case DrawMode.JobDncImage:
+                case DrawMode.JobBlmImage:
+                case DrawMode.JobSmnImage:
+                case DrawMode.JobRdmImage:
+                case DrawMode.JobPctImage:
+                case DrawMode.Bind1Image:
+                case DrawMode.Bind2Image:
+                case DrawMode.Bind3Image:
+                case DrawMode.Ignore1Image:
+                case DrawMode.Ignore2Image:
                     var image = (DrawableImage)drawable;
                     writer.Write(image.ImageResourcePath ?? string.Empty);
                     writer.Write(image.PositionRelative.X); writer.Write(image.PositionRelative.Y);
@@ -438,6 +465,33 @@ namespace AetherDraw.Serialization
                 case DrawMode.Dot7Image:
                 case DrawMode.Dot8Image:
                 case DrawMode.StatusIconPlaceholder:
+                case DrawMode.RoleCasterImage:
+                case DrawMode.JobPldImage:
+                case DrawMode.JobWarImage:
+                case DrawMode.JobDrkImage:
+                case DrawMode.JobGnbImage:
+                case DrawMode.JobWhmImage:
+                case DrawMode.JobSchImage:
+                case DrawMode.JobAstImage:
+                case DrawMode.JobSgeImage:
+                case DrawMode.JobMnkImage:
+                case DrawMode.JobDrgImage:
+                case DrawMode.JobNinImage:
+                case DrawMode.JobSamImage:
+                case DrawMode.JobRprImage:
+                case DrawMode.JobVprImage:
+                case DrawMode.JobBrdImage:
+                case DrawMode.JobMchImage:
+                case DrawMode.JobDncImage:
+                case DrawMode.JobBlmImage:
+                case DrawMode.JobSmnImage:
+                case DrawMode.JobRdmImage:
+                case DrawMode.JobPctImage:
+                case DrawMode.Bind1Image:
+                case DrawMode.Bind2Image:
+                case DrawMode.Bind3Image:
+                case DrawMode.Ignore1Image:
+                case DrawMode.Ignore2Image:
                     string imgPath = reader.ReadString();
                     if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 imgPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());
