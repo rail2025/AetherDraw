@@ -27,7 +27,9 @@ namespace AetherDraw.Core
         private readonly InPlaceTextEditor inPlaceTextEditor;
         private readonly Configuration configuration;
 
+
         private bool isDrawingOnCanvas = false;
+        private readonly List<DrawableLaser> _ephemeralDrawables = new(); 
         private BaseDrawable? currentDrawingObjectInternal = null;
         private double lastEraseTime = 0;
         private string? emojiToPlace = null; // New field for placing emojis
@@ -67,6 +69,17 @@ namespace AetherDraw.Core
             this.inPlaceTextEditor = itEditor ?? throw new ArgumentNullException(nameof(itEditor));
             this.configuration = config ?? throw new ArgumentNullException(nameof(config));
             this.plugin = pluginInstance ?? throw new ArgumentNullException(nameof(pluginInstance));
+        }
+        public void DrawEphemeralLayer(ImDrawListPtr drawList, Vector2 canvasOriginScreen)
+        {
+            // 1. Clean up lasers that have completely faded out (0 points left)
+            _ephemeralDrawables.RemoveAll(l => l.GetPoints().Count == 0);
+
+            // 2. Draw the remaining active lasers
+            foreach (var laser in _ephemeralDrawables)
+            {
+                laser.Draw(drawList, canvasOriginScreen);
+            }
         }
 
         public void StartPlacingEmoji(string emoji)
@@ -432,16 +445,52 @@ namespace AetherDraw.Core
             {
                 if (!isDrawingOnCanvas && isLMBClickedOnCanvas)
                 {
-                    undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), $"Start Drawing {getCurrentDrawMode()}");
-                    isDrawingOnCanvas = true;
-                    foreach (var sel in selectedDrawablesListRef) sel.IsSelected = false;
-                    selectedDrawablesListRef.Clear();
-                    if (getHoveredDrawableFunc() != null) setHoveredDrawableAction(null);
-                    currentDrawingObjectInternal = CreateNewDrawingObject(getCurrentDrawMode(), mousePosLogical, getCurrentBrushColor(), getCurrentBrushThickness(), getCurrentShapeFilled());
+                    if (getCurrentDrawMode() == DrawMode.Laser)
+                    {
+                        isDrawingOnCanvas = true;
+
+                        // Clear selection but DO NOT record Undo action for lasers
+                        foreach (var sel in selectedDrawablesListRef) sel.IsSelected = false;
+                        selectedDrawablesListRef.Clear();
+                        if (getHoveredDrawableFunc() != null) setHoveredDrawableAction(null);
+
+                        // Create and add directly to the "Ghost List" (Ephemeral)
+                        var newLaser = new DrawableLaser(mousePosLogical, getCurrentBrushColor(), getCurrentBrushThickness());
+                        currentDrawingObjectInternal = newLaser;
+                        _ephemeralDrawables.Add(newLaser);
+                    }
+                    else
+                    {
+                        // Normal shape logic
+                        undoManager.RecordAction(pageManager.GetCurrentPageDrawables(), $"Start Drawing {getCurrentDrawMode()}");
+                        isDrawingOnCanvas = true;
+                        foreach (var sel in selectedDrawablesListRef) sel.IsSelected = false;
+                        selectedDrawablesListRef.Clear();
+                        if (getHoveredDrawableFunc() != null) setHoveredDrawableAction(null);
+                        currentDrawingObjectInternal = CreateNewDrawingObject(getCurrentDrawMode(), mousePosLogical, getCurrentBrushColor(), getCurrentBrushThickness(), getCurrentShapeFilled());
+                    }
                 }
+
                 if (isDrawingOnCanvas && currentDrawingObjectInternal != null)
                 {
-                    if (currentDrawingObjectInternal is DrawablePath p) p.AddPoint(mousePosLogical);
+                    // Handle Laser points vs Normal points
+                    if (currentDrawingObjectInternal is DrawableLaser laser)
+                    {
+                        laser.AddPoint(mousePosLogical);
+
+                        // Throttled Network Update (~40ms) for Lasers to prevent lag
+                        if (pageManager.IsLiveMode && (DateTime.Now - laser.LastUpdateTime).TotalMilliseconds > 40)
+                        {
+                            var payload = new NetworkPayload
+                            {
+                                PageIndex = pageManager.GetCurrentPageIndex(),
+                                Action = PayloadActionType.AddObjects,
+                                Data = Serialization.DrawableSerializer.SerializePageToBytes(new List<BaseDrawable> { laser })
+                            };
+                            _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                        }
+                    }
+                    else if (currentDrawingObjectInternal is DrawablePath p) p.AddPoint(mousePosLogical);
                     else if (currentDrawingObjectInternal is DrawableDash d) d.AddPoint(mousePosLogical);
                     else currentDrawingObjectInternal.UpdatePreview(mousePosLogical);
                 }
@@ -490,6 +539,38 @@ namespace AetherDraw.Core
         {
             if (currentDrawingObjectInternal == null)
             {
+                isDrawingOnCanvas = false;
+                return;
+            }
+            // Laser handle
+            if (currentDrawingObjectInternal is DrawableLaser laser)
+            {
+                // Start a background task to delete the laser after it fades visually
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    // Wait 600ms (fade out time)
+                    await System.Threading.Tasks.Task.Delay(600);
+
+                    // Send delete command to network
+                    if (pageManager.IsLiveMode)
+                    {
+                        using var ms = new MemoryStream();
+                        using var writer = new BinaryWriter(ms);
+                        writer.Write(1); // Count of objects to delete
+                        writer.Write(laser.UniqueId.ToByteArray());
+
+                        var payload = new NetworkPayload
+                        {
+                            PageIndex = pageManager.GetCurrentPageIndex(),
+                            Action = PayloadActionType.DeleteObjects,
+                            Data = ms.ToArray()
+                        };
+                        _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                    }
+                    // Local cleanup happens automatically in DrawEphemeralLayer when points <= 0
+                });
+
+                currentDrawingObjectInternal = null;
                 isDrawingOnCanvas = false;
                 return;
             }

@@ -42,6 +42,9 @@ namespace AetherDraw
         public LoadSearchWindow DiscoveryWindow { get; init; }
         public AccountManager AccountManager { get; init; }
 
+        public PermissionManager PermissionManager { get; init; }
+        public PageController PageController { get; init; }
+
         public Plugin()
         {
             this.Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -50,6 +53,12 @@ namespace AetherDraw
             this.NetworkManager = new NetworkManager();
             this.DiscoveryClient = new DiscoveryClient();
             this.AccountManager = new AccountManager();
+
+            this.PermissionManager = new PermissionManager();
+            this.PageController = new PageController(this);
+
+            this.NetworkManager.OnHostStatusReceived += (isHost) => this.PermissionManager.SetHost(isHost);
+            this.NetworkManager.OnDisconnected += () => this.PermissionManager.SetHost(true);
 
             this.ConfigWindow = new ConfigWindow(this);
             this.MainWindow = new MainWindow(this);

@@ -277,6 +277,16 @@ namespace AetherDraw.Serialization
                     writer.Write(text.FontSize);
                     writer.Write(text.WrappingWidth);
                     break;
+                case DrawMode.Laser:
+                    var laser = (DrawableLaser)drawable;
+                    var pts = laser.GetPoints();
+                    writer.Write(pts.Count); 
+                    foreach (var point in pts)
+                    {
+                        writer.Write(point.X);
+                        writer.Write(point.Y);
+                    }
+                    break;
                 default:
                     AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Unhandled DrawMode during serialization: {drawable.ObjectDrawMode}");
                     break;
@@ -506,6 +516,22 @@ namespace AetherDraw.Serialization
                     float fontSize = reader.ReadSingle();
                     float wrapWidth = reader.ReadSingle();
                     drawable = new DrawableText(textPos, rawText, color, fontSize, wrapWidth);
+                    break;
+                case DrawMode.Laser:
+                    if (reader.BaseStream.Position + sizeof(int) > reader.BaseStream.Length) return null;
+                    int laserPointCount = reader.ReadInt32();
+
+                    if (laserPointCount < 0 || laserPointCount > MAX_POINTS_PER_OBJECT)
+                    {
+                        AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Invalid laser point count: {laserPointCount}.");
+                        return null;
+                    }
+
+                    var laserPoints = new List<Vector2>(laserPointCount);
+                    for (int i = 0; i < laserPointCount; i++)
+                        laserPoints.Add(new Vector2(reader.ReadSingle(), reader.ReadSingle()));
+
+                    drawable = new DrawableLaser(laserPoints, color, thickness);
                     break;
                 default:
                     AetherDraw.Plugin.Log?.Error($"[DrawableSerializer] Unhandled DrawMode during deserialization: {mode}");

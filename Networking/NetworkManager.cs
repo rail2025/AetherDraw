@@ -5,6 +5,7 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using AetherDraw.Serialization;
+using Newtonsoft.Json.Linq;
 
 namespace AetherDraw.Networking
 {
@@ -45,6 +46,10 @@ namespace AetherDraw.Networking
         /// Occurs when the server sends a warning that the room is about to close.
         /// </summary>
         public event Action? OnRoomClosingWarning;
+
+        public event Action<bool>? OnHostStatusReceived;
+
+        
 
         /// <summary>
         /// Gets a value indicating whether the WebSocket is currently connected.
@@ -133,6 +138,12 @@ namespace AetherDraw.Networking
                     {
                         await DisconnectAsync();
                     }
+                    else if (result.MessageType == WebSocketMessageType.Text)
+                    {
+                        ms.Seek(0, SeekOrigin.Begin);
+                        string text = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+                        HandleTextMessage(text);
+                    }
                     else
                     {
                         ms.Seek(0, SeekOrigin.Begin);
@@ -145,6 +156,39 @@ namespace AetherDraw.Networking
             {
                 OnError?.Invoke($"Network error: {ex.Message}");
                 await DisconnectAsync();
+            }
+        }
+
+        private void HandleTextMessage(string json)
+        {
+            try
+            {
+                var obj = JObject.Parse(json);
+                var type = obj["type"]?.ToString();
+
+                if (type == "HOST_STATUS")
+                {
+                    var payload = obj["payload"];
+                    if (payload != null)
+                    {
+                        var hostToken = payload["isHost"] ?? payload["IsHost"];
+                        bool isHost = hostToken?.ToObject<bool>() ?? false;
+OnHostStatusReceived?.Invoke(isHost);
+                    }
+                }
+                else if (type == "ERROR")
+                {
+                    string msg = obj["message"]?.ToString() ?? "Unknown Error";
+                    OnError?.Invoke(msg);
+                }
+                else if (type == "ROOM_CLOSING_IMMINENTLY")
+                {
+                    OnRoomClosingWarning?.Invoke();
+                }
+            }
+            catch (Exception ex)
+            {
+                AetherDraw.Plugin.Log?.Error($"Failed to parse text message: {ex.Message}");
             }
         }
 

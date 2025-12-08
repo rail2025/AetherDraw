@@ -54,6 +54,7 @@ namespace AetherDraw.UI
         private readonly Dictionary<DrawMode, DrawMode> activeSubModeMap;
         private readonly Dictionary<DrawMode, string> iconPaths;
         private readonly Dictionary<DrawMode, string> toolDisplayNames;
+        private bool isAllLocked = false;
         private static readonly float[] ThicknessPresets = { 1.5f, 4f, 7f, 10f };
         private static readonly Vector4[] ColorPalette = {
             new(1.0f,1.0f,1.0f,1.0f), new(0.0f,0.0f,0.0f,1.0f),
@@ -239,6 +240,16 @@ namespace AetherDraw.UI
 
             if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0))) onClearAll();
 
+            if (plugin.PermissionManager.IsHost)
+            {
+                string lockLabel = isAllLocked ? "Unlock All Items" : "Lock All Items";
+                if (ImGui.Button(lockLabel, new Vector2(btnWidthFull, 0)))
+                {
+                    isAllLocked = !isAllLocked;
+                    plugin.PageController.SetAllLocked(pageManager, isAllLocked);
+                }
+            }
+
             if (ImGui.Button("Emoji", new Vector2(btnWidthFull, 0)))
             {
                 onOpenEmojiPicker();
@@ -305,6 +316,8 @@ namespace AetherDraw.UI
             {
                 setIsSnapToGrid(snapToGrid);
             }
+
+            DrawToolButton("Laser Pointer", DrawMode.Laser, btnWidthFull);
 
             ImGui.Separator();
 

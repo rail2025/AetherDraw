@@ -371,9 +371,9 @@ namespace AetherDraw.Windows
             // Record the state BEFORE applying the remote change, if it's a modifying action
             bool isModifyingAction = payload.Action switch
             {
-                PayloadActionType.AddObjects => true,
-                PayloadActionType.DeleteObjects => true,
-                PayloadActionType.UpdateObjects => true,
+                PayloadActionType.AddObjects => false, // Now handled inside case to filter Lasers
+                PayloadActionType.DeleteObjects => false,
+                PayloadActionType.UpdateObjects => false,
                 PayloadActionType.ClearPage => true,
                 PayloadActionType.ReplacePage => true, // Also record state before replacing
                 PayloadActionType.DeletePage => true, // Record state before deleting
@@ -418,6 +418,13 @@ namespace AetherDraw.Windows
 
                         if (objectsToAdd.Any())
                         {
+                            if (objectsToAdd.Any(d => d.ObjectDrawMode != DrawMode.Laser))
+                            {
+                                int originalActivePage = pageManager.GetCurrentPageIndex();
+                                undoManager.SetActivePage(payload.PageIndex);
+                                undoManager.RecordAction(targetPageDrawables, $"Remote {payload.Action} on Page {payload.PageIndex + 1}");
+                                undoManager.SetActivePage(originalActivePage);
+                            }
                             targetPageDrawables.AddRange(objectsToAdd);
                         }
                         break;
@@ -427,11 +434,25 @@ namespace AetherDraw.Windows
                         using (var reader = new BinaryReader(ms))
                         {
                             int count = reader.ReadInt32();
+                            var idsToDelete = new HashSet<Guid>();
                             for (int i = 0; i < count; i++)
                             {
-                                var objectId = new Guid(reader.ReadBytes(16));
-                                targetPageDrawables.RemoveAll(d => d.UniqueId == objectId);
+                                idsToDelete.Add(new Guid(reader.ReadBytes(16)));
                             }
+
+                            // Check if deleting any persistent objects (not lasers)
+                            // If only deleting lasers, skip the undo recording.
+                            bool deletingPersistent = targetPageDrawables.Any(d => idsToDelete.Contains(d.UniqueId) && d.ObjectDrawMode != DrawMode.Laser);
+
+                            if (deletingPersistent)
+                            {
+                                int originalActivePage = pageManager.GetCurrentPageIndex();
+                                undoManager.SetActivePage(payload.PageIndex);
+                                undoManager.RecordAction(targetPageDrawables, $"Remote {payload.Action} on Page {payload.PageIndex + 1}");
+                                undoManager.SetActivePage(originalActivePage);
+                            }
+
+                            targetPageDrawables.RemoveAll(d => idsToDelete.Contains(d.UniqueId));
                         }
                         break;
                     case PayloadActionType.UpdateObjects:

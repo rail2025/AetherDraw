@@ -93,5 +93,6 @@ namespace AetherDraw.DrawingLogic
         Bind3Image,
         Ignore1Image,
         Ignore2Image,
+        Laser = 87
     }
 }
