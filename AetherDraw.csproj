@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.4.3.1</AssemblyVersion>
+        <AssemblyVersion>2.4.4.0</AssemblyVersion>
         <TargetFramework>net9.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
@@ -11,9 +11,21 @@
         <Description>A realtime multi-user whiteboard raid planner plugin to draw encounter strategies. Supports url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.4.3.1</Version>
+        <Version>2.4.4.0</Version>
         <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\svg\starburst.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\svg\tower.png" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\svg\gaze.png" />
+    </ItemGroup>
 
     <ItemGroup>
       <EmbeddedResource Include="PluginImages\toolbar\dnc.png" />
@@ -112,15 +124,15 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="AngleSharp" Version="1.3.0" />
-        <PackageReference Include="HtmlAgilityPack" Version="1.12.2" />
+        <PackageReference Include="AngleSharp" Version="1.4.0" />
+        <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
         <PackageReference Include="SixLabors.Fonts" Version="2.1.3" />
-        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.11" />
+        <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
         <PackageReference Include="SixLabors.ImageSharp.Drawing" Version="2.1.7" />
         <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.2.0" />
-        <PackageReference Include="SkiaSharp" Version="3.119.0" />
+        <PackageReference Include="SkiaSharp" Version="3.119.1" />
        
-        <PackageReference Include="Svg.Skia" Version="3.0.5" />
+        <PackageReference Include="Svg.Skia" Version="3.2.1" />
     </ItemGroup>
 
     <ItemGroup>
@@ -145,7 +157,12 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Update="DalamudPackager" Version="13.0.0" />
+      <EmbeddedResource Include="PluginImages\svg\exas.svg" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Update="DalamudPackager" Version="13.1.0" />
+      <PackageReference Update="DotNet.ReproducibleBuilds" Version="1.2.39" />
     </ItemGroup>
     <ItemGroup>
         <Reference Include="ImGui.NET">

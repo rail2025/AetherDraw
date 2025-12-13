@@ -103,7 +103,9 @@ namespace AetherDraw.DrawingLogic
         // Non-interactive overrides for the transient laser
         public override RectangleF GetBoundingBox() => RectangleF.Empty;
         public override bool IsHit(Vector2 p, float t) => false;
-        public override BaseDrawable Clone() => new DrawableLaser(new List<Vector2>(), Color, Thickness);
+
+        // Return null to prevent UndoManager from saving this object
+        public override BaseDrawable? Clone() => null;
         public override void Translate(Vector2 delta) { }
         public override void DrawToImage(IImageProcessingContext context, Vector2 origin, float scale) { }
     }

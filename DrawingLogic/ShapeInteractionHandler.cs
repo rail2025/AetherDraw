@@ -25,7 +25,9 @@ namespace AetherDraw.DrawingLogic
         /// <summary>
         /// Defines the type of drag operation currently being performed by the user.
         /// </summary>
-        public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize, TriangleResize, PieCenter, PieRadius, PieStart, PieEnd }
+        public enum ActiveDragType { None, GeneralSelection, MarqueeSelection, ImageResize, ImageRotate, ConeApex, ConeBase, ConeRotate, RectResize, RectRotate, ArrowStartPoint, ArrowEndPoint, ArrowRotate, ArrowThickness, TextResize, TriangleResize, PieCenter, PieRadius, PieStart, PieEnd, DonutRadius, DonutHole,
+            StarburstRadius, StarburstRotate, StarburstWidth
+        }
 
         /// <summary>
         /// The current drag operation state.
@@ -277,6 +279,8 @@ namespace AetherDraw.DrawingLogic
                 case DrawableArrow dArrow: InteractionHandlerHelpers.ProcessArrowHandles(dArrow, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawableCone dCone: InteractionHandlerHelpers.ProcessConeHandles(dCone, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
                 case DrawablePie dPie: InteractionHandlerHelpers.ProcessPieHandles(dPie, mousePos, canvasOrigin, drawList, this, ref mouseOverAny); break;
+                case DrawableDonut dDonut: ProcessDonutHandles(dDonut, mousePos, canvasOrigin, drawList, ref mouseOverAny); break;
+                case DrawableStarburst dStar: ProcessStarburstHandles(dStar, mousePos, canvasOrigin, drawList, ref mouseOverAny); break;
             }
             return mouseOverAny;
         }
@@ -380,6 +384,17 @@ namespace AetherDraw.DrawingLogic
                     else if (draggedHandleIndex == 2) initialType = ActiveDragType.PieStart;
                     else if (draggedHandleIndex == 3) initialType = ActiveDragType.PieEnd;
                     break;
+                case DrawableDonut dDonut:
+                    dragStartObjectPivotLogical = dDonut.CenterRelative;
+                    if (draggedHandleIndex == 0) { initialType = ActiveDragType.DonutRadius; dragStartValueLogical = dDonut.InnerRadius; } // Store Inner as constraint
+                    else if (draggedHandleIndex == 1) { initialType = ActiveDragType.DonutHole; dragStartValueLogical = dDonut.Radius; } // Store Outer as constraint
+                    break;
+                case DrawableStarburst dStar:
+                    dragStartObjectPivotLogical = dStar.Center;
+                    if (draggedHandleIndex == 0) { initialType = ActiveDragType.StarburstRadius; }
+                    else if (draggedHandleIndex == 1) { initialType = ActiveDragType.StarburstRotate; dragStartRotationAngle = dStar.RotationAngle; }
+                    else if (draggedHandleIndex == 2) { initialType = ActiveDragType.StarburstWidth; dragStartRotationAngle = dStar.RotationAngle; }
+                    break;
             }
 
             if (initialType != ActiveDragType.None)
@@ -431,8 +446,87 @@ namespace AetherDraw.DrawingLogic
                     case ActiveDragType.PieRadius: InteractionHandlerHelpers.UpdatePieRadiusDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.PieStart: InteractionHandlerHelpers.UpdatePieStartDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
                     case ActiveDragType.PieEnd: InteractionHandlerHelpers.UpdatePieEndDrag((DrawablePie)singleSelectedItem, mousePos, this); break;
+                    case ActiveDragType.DonutRadius: UpdateDonutRadiusDrag((DrawableDonut)singleSelectedItem, mousePos); break;
+                    case ActiveDragType.DonutHole: UpdateDonutHoleDrag((DrawableDonut)singleSelectedItem, mousePos); break;
+                    case ActiveDragType.StarburstRadius: UpdateStarburstRadiusDrag((DrawableStarburst)singleSelectedItem, mousePos); break;
+                    case ActiveDragType.StarburstRotate: UpdateStarburstRotateDrag((DrawableStarburst)singleSelectedItem, mousePos); break;
+                    case ActiveDragType.StarburstWidth: UpdateStarburstWidthDrag((DrawableStarburst)singleSelectedItem, mousePos); break;
                 }
             }
+        }
+        private void ProcessDonutHandles(DrawableDonut donut, Vector2 mousePos, Vector2 canvasOrigin, ImDrawListPtr drawList, ref bool mouseOverAny)
+        {
+            // Handle 0: Outer Radius (Top)
+            Vector2 radiusHandlePos = donut.CenterRelative + new Vector2(0, -donut.Radius);
+            if (DrawAndCheckHandle(drawList, radiusHandlePos, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handleColorResize, handleColorResizeHover))
+            {
+                draggedHandleIndex = 0;
+            }
+
+            // Handle 1: Inner Hole (Top)
+            Vector2 holeHandlePos = donut.CenterRelative + new Vector2(0, -donut.InnerRadius);
+            if (DrawAndCheckHandle(drawList, holeHandlePos, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handleColorSpecial, handleColorSpecialHover))
+            {
+                draggedHandleIndex = 1;
+            }
+        }
+
+        private void UpdateDonutRadiusDrag(DrawableDonut donut, Vector2 mousePos)
+        {
+            float dist = Vector2.Distance(mousePos, donut.CenterRelative);
+            // Constraint: Radius must be at least (InnerRadius + 5)
+            donut.Radius = Math.Max(dragStartValueLogical + 5f, dist);
+        }
+
+        private void UpdateDonutHoleDrag(DrawableDonut donut, Vector2 mousePos)
+        {
+            float dist = Vector2.Distance(mousePos, donut.CenterRelative);
+            // Constraint: InnerRadius must be at most (Radius - 5), minimum 10
+            donut.InnerRadius = Math.Max(10f, Math.Min(dist, dragStartValueLogical - 5f));
+        }
+
+        private void ProcessStarburstHandles(DrawableStarburst star, Vector2 mousePos, Vector2 canvasOrigin, ImDrawListPtr drawList, ref bool mouseOverAny)
+        {
+            // Handle 0: Radius (Top)
+            Vector2 radiusHandlePos = star.Center + Vector2.Transform(new Vector2(0, -star.Radius), Matrix3x2.CreateRotation(star.RotationAngle));
+            if (DrawAndCheckHandle(drawList, radiusHandlePos, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handleColorResize, handleColorResizeHover))
+            {
+                draggedHandleIndex = 0;
+            }
+
+            // Handle 1: Rotation (Top + 20px)
+            Vector2 rotHandlePos = star.Center + Vector2.Transform(new Vector2(0, -star.Radius - 20f), Matrix3x2.CreateRotation(star.RotationAngle));
+            if (DrawAndCheckHandle(drawList, rotHandlePos, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.Hand, handleColorRotation, handleColorRotationHover))
+            {
+                draggedHandleIndex = 1;
+            }
+
+            // Handle 2: Width (Side)
+            Vector2 widthHandlePos = star.Center + Vector2.Transform(new Vector2(star.Width / 2f, 0), Matrix3x2.CreateRotation(star.RotationAngle));
+            if (DrawAndCheckHandle(drawList, widthHandlePos, canvasOrigin, mousePos, ref mouseOverAny, ImGuiMouseCursor.ResizeAll, handleColorSpecial, handleColorSpecialHover))
+            {
+                draggedHandleIndex = 2;
+            }
+        }
+
+        private void UpdateStarburstRadiusDrag(DrawableStarburst star, Vector2 mousePos)
+        {
+            float dist = Vector2.Distance(mousePos, star.Center);
+            star.Radius = Math.Max(10f, dist);
+        }
+
+        private void UpdateStarburstRotateDrag(DrawableStarburst star, Vector2 mousePos)
+        {
+            Vector2 delta = mousePos - star.Center;
+            // +PI/2 because handles are at -Y (Top) relative to center
+            star.RotationAngle = MathF.Atan2(delta.Y, delta.X) + MathF.PI / 2f;
+        }
+
+        private void UpdateStarburstWidthDrag(DrawableStarburst star, Vector2 mousePos)
+        {
+            // Rotate mouse pos into local space to determine width from center axis
+            Vector2 localPos = Vector2.Transform(mousePos - star.Center, Matrix3x2.CreateRotation(-star.RotationAngle));
+            star.Width = Math.Max(5f, Math.Abs(localPos.X) * 2f);
         }
     }
 }

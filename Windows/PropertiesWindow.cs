@@ -255,6 +255,30 @@ namespace AetherDraw.Windows
 
             // context aware content
 
+            // Donut Properties with Hard Limit
+            if (selected.Count == 1 && selected[0] is DrawableDonut donut)
+            {
+                ImGui.Separator();
+                ImGui.Text("Donut Properties");
+
+                float holeSize = donut.InnerRadius;
+                // Hard Limit: Hole cannot be larger than Radius - 5
+                float maxHoleSize = Math.Max(0f, donut.Radius - 5f);
+
+                ImGui.SetNextItemWidth(availableWidth);
+                // The slider is clamped between 0 and maxHoleSize
+                if (ImGui.DragFloat("##HoleSize", ref holeSize, 0.5f, 0f, maxHoleSize, "Hole Size: %.1f"))
+                {
+                    donut.InnerRadius = Math.Clamp(holeSize, 0f, maxHoleSize);
+                }
+
+                if (ImGui.IsItemDeactivatedAfterEdit())
+                {
+                    mainWindow.UndoManager.RecordAction(mainWindow.PageManager.GetCurrentPageDrawables(), "Resize Donut Hole");
+                    mainWindow.InteractionHandler.CommitObjectChanges(new List<BaseDrawable>(selected));
+                }
+            }
+
             if (selected.Count == 1 && selected[0] is DrawableText textObj)
             {
                 ImGui.Separator();

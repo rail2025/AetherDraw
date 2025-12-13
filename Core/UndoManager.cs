@@ -5,6 +5,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace AetherDraw.Core
 {
@@ -34,7 +35,12 @@ namespace AetherDraw.Core
             PreviousDrawablesState = new List<BaseDrawable>();
             foreach (var drawable in drawablesStateToSave)
             {
-                PreviousDrawablesState.Add(drawable.Clone());
+                // Check for null (e.g. Lasers) before adding to history
+                var cloned = drawable.Clone();
+                if (cloned != null)
+                {
+                    PreviousDrawablesState.Add(cloned);
+                }
             }
             Description = description;
         }
@@ -149,17 +155,49 @@ namespace AetherDraw.Core
 
             if (undoStacks.Count == 0 || activeStackIndex < 0 || activeStackIndex >= undoStacks.Count)
             {
-                AetherDraw.Plugin.Log?.Error($"[UndoManager] RecordAction: Cannot record, invalid state. Stacks: {undoStacks.Count}, Active: {activeStackIndex}");
+                AetherDraw.Plugin.Log?.Error($"[UndoManager] RecordAction: Cannot record, invalid state.");
                 return;
             }
 
             var activeStack = undoStacks[activeStackIndex];
+
+            // Deduplication Logic:
+            // Check if the new state is identical to the last saved state.
+            if (activeStack.Count > 0)
+            {
+                var lastAction = activeStack.Peek();
+
+                // filter currentDrawables to simulate what would be saved (no nulls)
+                var validCurrentCount = currentDrawables.Count(d => d.ObjectDrawMode != DrawMode.Laser);
+
+                if (validCurrentCount == lastAction.PreviousDrawablesState.Count)
+                {
+                    // We serialize both to compare them, only serialize the "saveable" items (excluding Lasers/Nulls)
+                    var currentSaveState = currentDrawables
+                        .Select(d => d.Clone())
+                        .Where(d => d != null)
+                        .ToList();
+
+                    string currentJson = JsonSerializer.Serialize(currentSaveState);
+                    string lastJson = JsonSerializer.Serialize(lastAction.PreviousDrawablesState);
+
+                    if (currentJson == lastJson)
+                    {
+                        // States are identical. Do not record.
+                        // AetherDraw.Plugin.Log?.Debug($"[UndoManager] Action ignored (Duplicate state): {actionDescription}");
+                        return;
+                    }
+                }
+            }
+
             if (activeStack.Count >= MaxUndoLevels)
             {
                 TrimOldestUndo(activeStack);
             }
 
             var action = new UndoAction(currentDrawables, actionDescription);
+
+            // Only push if we actually have data (or if it's a valid clear)
             activeStack.Push(action);
             AetherDraw.Plugin.Log?.Debug($"[UndoManager] Action Recorded on page {activeStackIndex}: {actionDescription}. Stack size: {activeStack.Count}");
         }

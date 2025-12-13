@@ -149,10 +149,22 @@ namespace AetherDraw.Serialization
                     writer.Write(rect.RotationAngle);
                     break;
                 case DrawMode.Circle:
-                case DrawMode.Donut:
                     var circle = (DrawableCircle)drawable;
                     writer.Write(circle.CenterRelative.X); writer.Write(circle.CenterRelative.Y);
                     writer.Write(circle.Radius);
+                    break;
+                case DrawMode.Donut:
+                    var donut = (DrawableDonut)drawable;
+                    writer.Write(donut.CenterRelative.X); writer.Write(donut.CenterRelative.Y);
+                    writer.Write(donut.Radius);
+                    writer.Write(donut.InnerRadius);
+                    break;
+                case DrawMode.Starburst:
+                    var star = (DrawableStarburst)drawable;
+                    writer.Write(star.Center.X); writer.Write(star.Center.Y);
+                    writer.Write(star.Radius);
+                    writer.Write(star.Width);
+                    writer.Write(star.RotationAngle);
                     break;
                 case DrawMode.Arrow:
                     var arrow = (DrawableArrow)drawable;
@@ -199,6 +211,9 @@ namespace AetherDraw.Serialization
                 case DrawMode.LineStackImage:
                 case DrawMode.SpreadImage:
                 case DrawMode.StackImage:
+                case DrawMode.GazeImage:
+                case DrawMode.TowerImage:
+                case DrawMode.ExasImage:
                 case DrawMode.Waymark1Image:
                 case DrawMode.Waymark2Image:
                 case DrawMode.Waymark3Image:
@@ -366,11 +381,28 @@ namespace AetherDraw.Serialization
                     drawable = new DrawableRectangle(rectStart, color, thickness, isFilled) { EndPointRelative = rectEnd, RotationAngle = rectRotation };
                     break;
                 case DrawMode.Circle:
-                case DrawMode.Donut:
                     if (reader.BaseStream.Position + sizeof(float) * 3 > reader.BaseStream.Length) return null;
                     Vector2 circleCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                     float circleRadius = reader.ReadSingle();
-                    drawable = new DrawableCircle(circleCenter, color, thickness, isFilled) { Radius = circleRadius, ObjectDrawMode = mode };
+                    drawable = new DrawableCircle(circleCenter, color, thickness, isFilled) { Radius = circleRadius };
+                    break;
+                case DrawMode.Donut:
+                    if (reader.BaseStream.Position + sizeof(float) * 4 > reader.BaseStream.Length) return null;
+                    Vector2 donutCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                    float donutRadius = reader.ReadSingle();
+                    float donutInnerRadius = reader.ReadSingle();
+                    drawable = new DrawableDonut(donutCenter, color, thickness, isFilled, donutRadius, donutInnerRadius);
+                    break;
+                case DrawMode.Starburst:
+                    if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
+                    Vector2 starCenter = new Vector2(reader.ReadSingle(), reader.ReadSingle());
+                    float starRadius = reader.ReadSingle();
+                    float starWidth = reader.ReadSingle();
+                    float starRotation = reader.ReadSingle();
+                    drawable = new DrawableStarburst(starCenter, color, thickness, isFilled, starRadius, starWidth)
+                    {
+                        RotationAngle = starRotation
+                    };
                     break;
                 case DrawMode.Arrow:
                     if (reader.BaseStream.Position + sizeof(float) * 7 > reader.BaseStream.Length) return null;
@@ -462,6 +494,9 @@ namespace AetherDraw.Serialization
                 case DrawMode.TriangleImage:
                 case DrawMode.PlusImage:
                 case DrawMode.StackIcon:
+                case DrawMode.GazeImage:
+                case DrawMode.TowerImage:
+                case DrawMode.ExasImage:
                 case DrawMode.SpreadIcon:
                 case DrawMode.TetherIcon:
                 case DrawMode.BossIconPlaceholder:

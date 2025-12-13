@@ -103,5 +103,42 @@ namespace AetherDraw.DrawingLogic
                 MathF.Round(point.Y / gridSize) * gridSize
             );
         }
+
+        public static bool IsPointInRotatedRect(Vector2 pt, Vector2 center, float halfLength, float halfWidth, float rotationRad, bool isFilled, float thickness, float threshold)
+        {
+            // Transform point to local coordinates
+            Vector2 localP = Vector2.Transform(pt - center, Matrix3x2.CreateRotation(-rotationRad));
+
+            if (isFilled)
+            {
+                return Math.Abs(localP.X) <= halfLength + threshold &&
+                       Math.Abs(localP.Y) <= halfWidth + threshold;
+            }
+            else
+            {
+                float effDist = threshold + thickness / 2f;
+                bool inOuter = Math.Abs(localP.X) <= halfLength + effDist && Math.Abs(localP.Y) <= halfWidth + effDist;
+                bool outInner = Math.Abs(localP.X) >= halfLength - effDist || Math.Abs(localP.Y) >= halfWidth - effDist;
+                return inOuter && outInner;
+            }
+        }
+
+        public static bool IsPointInStarburst(Vector2 pt, Vector2 center, float radius, float width, float baseRotationRad, bool isFilled, float thickness, float threshold)
+        {
+            // Starburst is 4 bars at 0, 45, 90, 135 degrees
+            float[] angles = { 0f, MathF.PI / 4f, MathF.PI / 2f, 3f * MathF.PI / 4f };
+            float halfLength = radius;
+            float halfWidth = width / 2f;
+
+            foreach (float angleOffset in angles)
+            {
+                float currentAngle = baseRotationRad + angleOffset;
+                if (IsPointInRotatedRect(pt, center, halfLength, halfWidth, currentAngle, isFilled, thickness, threshold))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 }

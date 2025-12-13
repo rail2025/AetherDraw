@@ -1157,11 +1157,14 @@ namespace AetherDraw.Windows
             DrawCanvasContextMenu();
 
             ImGui.PushClipRect(canvasOriginScreen, canvasOriginScreen + canvasSizeForImGuiDrawing, true);
-            var drawablesToRender = pageManager.GetCurrentPageDrawables();
-            if (drawablesToRender != null && drawablesToRender.Any())
+            // Create a local copy (.ToList()) to prevent "Collection was modified" exceptions
+            // if the network thread updates the list while we are iterating.
+            var drawablesSnapshot = pageManager.GetCurrentPageDrawables()?.ToList();
+
+            if (drawablesSnapshot != null && drawablesSnapshot.Any())
             {
-                // iterate the list directly to respect the manual order set by the layers panel.
-                foreach (var drawable in drawablesToRender)
+                // Iterate the SNAPSHOT, not the live list
+                foreach (var drawable in drawablesSnapshot)
                 {
                     if (inPlaceTextEditor.IsEditing && inPlaceTextEditor.IsCurrentlyEditing(drawable)) continue;
                     drawable.Draw(drawList, canvasOriginScreen);

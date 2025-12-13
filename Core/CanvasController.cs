@@ -335,7 +335,7 @@ namespace AetherDraw.Core
             return mode switch
             {
                 DrawMode.BossImage or DrawMode.CircleAoEImage or DrawMode.DonutAoEImage or DrawMode.FlareImage or
-                DrawMode.LineStackImage or DrawMode.SpreadImage or DrawMode.StackImage or DrawMode.Waymark1Image or
+                DrawMode.LineStackImage or DrawMode.SpreadImage or DrawMode.StackImage or DrawMode.GazeImage or DrawMode.TowerImage or DrawMode.ExasImage or DrawMode.Waymark1Image or
                 DrawMode.Waymark2Image or DrawMode.Waymark3Image or DrawMode.Waymark4Image or DrawMode.WaymarkAImage or
                 DrawMode.WaymarkBImage or DrawMode.WaymarkCImage or DrawMode.WaymarkDImage or DrawMode.RoleTankImage or
                 DrawMode.RoleHealerImage or DrawMode.RoleMeleeImage or DrawMode.RoleRangedImage or DrawMode.StackIcon or
@@ -364,12 +364,15 @@ namespace AetherDraw.Core
                 switch (currentMode)
                 {
                     case DrawMode.BossImage: imagePath = "PluginImages.svg.boss.svg"; imageUnscaledSize = new Vector2(60f, 60f); break;
-                    case DrawMode.CircleAoEImage: imagePath = "PluginImages.svg.prox_aoe.svg"; imageUnscaledSize = new Vector2(50f, 50f); break;
-                    case DrawMode.DonutAoEImage: imagePath = "PluginImages.svg.donut.svg"; imageUnscaledSize = new Vector2(50f, 50f); break;
-                    case DrawMode.FlareImage: imagePath = "PluginImages.svg.flare.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
+                    case DrawMode.CircleAoEImage: imagePath = "PluginImages.svg.prox_aoe.svg"; imageUnscaledSize = new Vector2(80f, 80f); break;
+                    case DrawMode.DonutAoEImage: imagePath = "PluginImages.svg.donut.svg"; imageUnscaledSize = new Vector2(100f, 100f); break;
+                    case DrawMode.FlareImage: imagePath = "PluginImages.svg.flare.svg"; imageUnscaledSize = new Vector2(60f, 60f); break;
                     case DrawMode.LineStackImage: imagePath = "PluginImages.svg.line_stack.svg"; imageUnscaledSize = new Vector2(30f, 60f); break;
-                    case DrawMode.SpreadImage: imagePath = "PluginImages.svg.spread.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
-                    case DrawMode.StackImage: imagePath = "PluginImages.svg.stack.svg"; imageUnscaledSize = new Vector2(40f, 40f); break;
+                    case DrawMode.SpreadImage: imagePath = "PluginImages.svg.spread.svg"; imageUnscaledSize = new Vector2(60f, 60f); break;
+                    case DrawMode.StackImage: imagePath = "PluginImages.svg.stack.svg"; imageUnscaledSize = new Vector2(60f, 60f); break;
+                    case DrawMode.GazeImage: imagePath = "PluginImages.svg.gaze.png"; imageUnscaledSize = new Vector2(80f, 80f); break;
+                    case DrawMode.TowerImage: imagePath = "PluginImages.svg.tower.png"; imageUnscaledSize = new Vector2(80f, 80f); break;
+                    case DrawMode.ExasImage: imagePath = "PluginImages.svg.exas.svg"; imageUnscaledSize = new Vector2(80f, 80f); break;
                     case DrawMode.Waymark1Image: imagePath = "PluginImages.toolbar.1_waymark.png"; break;
                     case DrawMode.Waymark2Image: imagePath = "PluginImages.toolbar.2_waymark.png"; break;
                     case DrawMode.Waymark3Image: imagePath = "PluginImages.toolbar.3_waymark.png"; break;
@@ -527,6 +530,8 @@ namespace AetherDraw.Core
                 DrawMode.Dash => new DrawableDash(startPosLogical, color, thickness),
                 DrawMode.Rectangle => new DrawableRectangle(startPosLogical, finalColor, thickness, isFilled),
                 DrawMode.Circle => new DrawableCircle(startPosLogical, finalColor, thickness, isFilled),
+                DrawMode.Donut => new DrawableDonut(startPosLogical, finalColor, thickness, isFilled),
+                DrawMode.Starburst => new DrawableStarburst(startPosLogical, new Vector4(1f, 0.6f, 0f, 0.6f), thickness, true),
                 DrawMode.Arrow => new DrawableArrow(startPosLogical, finalColor, thickness),
                 DrawMode.Cone => new DrawableCone(startPosLogical, finalColor, thickness, isFilled),
                 DrawMode.Triangle => new DrawableTriangle(startPosLogical, finalColor, thickness, isFilled),
@@ -579,6 +584,8 @@ namespace AetherDraw.Core
             if (currentDrawingObjectInternal is DrawablePath p && p.PointsRelative.Count < 2) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableDash d && d.PointsRelative.Count < 2) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableCircle ci && ci.Radius < 1.5f) isValidObject = false;
+            else if (currentDrawingObjectInternal is DrawableDonut donut && donut.Radius < 1.5f) isValidObject = false;
+            else if (currentDrawingObjectInternal is DrawableStarburst star && star.Radius < 1.5f) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableStraightLine sl && Vector2.DistanceSquared(sl.StartPointRelative, sl.EndPointRelative) < 4f) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableRectangle r && (Math.Abs(r.StartPointRelative.X - r.EndPointRelative.X) < 2f || Math.Abs(r.StartPointRelative.Y - r.EndPointRelative.Y) < 2f)) isValidObject = false;
             else if (currentDrawingObjectInternal is DrawableArrow arrow && Vector2.DistanceSquared(arrow.StartPointRelative, arrow.EndPointRelative) < 4f) isValidObject = false;

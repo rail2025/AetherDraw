@@ -113,14 +113,14 @@ namespace AetherDraw.UI
             this.mainToolbarButtons = new List<ToolbarButton>
             {
                 new() { Primary = DrawMode.Pen, SubModes = new List<DrawMode> { DrawMode.Pen, DrawMode.StraightLine, DrawMode.Dash }, Tooltip = "Drawing Tools" },
-                new() { Primary = DrawMode.Rectangle, SubModes = new List<DrawMode> { DrawMode.Rectangle, DrawMode.Circle, DrawMode.Arrow, DrawMode.Cone, DrawMode.Triangle, DrawMode.Pie }, Tooltip = "Shape Tools" },
+                new() { Primary = DrawMode.Rectangle, SubModes = new List<DrawMode> { DrawMode.Rectangle, DrawMode.Circle, DrawMode.Donut, DrawMode.Arrow, DrawMode.Cone, DrawMode.Triangle, DrawMode.Pie }, Tooltip = "Shape Tools" },
                 new() { Primary = DrawMode.SquareImage, SubModes = new List<DrawMode> { DrawMode.SquareImage, DrawMode.CircleMarkImage, DrawMode.TriangleImage, DrawMode.PlusImage }, Tooltip = "Placeable Shapes" },
                 new() { Primary = DrawMode.RoleTankImage, SubModes = new List<DrawMode> { DrawMode.RoleTankImage, DrawMode.RoleHealerImage, DrawMode.RoleMeleeImage, DrawMode.RoleRangedImage, DrawMode.RoleCasterImage }, Tooltip = "Role Icons" },
                 new() { Primary = DrawMode.Party1Image, SubModes = new List<DrawMode> { DrawMode.Party1Image, DrawMode.Party2Image, DrawMode.Party3Image, DrawMode.Party4Image, DrawMode.Party5Image, DrawMode.Party6Image, DrawMode.Party7Image, DrawMode.Party8Image,DrawMode.Bind1Image, DrawMode.Bind2Image, DrawMode.Bind3Image,
                     DrawMode.Ignore1Image, DrawMode.Ignore2Image }, Tooltip = "Party Number Icons" },
                 new() { Primary = DrawMode.WaymarkAImage, SubModes = new List<DrawMode> { DrawMode.WaymarkAImage, DrawMode.WaymarkBImage, DrawMode.WaymarkCImage, DrawMode.WaymarkDImage }, Tooltip = "Waymarks A-D" },
                 new() { Primary = DrawMode.Waymark1Image, SubModes = new List<DrawMode> { DrawMode.Waymark1Image, DrawMode.Waymark2Image, DrawMode.Waymark3Image, DrawMode.Waymark4Image }, Tooltip = "Waymarks 1-4" },
-                new() { Primary = DrawMode.StackImage, SubModes = new List<DrawMode> { DrawMode.StackImage, DrawMode.SpreadImage, DrawMode.LineStackImage, DrawMode.FlareImage, DrawMode.DonutAoEImage, DrawMode.CircleAoEImage, DrawMode.BossImage }, Tooltip = "Mechanic Icons" },
+                new() { Primary = DrawMode.StackImage, SubModes = new List<DrawMode> { DrawMode.StackImage, DrawMode.SpreadImage, DrawMode.LineStackImage, DrawMode.FlareImage, DrawMode.DonutAoEImage, DrawMode.CircleAoEImage, DrawMode.BossImage, DrawMode.GazeImage, DrawMode.TowerImage, DrawMode.ExasImage, DrawMode.Starburst}, Tooltip = "Mechanic Icons" },
                 new() { Primary = DrawMode.TextTool, SubModes = new List<DrawMode>(), Tooltip = "Text Tool" },
                 new() { Primary = DrawMode.Dot3Image, SubModes = new List<DrawMode> { DrawMode.Dot1Image, DrawMode.Dot2Image, DrawMode.Dot3Image, DrawMode.Dot4Image, DrawMode.Dot5Image, DrawMode.Dot6Image, DrawMode.Dot7Image, DrawMode.Dot8Image }, Tooltip = "Colored Dots" },
                 new() { Primary = DrawMode.StatusIconPlaceholder, SubModes = new List<DrawMode>(), Tooltip = "Status Icon" }
@@ -136,6 +136,8 @@ namespace AetherDraw.UI
             {
                 { DrawMode.Pen, "" }, { DrawMode.StraightLine, "" }, { DrawMode.Dash, "" },
                 { DrawMode.Rectangle, "" }, { DrawMode.Circle, "" }, { DrawMode.Arrow, "" }, { DrawMode.Cone, "" }, { DrawMode.Triangle, ""}, { DrawMode.Pie, "" },
+                { DrawMode.Donut, "" },
+                { DrawMode.Starburst, "PluginImages.svg.starburst.png" },
                 { DrawMode.SquareImage, "PluginImages.toolbar.Square.png" },
                 { DrawMode.CircleMarkImage, "PluginImages.toolbar.CircleMark.png" },
                 { DrawMode.TriangleImage, "PluginImages.toolbar.Triangle.png" },
@@ -172,6 +174,9 @@ namespace AetherDraw.UI
                 { DrawMode.DonutAoEImage, "PluginImages.svg.donut.svg" },
                 { DrawMode.CircleAoEImage, "PluginImages.svg.prox_aoe.svg" },
                 { DrawMode.BossImage, "PluginImages.svg.boss.svg" },
+                { DrawMode.GazeImage, "PluginImages.svg.gaze.png" },
+                { DrawMode.TowerImage, "PluginImages.svg.tower.png" },
+                { DrawMode.ExasImage, "PluginImages.svg.exas.svg" },
                 { DrawMode.Dot1Image, "PluginImages.svg.1dot.svg" },
                 { DrawMode.Dot2Image, "PluginImages.svg.2dot.svg" },
                 { DrawMode.Dot3Image, "PluginImages.svg.3dot.svg" },
@@ -207,6 +212,8 @@ namespace AetherDraw.UI
                 { DrawMode.TextTool, "TEXT" },
                 { DrawMode.EmojiImage, "EMOJI" },
                 { DrawMode.StatusIconPlaceholder, "Status" },
+                { DrawMode.Donut, "Donut" },
+                { DrawMode.Starburst, "Star" },
             };
         }
 
@@ -440,6 +447,19 @@ namespace AetherDraw.UI
 
                         ImGui.BeginGroup(); // Column 3 (Bind/Ignore)
                         for (int k = 8; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
+                        ImGui.EndGroup();
+                    }
+                    else if (group.Primary == DrawMode.StackImage && group.SubModes.Count >= 10)
+                    {
+                        // 5x2 Grid for Mechanics
+                        ImGui.BeginGroup(); // Column 1 (First 5)
+                        for (int k = 0; k < 5; k++) DrawPopupItem(group.SubModes[k]);
+                        ImGui.EndGroup();
+
+                        ImGui.SameLine();
+
+                        ImGui.BeginGroup(); // Column 2 (Next 5)
+                        for (int k = 5; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
                         ImGui.EndGroup();
                     }
                     else
