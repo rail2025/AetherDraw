@@ -37,7 +37,7 @@ namespace AetherDraw.DrawingLogic
             this.Radius = Vector2.Distance(this.Center, newPointRelative);
         }
 
-        // Fix: Explicitly use System.Drawing.RectangleF to avoid ambiguity with ImageSharp
+        // Explicitly use System.Drawing.RectangleF to avoid ambiguity with ImageSharp
         public override System.Drawing.RectangleF GetBoundingBox()
         {
             // Use enclosing circle for faster bounding box calculation

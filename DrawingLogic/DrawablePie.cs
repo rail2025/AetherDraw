@@ -68,7 +68,7 @@ namespace AetherDraw.DrawingLogic
             // ImageSharp logic to be implemented
         }
 
-        // Explicitly use System.Drawing.RectangleF to fix CS0104
+        // Explicitly use System.Drawing.RectangleF to fix ambiguity
         public override System.Drawing.RectangleF GetBoundingBox()
         {
             return new System.Drawing.RectangleF(CenterRelative.X - Radius, CenterRelative.Y - Radius, Radius * 2, Radius * 2);

@@ -18,7 +18,7 @@ namespace AetherDraw.DrawingLogic
         public float Radius { get; set; }
         public float InnerRadius { get; set; }
 
-        // Fix: Use optional parameters to support both 4-arg (Tool creation) and 6-arg (Deserializer) calls
+        // Use optional parameters to support both 4-arg (Tool creation) and 6-arg (Deserializer) calls
         public DrawableDonut(Vector2 centerRelative, Vector4 color, float unscaledThickness, bool isFilled, float radius = 50f, float innerRadius = 25f)
         {
             this.ObjectDrawMode = DrawMode.Donut;
