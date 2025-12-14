@@ -217,7 +217,7 @@ namespace AetherDraw.UI
             };
         }
 
-        public void DrawLeftToolbar()
+        public void DrawLeftToolbar(bool isSessionLocked)
         {
             DrawMode currentDrawMode = getCurrentDrawMode();
             float availableWidth = ImGui.GetContentRegionAvail().X;
@@ -234,245 +234,263 @@ namespace AetherDraw.UI
                 }
             }
 
-            DrawToolButton("Select", DrawMode.Select, btnWidthHalf);
-            ImGui.SameLine();
-            DrawToolButton("Eraser", DrawMode.Eraser, btnWidthHalf);
-
-            if (ImGui.Button("Copy", new Vector2(btnWidthHalf, 0))) onCopySelected();
-            ImGui.SameLine();
-            if (ImGui.Button("Paste", new Vector2(btnWidthHalf, 0))) onPasteCopied();
-
-            if (undoManager.CanUndo() || planUndoStack.Count > 0) { if (ImGui.Button("Undo", new Vector2(btnWidthFull, 0))) onUndo(); }
-            else { using (ImRaii.Disabled()) ImGui.Button("Undo", new Vector2(btnWidthFull, 0)); }
-
-            if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0))) onClearAll();
-
             if (plugin.PermissionManager.IsHost)
             {
-                string lockLabel = isAllLocked ? "Unlock All Items" : "Lock All Items";
-                if (ImGui.Button(lockLabel, new Vector2(btnWidthFull, 0)))
+                using (isSessionLocked ? ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.8f, 0.2f, 0.2f, 1.0f)) : null)
                 {
-                    isAllLocked = !isAllLocked;
-                    plugin.PageController.SetAllLocked(pageManager, isAllLocked);
+                    if (ImGui.Button(isSessionLocked ? "UNLOCK SESSION" : "LOCK SESSION", new Vector2(btnWidthFull, 0)))
+                        _ = plugin.NetworkManager.SendSessionLockAsync(!isSessionLocked);
                 }
+                ImGui.Separator();
             }
 
-            if (ImGui.Button("Emoji", new Vector2(btnWidthFull, 0)))
+            using (ImRaii.Disabled(isSessionLocked))
             {
-                onOpenEmojiPicker();
-            }
 
-            if (ImGui.Button("Add Image (URL)", new Vector2(btnWidthFull, 0)))
-            {
-                onImportBackgroundUrl();
-            }
-            ImGui.Separator();
+                DrawToolButton("Select", DrawMode.Select, btnWidthHalf);
+                ImGui.SameLine();
+                DrawToolButton("Eraser", DrawMode.Eraser, btnWidthHalf);
 
-            // Grid Controls Section
-            bool gridVisible = getIsGridVisible();
-            if (ImGui.Checkbox("Grid", ref gridVisible))
-            {
-                setIsGridVisible(gridVisible);
-                // live sync toggle
-                if (pageManager.IsLiveMode)
+                if (ImGui.Button("Copy", new Vector2(btnWidthHalf, 0))) onCopySelected();
+                ImGui.SameLine();
+                if (ImGui.Button("Paste", new Vector2(btnWidthHalf, 0))) onPasteCopied();
+
+                if (undoManager.CanUndo() || planUndoStack.Count > 0) { if (ImGui.Button("Undo", new Vector2(btnWidthFull, 0))) onUndo(); }
+                else { using (ImRaii.Disabled()) ImGui.Button("Undo", new Vector2(btnWidthFull, 0)); }
+
+                if (ImGui.Button("Clear All", new Vector2(btnWidthFull, 0))) onClearAll();
+
+                if (plugin.PermissionManager.IsHost)
                 {
-                    var payload = new NetworkPayload
+                    string lockLabel = isAllLocked ? "Unlock All Items" : "Lock All Items";
+                    if (ImGui.Button(lockLabel, new Vector2(btnWidthFull, 0)))
                     {
-                        PageIndex = pageManager.GetCurrentPageIndex(),
-                        Action = PayloadActionType.UpdateGridVisibility,
-                        Data = new byte[] { (byte)(gridVisible ? 1 : 0) }
-                    };
-                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                        isAllLocked = !isAllLocked;
+                        plugin.PageController.SetAllLocked(pageManager, isAllLocked);
+                    }
                 }
-            }
-            ImGui.SameLine();
-            ImGui.Text("size");
 
-            ImGui.SameLine();
-            // Create a temporary integer variable for the UI widget
-            int gridSizeInt = (int)getGridSize();
-
-            // Calculate remaining width for the input box to fit on one line
-            float labelWidth = ImGui.CalcTextSize("Pxl").X;
-            float checkboxWidth = ImGui.GetItemRectSize().X;
-            float spacing = ImGui.GetStyle().ItemSpacing.X * 2; // Spacing after checkbox and after label
-            ImGui.SetNextItemWidth(availableWidth - checkboxWidth - labelWidth - spacing);
-
-            // Use the temporary integer with InputInt
-            if (ImGui.InputInt("##GridSpacingInput", ref gridSizeInt))
-            {
-                // Clamp the integer value
-                int newSize = Math.Clamp(gridSizeInt, 10, 200);
-                // Convert the final integer back to a float to save it
-                setGridSize((float)newSize);
-                // live sync network call
-                if (pageManager.IsLiveMode)
+                if (ImGui.Button("Emoji", new Vector2(btnWidthFull, 0)))
                 {
-                    var payload = new NetworkPayload
-                    {
-                        PageIndex = pageManager.GetCurrentPageIndex(),
-                        Action = PayloadActionType.UpdateGrid,
-                        Data = BitConverter.GetBytes((float)newSize)
-                    };
-                    _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                    onOpenEmojiPicker();
                 }
-            }
 
-            bool snapToGrid = getIsSnapToGrid();
-            if (ImGui.Checkbox("Snap to Grid", ref snapToGrid))
-            {
-                setIsSnapToGrid(snapToGrid);
+                if (ImGui.Button("Add Image (URL)", new Vector2(btnWidthFull, 0)))
+                {
+                    onImportBackgroundUrl();
+                }
+                ImGui.Separator();
+
+                // Grid Controls Section
+                bool gridVisible = getIsGridVisible();
+                if (ImGui.Checkbox("Grid", ref gridVisible))
+                {
+                    setIsGridVisible(gridVisible);
+                    // live sync toggle
+                    if (pageManager.IsLiveMode)
+                    {
+                        var payload = new NetworkPayload
+                        {
+                            PageIndex = pageManager.GetCurrentPageIndex(),
+                            Action = PayloadActionType.UpdateGridVisibility,
+                            Data = new byte[] { (byte)(gridVisible ? 1 : 0) }
+                        };
+                        _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                    }
+                }
+                ImGui.SameLine();
+                ImGui.Text("size");
+
+                ImGui.SameLine();
+                // Create a temporary integer variable for the UI widget
+                int gridSizeInt = (int)getGridSize();
+
+                // Calculate remaining width for the input box to fit on one line
+                float labelWidth = ImGui.CalcTextSize("Pxl").X;
+                float checkboxWidth = ImGui.GetItemRectSize().X;
+                float spacing = ImGui.GetStyle().ItemSpacing.X * 2; // Spacing after checkbox and after label
+                ImGui.SetNextItemWidth(availableWidth - checkboxWidth - labelWidth - spacing);
+
+                // Use the temporary integer with InputInt
+                if (ImGui.InputInt("##GridSpacingInput", ref gridSizeInt))
+                {
+                    // Clamp the integer value
+                    int newSize = Math.Clamp(gridSizeInt, 10, 200);
+                    // Convert the final integer back to a float to save it
+                    setGridSize((float)newSize);
+                    // live sync network call
+                    if (pageManager.IsLiveMode)
+                    {
+                        var payload = new NetworkPayload
+                        {
+                            PageIndex = pageManager.GetCurrentPageIndex(),
+                            Action = PayloadActionType.UpdateGrid,
+                            Data = BitConverter.GetBytes((float)newSize)
+                        };
+                        _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
+                    }
+                }
+
+                bool snapToGrid = getIsSnapToGrid();
+                if (ImGui.Checkbox("Snap to Grid", ref snapToGrid))
+                {
+                    setIsSnapToGrid(snapToGrid);
+                }
             }
 
             DrawToolButton("Laser Pointer", DrawMode.Laser, btnWidthFull);
 
             ImGui.Separator();
 
-            Vector2 iconButtonSize = new(btnWidthHalf, 45 * ImGuiHelpers.GlobalScale);
-            Vector2 popupIconButtonSize = new(32 * ImGuiHelpers.GlobalScale, 32 * ImGuiHelpers.GlobalScale);
-
-            for (int i = 0; i < mainToolbarButtons.Count; i++)
-            {
-                var group = mainToolbarButtons[i];
-                if (i > 0 && i % 2 != 0) ImGui.SameLine();
-                DrawMode activeModeInGroup = activeSubModeMap.GetValueOrDefault(group.Primary, group.Primary);
-                string activePath = iconPaths.GetValueOrDefault(activeModeInGroup, "");
-                var tex = activePath != "" ? TextureManager.GetTexture(activePath) : null;
-                var drawList = ImGui.GetWindowDrawList();
-
-                bool isGroupActive = currentDrawMode == group.Primary || (group.SubModes.Any() && group.SubModes.Contains(currentDrawMode));
-
-                using (isGroupActive ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
+                using (ImRaii.Disabled(isSessionLocked))
                 {
-                    if (ImGui.Button($"##{group.Primary}", iconButtonSize))
-                    {
-                        if (group.Primary == DrawMode.StatusIconPlaceholder)
-                        {
-                            onOpenStatusSearchPopup();
-                        }
-                        else if(group.SubModes.Any())
-                        {
-                            setCurrentDrawMode(activeModeInGroup);
-                        }
-                        else
-                        {
-                            setCurrentDrawMode(group.Primary);
-                        }
-                    }
-                    var min = ImGui.GetItemRectMin();
-                    var max = ImGui.GetItemRectMax();
-                    var center = (min + max) / 2;
-                    if (tex != null) drawList.AddImage(tex.Handle, min, max);
-                    else
-                    {
-                        var color = ImGui.GetColorU32(ImGuiCol.Text);
-                        var graphicCenter = new Vector2(center.X, min.Y + iconButtonSize.Y * 0.35f);
-                        if (group.Primary == DrawMode.Pen) drawList.AddLine(graphicCenter - new Vector2(iconButtonSize.X * 0.2f, iconButtonSize.Y * 0.15f), graphicCenter + new Vector2(iconButtonSize.X * 0.2f, iconButtonSize.Y * 0.15f), color, 2f);
-                        else if (group.Primary == DrawMode.Rectangle)
-                        {
-                            drawList.AddRect(graphicCenter - new Vector2(iconButtonSize.X * 0.1f, iconButtonSize.Y * 0.1f), graphicCenter + new Vector2(iconButtonSize.X * 0.1f, iconButtonSize.Y * 0.1f), color, 0f, ImDrawFlags.None, 2f);
-                            drawList.AddCircle(graphicCenter, iconButtonSize.X * 0.2f, color, 0, 2f);
-                        }
-                        else if (group.Primary == DrawMode.TextTool)
-                        {
-                            var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, "TEXT");
-                            var textSize = ImGui.CalcTextSize(activeToolName);
-                            drawList.AddText(new Vector2(center.X - textSize.X / 2, center.Y - textSize.Y / 2), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
-                        }
 
-                        if (group.Primary != DrawMode.TextTool)
-                        {
-                            var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, activeModeInGroup.ToString().Replace("Image", ""));
-                            var textSize = ImGui.CalcTextSize(activeToolName);
-                            drawList.AddText(new Vector2(center.X - textSize.X / 2, max.Y - textSize.Y - (iconButtonSize.Y * 0.1f)), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
-                        }
-                    }
-                    // Draw Caret for SubModes
-                    if (group.SubModes.Any())
+                    Vector2 iconButtonSize = new(btnWidthHalf, 45 * ImGuiHelpers.GlobalScale);
+                    Vector2 popupIconButtonSize = new(32 * ImGuiHelpers.GlobalScale, 32 * ImGuiHelpers.GlobalScale);
+
+                    for (int i = 0; i < mainToolbarButtons.Count; i++)
                     {
-                        var arrowSize = 6f * ImGuiHelpers.GlobalScale;
-                        var padding = 4f * ImGuiHelpers.GlobalScale;
+                        var group = mainToolbarButtons[i];
+                        if (i > 0 && i % 2 != 0) ImGui.SameLine();
+                        DrawMode activeModeInGroup = activeSubModeMap.GetValueOrDefault(group.Primary, group.Primary);
+                        string activePath = iconPaths.GetValueOrDefault(activeModeInGroup, "");
+                        var tex = activePath != "" ? TextureManager.GetTexture(activePath) : null;
+                        var drawList = ImGui.GetWindowDrawList();
 
-                        Vector2 p1 = new Vector2(max.X - arrowSize - padding, max.Y - arrowSize - padding);
-                        Vector2 p2 = new Vector2(max.X - padding, max.Y - arrowSize - padding);
-                        Vector2 p3 = new Vector2(max.X - arrowSize * 0.5f - padding, max.Y - padding);
+                        bool isGroupActive = currentDrawMode == group.Primary || (group.SubModes.Any() && group.SubModes.Contains(currentDrawMode));
 
-                        drawList.AddTriangleFilled(p1, p2, p3, ImGui.GetColorU32(ImGuiCol.Text));
-                    }
-                }
-                if (ImGui.IsItemHovered()) ImGui.SetTooltip(group.Tooltip);
-
-                if (group.SubModes.Any() && ImGui.BeginPopupContextItem($"popup_{group.Primary}", ImGuiPopupFlags.MouseButtonLeft))
-                {
-                    // Helper function to draw a single item, keeping the logic DRY
-                    void DrawPopupItem(DrawMode subMode)
-                    {
-                        string subPath = iconPaths.GetValueOrDefault(subMode, "");
-                        var subTex = subPath != "" ? TextureManager.GetTexture(subPath) : null;
-                        if (subTex != null)
+                        using (isGroupActive ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
                         {
-                            if (ImGui.ImageButton(subTex.Handle, popupIconButtonSize))
+                            if (ImGui.Button($"##{group.Primary}", iconButtonSize))
                             {
-                                setCurrentDrawMode(subMode);
-                                activeSubModeMap[group.Primary] = subMode;
-                                ImGui.CloseCurrentPopup();
+                                if (group.Primary == DrawMode.StatusIconPlaceholder)
+                                {
+                                    onOpenStatusSearchPopup();
+                                }
+                                else if (group.SubModes.Any())
+                                {
+                                    setCurrentDrawMode(activeModeInGroup);
+                                }
+                                else
+                                {
+                                    setCurrentDrawMode(group.Primary);
+                                }
+                            }
+                            var min = ImGui.GetItemRectMin();
+                            var max = ImGui.GetItemRectMax();
+                            var center = (min + max) / 2;
+                            if (tex != null) drawList.AddImage(tex.Handle, min, max);
+                            else
+                            {
+                                var color = ImGui.GetColorU32(ImGuiCol.Text);
+                                var graphicCenter = new Vector2(center.X, min.Y + iconButtonSize.Y * 0.35f);
+                                if (group.Primary == DrawMode.Pen) drawList.AddLine(graphicCenter - new Vector2(iconButtonSize.X * 0.2f, iconButtonSize.Y * 0.15f), graphicCenter + new Vector2(iconButtonSize.X * 0.2f, iconButtonSize.Y * 0.15f), color, 2f);
+                                else if (group.Primary == DrawMode.Rectangle)
+                                {
+                                    drawList.AddRect(graphicCenter - new Vector2(iconButtonSize.X * 0.1f, iconButtonSize.Y * 0.1f), graphicCenter + new Vector2(iconButtonSize.X * 0.1f, iconButtonSize.Y * 0.1f), color, 0f, ImDrawFlags.None, 2f);
+                                    drawList.AddCircle(graphicCenter, iconButtonSize.X * 0.2f, color, 0, 2f);
+                                }
+                                else if (group.Primary == DrawMode.TextTool)
+                                {
+                                    var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, "TEXT");
+                                    var textSize = ImGui.CalcTextSize(activeToolName);
+                                    drawList.AddText(new Vector2(center.X - textSize.X / 2, center.Y - textSize.Y / 2), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
+                                }
+
+                                if (group.Primary != DrawMode.TextTool)
+                                {
+                                    var activeToolName = toolDisplayNames.GetValueOrDefault(activeModeInGroup, activeModeInGroup.ToString().Replace("Image", ""));
+                                    var textSize = ImGui.CalcTextSize(activeToolName);
+                                    drawList.AddText(new Vector2(center.X - textSize.X / 2, max.Y - textSize.Y - (iconButtonSize.Y * 0.1f)), ImGui.GetColorU32(ImGuiCol.Text), activeToolName);
+                                }
+                            }
+                            // Draw Caret for SubModes
+                            if (group.SubModes.Any())
+                            {
+                                var arrowSize = 6f * ImGuiHelpers.GlobalScale;
+                                var padding = 4f * ImGuiHelpers.GlobalScale;
+
+                                Vector2 p1 = new Vector2(max.X - arrowSize - padding, max.Y - arrowSize - padding);
+                                Vector2 p2 = new Vector2(max.X - padding, max.Y - arrowSize - padding);
+                                Vector2 p3 = new Vector2(max.X - arrowSize * 0.5f - padding, max.Y - padding);
+
+                                drawList.AddTriangleFilled(p1, p2, p3, ImGui.GetColorU32(ImGuiCol.Text));
                             }
                         }
-                        else
+                        if (ImGui.IsItemHovered()) ImGui.SetTooltip(group.Tooltip);
+
+                        if (group.SubModes.Any() && ImGui.BeginPopupContextItem($"popup_{group.Primary}", ImGuiPopupFlags.MouseButtonLeft))
                         {
-                            var displayName = toolDisplayNames.GetValueOrDefault(subMode, subMode.ToString());
-                            if (ImGui.Selectable(displayName, currentDrawMode == subMode))
+                            // Helper function to draw a single item, keeping the logic DRY
+                            void DrawPopupItem(DrawMode subMode)
                             {
-                                setCurrentDrawMode(subMode);
-                                activeSubModeMap[group.Primary] = subMode;
-                                ImGui.CloseCurrentPopup();
+                                string subPath = iconPaths.GetValueOrDefault(subMode, "");
+                                var subTex = subPath != "" ? TextureManager.GetTexture(subPath) : null;
+                                if (subTex != null)
+                                {
+                                    if (ImGui.ImageButton(subTex.Handle, popupIconButtonSize))
+                                    {
+                                        setCurrentDrawMode(subMode);
+                                        activeSubModeMap[group.Primary] = subMode;
+                                        ImGui.CloseCurrentPopup();
+                                    }
+                                }
+                                else
+                                {
+                                    var displayName = toolDisplayNames.GetValueOrDefault(subMode, subMode.ToString());
+                                    if (ImGui.Selectable(displayName, currentDrawMode == subMode))
+                                    {
+                                        setCurrentDrawMode(subMode);
+                                        activeSubModeMap[group.Primary] = subMode;
+                                        ImGui.CloseCurrentPopup();
+                                    }
+                                }
                             }
+
+                            // Special Layout for Party Icons (4, 4, 5 Grid)
+                            if (group.Primary == DrawMode.Party1Image && group.SubModes.Count >= 13)
+                            {
+                                ImGui.BeginGroup(); // Column 1 (1-4)
+                                for (int k = 0; k < 4; k++) DrawPopupItem(group.SubModes[k]);
+                                ImGui.EndGroup();
+
+                                ImGui.SameLine();
+
+                                ImGui.BeginGroup(); // Column 2 (5-8)
+                                for (int k = 4; k < 8; k++) DrawPopupItem(group.SubModes[k]);
+                                ImGui.EndGroup();
+
+                                ImGui.SameLine();
+
+                                ImGui.BeginGroup(); // Column 3 (Bind/Ignore)
+                                for (int k = 8; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
+                                ImGui.EndGroup();
+                            }
+                            else if (group.Primary == DrawMode.StackImage && group.SubModes.Count >= 10)
+                            {
+                                // 5x2 Grid for Mechanics
+                                ImGui.BeginGroup(); // Column 1 (First 5)
+                                for (int k = 0; k < 5; k++) DrawPopupItem(group.SubModes[k]);
+                                ImGui.EndGroup();
+
+                                ImGui.SameLine();
+
+                                ImGui.BeginGroup(); // Column 2 (Next 5)
+                                for (int k = 5; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
+                                ImGui.EndGroup();
+                            }
+                            else
+                            {
+                                // Standard Vertical List for other tools
+                                foreach (var subMode in group.SubModes)
+                                {
+                                    DrawPopupItem(subMode);
+                                }
+                            }
+                            ImGui.EndPopup();
                         }
                     }
-
-                    // Special Layout for Party Icons (4, 4, 5 Grid)
-                    if (group.Primary == DrawMode.Party1Image && group.SubModes.Count >= 13)
-                    {
-                        ImGui.BeginGroup(); // Column 1 (1-4)
-                        for (int k = 0; k < 4; k++) DrawPopupItem(group.SubModes[k]);
-                        ImGui.EndGroup();
-
-                        ImGui.SameLine();
-
-                        ImGui.BeginGroup(); // Column 2 (5-8)
-                        for (int k = 4; k < 8; k++) DrawPopupItem(group.SubModes[k]);
-                        ImGui.EndGroup();
-
-                        ImGui.SameLine();
-
-                        ImGui.BeginGroup(); // Column 3 (Bind/Ignore)
-                        for (int k = 8; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
-                        ImGui.EndGroup();
-                    }
-                    else if (group.Primary == DrawMode.StackImage && group.SubModes.Count >= 10)
-                    {
-                        // 5x2 Grid for Mechanics
-                        ImGui.BeginGroup(); // Column 1 (First 5)
-                        for (int k = 0; k < 5; k++) DrawPopupItem(group.SubModes[k]);
-                        ImGui.EndGroup();
-
-                        ImGui.SameLine();
-
-                        ImGui.BeginGroup(); // Column 2 (Next 5)
-                        for (int k = 5; k < group.SubModes.Count; k++) DrawPopupItem(group.SubModes[k]);
-                        ImGui.EndGroup();
-                    }
-                    else
-                    {
-                        // Standard Vertical List for other tools
-                        foreach (var subMode in group.SubModes)
-                        {
-                            DrawPopupItem(subMode);
-                        }
-                    }
-                    ImGui.EndPopup();
                 }
-            }
 
             ImGui.Separator();
 

@@ -55,6 +55,7 @@ namespace AetherDraw.Core
 
         public void RequestLoadPlan()
         {
+            if (pageManager.IsSessionLocked) { LastFileDialogError = "Session is locked."; return; }
             LastFileDialogError = string.Empty;
             string initialPath = GetInitialDialogPath();
             fileDialogManager.OpenFileDialog("Load AetherDraw Plan", "AetherDraw Plan{.adp}", HandleLoadPlanDialogResult, 1, initialPath, true);
@@ -62,6 +63,7 @@ namespace AetherDraw.Core
 
         public void RequestAppendPlan()
         {
+            if (pageManager.IsSessionLocked) { LastFileDialogError = "Session is locked."; return; }
             LastFileDialogError = string.Empty;
             string initialPath = GetInitialDialogPath();
             fileDialogManager.OpenFileDialog("Append AetherDraw Plan", "AetherDraw Plan{.adp}", HandleAppendPlanDialogResult, 1, initialPath, true);
@@ -130,6 +132,7 @@ namespace AetherDraw.Core
 
         public void RequestLoadPlanFromText(string base64Text)
         {
+            if (pageManager.IsSessionLocked) { LastFileDialogError = "Session is locked."; return; }
             LastFileDialogError = string.Empty;
             if (string.IsNullOrWhiteSpace(base64Text))
             {
@@ -180,6 +183,7 @@ namespace AetherDraw.Core
 
         public async Task RequestLoadPlanFromUrl(string url)
         {
+            if (pageManager.IsSessionLocked) { LastFileDialogError = "Session is locked."; return; }
             var pages = await FetchPagesFromUrl(url);
             if (pages != null && pages.Any())
             {
@@ -190,6 +194,7 @@ namespace AetherDraw.Core
 
         public async Task RequestAppendPlanFromUrl(string url)
         {
+            if (pageManager.IsSessionLocked) { LastFileDialogError = "Session is locked."; return; }
             var pages = await FetchPagesFromUrl(url);
             if (pages != null && pages.Any())
             {

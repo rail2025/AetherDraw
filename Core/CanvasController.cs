@@ -101,6 +101,7 @@ namespace AetherDraw.Core
             bool isLMBDown, bool isLMBClickedOnCanvas, bool isLMBReleased, bool isLMBDoubleClickedOnCanvas,
             Func<DrawMode, int> getLayerPriorityFunc)
         {
+            if (pageManager.IsSessionLocked && getCurrentDrawMode() != DrawMode.Laser) return;
             var currentDrawablesOnPage = pageManager.GetCurrentPageDrawables();
             if (currentDrawablesOnPage == null) return;
 

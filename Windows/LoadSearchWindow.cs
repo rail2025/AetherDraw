@@ -1,7 +1,8 @@
 using AetherDraw.RaidPlan.Models;
-using Dalamud.Interface.Utility;
-using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
+using Dalamud.Interface.Utility.Raii;
+using Dalamud.Interface.Windowing;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -205,13 +206,21 @@ namespace AetherDraw.Windows
             float avail = ImGui.GetContentRegionAvail().X;
             ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - btnWidth - ImGui.GetStyle().ItemSpacing.X);
 
-            if (ImGui.Button("Load", new Vector2(btnWidth, 0)))
+            bool isLocked = plugin.MainWindow.PageManager.IsSessionLocked;
+            using (ImRaii.Disabled(isLocked))
             {
-                // Construct URL and trigger load via MainWindow's existing logic
-                string url = $"https://aetherdraw.me/?plan={plan.Id}";
+                if (ImGui.Button("Load", new Vector2(btnWidth, 0)))
+                {
+                    // Construct URL and trigger load via MainWindow's existing logic
+                    string url = $"https://aetherdraw.me/?plan={plan.Id}";
 
-                plugin.MainWindow.LoadPlanFromUrlSafe(url);
-                IsOpen = false;
+                    plugin.MainWindow.LoadPlanFromUrlSafe(url);
+                    IsOpen = false;
+                }
+            }
+            if (isLocked && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            {
+                ImGui.SetTooltip("Session is locked by Host.");
             }
 
             ImGui.PopID();

@@ -38,6 +38,11 @@ namespace AetherDraw.Core
         private static readonly List<BaseDrawable> EmptyDrawablesFallback = new List<BaseDrawable>();
 
         /// <summary>
+        /// Gets or sets a value indicating whether the session is currently locked by the host.
+        /// </summary>
+        public bool IsSessionLocked { get; set; } = false;
+
+        /// <summary>
         /// Gets the UndoManager instance associated with this PageManager.
         /// </summary>
         public UndoManager UndoManager { get; private set; } = new UndoManager();
@@ -123,6 +128,7 @@ namespace AetherDraw.Core
         public void ExitLiveMode()
         {
             IsLiveMode = false;
+            IsSessionLocked = false;
             currentPageIndex = 0;
             Plugin.Log?.Info("[PageManager] Exited live mode.");
         }

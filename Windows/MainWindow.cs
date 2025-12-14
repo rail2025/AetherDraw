@@ -342,6 +342,13 @@ namespace AetherDraw.Windows
         private void HandleStateUpdateReceived(NetworkPayload payload)
         {
             if (!pageManager.IsLiveMode) return;
+
+            if (payload.Action == PayloadActionType.SessionLock)
+            {
+                if (payload.Data != null && payload.Data.Length > 0)
+                    pageManager.IsSessionLocked = BitConverter.ToBoolean(payload.Data, 0);
+                return;
+            }
             // This condition is expanded to handle both AddNewPage and ReplacePage
             if (payload.Action == PayloadActionType.ReplacePage || payload.Action == PayloadActionType.AddNewPage)
             {
@@ -547,6 +554,22 @@ namespace AetherDraw.Windows
                             ResetInteractionStates();
                         }
                         break;
+
+                    case PayloadActionType.Undo:
+                        // Echo Guard: If we sent this, ignore it.
+                        if (isAwaitingUndoEcho)
+                        {
+                            isAwaitingUndoEcho = false;
+                            AetherDraw.Plugin.Log?.Debug("[Network] Ignored own Undo echo.");
+                            return;
+                        }
+                        var remoteUndoneState = undoManager.Undo();
+                        if (remoteUndoneState != null)
+                        {
+                            pageManager.SetCurrentPageDrawables(remoteUndoneState);
+                            ResetInteractionStates();
+                        }
+                        break;
                 }
             }
             catch (Exception ex)
@@ -589,10 +612,24 @@ namespace AetherDraw.Windows
             if (openStatusSearchPopup) { ImGui.OpenPopup("Status Search"); openStatusSearchPopup = false; }
             if (openBackgroundUrlModal) { ImGui.OpenPopup("Import Image from URL"); openBackgroundUrlModal = false; }
 
+            if (pageManager.IsSessionLocked)
+            {
+                ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.8f, 0.2f, 0.2f, 1.0f));
+                if (ImGui.BeginChild("LockedBanner", new Vector2(0, 25 * ImGuiHelpers.GlobalScale), false, ImGuiWindowFlags.NoScrollbar))
+                {
+                    var text = "SESSION LOCKED BY HOST";
+                    var textSize = ImGui.CalcTextSize(text);
+                    ImGui.SetCursorPos(new Vector2((ImGui.GetContentRegionAvail().X - textSize.X) / 2, (ImGui.GetContentRegionAvail().Y - textSize.Y) / 2));
+                    ImGui.Text(text);
+                    ImGui.EndChild();
+                }
+                ImGui.PopStyleColor();
+            }
+
 
             using (var toolbarRaii = ImRaii.Child("ToolbarRegion", new Vector2(125f * ImGuiHelpers.GlobalScale, 0), true, ImGuiWindowFlags.None))
             {
-                if (toolbarRaii) this.toolbarDrawer.DrawLeftToolbar();
+                if (toolbarRaii) this.toolbarDrawer.DrawLeftToolbar(pageManager.IsSessionLocked);
             }
             ImGui.SameLine();
             using (var rightPaneRaii = ImRaii.Child("RightPane", Vector2.Zero, false, ImGuiWindowFlags.None))
@@ -780,6 +817,7 @@ namespace AetherDraw.Windows
         private void PerformCopySelected() => CopySelected();
         private void PerformPasteCopied()
         {
+            if (pageManager.IsSessionLocked) return;
             var currentDrawables = pageManager.GetCurrentPageDrawables();
             undoManager.RecordAction(currentDrawables, "Paste Drawables");
             var pastedItems = new List<BaseDrawable>();
@@ -808,6 +846,7 @@ namespace AetherDraw.Windows
         }
         private void PerformClearAll()
         {
+            if (pageManager.IsSessionLocked) return;
             if (pageManager.IsLiveMode)
             {
                 openClearConfirmPopup = true;
@@ -825,6 +864,7 @@ namespace AetherDraw.Windows
         }
         private void PerformUndo()
         {
+            if (pageManager.IsSessionLocked) return;
             if (planUndoStack.Count > 0)
             {
                 var lastPlanAction = planUndoStack.Pop();
@@ -841,7 +881,12 @@ namespace AetherDraw.Windows
                 ResetInteractionStates();
                 if (pageManager.IsLiveMode)
                 {
-                    var payload = new NetworkPayload { PageIndex = pageManager.GetCurrentPageIndex(), Action = PayloadActionType.ReplacePage, Data = DrawableSerializer.SerializePageToBytes(undoneState) };
+                    isAwaitingUndoEcho = true;
+                    var payload = new NetworkPayload {
+                        PageIndex = pageManager.GetCurrentPageIndex(),
+                        Action = PayloadActionType.Undo,
+                        Data = null
+                    };
                     _ = plugin.NetworkManager.SendStateUpdateAsync(payload);
                 }
             }
@@ -1256,6 +1301,7 @@ namespace AetherDraw.Windows
 
         private void RequestAddNewPage()
         {
+            if (pageManager.IsSessionLocked) return;
             if (pageManager.IsLiveMode)
             {
                 // Prevent adding too many pages in a live session.
@@ -1284,12 +1330,14 @@ namespace AetherDraw.Windows
         }
         private void RequestDeleteCurrentPage()
         {
+            if (pageManager.IsSessionLocked) return;
             if (pageManager.GetAllPages().Count <= 1) return;
             openDeletePageConfirmPopup = true;
         }
         private void RequestCopyPage() => pageManager.CopyCurrentPageToClipboard();
         private void RequestPastePage()
         {
+            if (pageManager.IsSessionLocked) return;
             if (!pageManager.HasCopiedPage()) return;
             var currentDrawables = pageManager.GetCurrentPageDrawables();
             undoManager.RecordAction(currentDrawables, "Paste Page (Overwrite)");
@@ -1341,7 +1389,7 @@ namespace AetherDraw.Windows
         private async void AddToPending(Guid guid)
         {
             pendingEchoGuids.TryAdd(guid, true);
-            await Task.Delay(500);
+            await Task.Delay(1100);
             pendingEchoGuids.TryRemove(guid, out _);
         }
         private void OnObjectsCommitted(List<BaseDrawable> committedDrawables)
@@ -1364,6 +1412,7 @@ namespace AetherDraw.Windows
         }
         private void RequestPageMove(int fromIndex, int toIndex, bool isUndo = false)
         {
+            if (pageManager.IsSessionLocked) return;
             if (fromIndex == toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= pageManager.GetAllPages().Count || toIndex >= pageManager.GetAllPages().Count)
                 return;
             Plugin.Log?.Debug($"[MainWindow] RequestPageMove from {fromIndex} to {toIndex}. IsUndo: {isUndo}");
@@ -1414,6 +1463,7 @@ namespace AetherDraw.Windows
         }
         private void HandleKeyboardNudging()
         {
+            if (pageManager.IsSessionLocked) return;
             // 1. Validation: Don't nudge if editing text or nothing selected
             if (inPlaceTextEditor.IsEditing) return;
             if (selectedDrawables.Count == 0) return;

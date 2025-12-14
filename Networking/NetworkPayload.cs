@@ -69,6 +69,18 @@ namespace AetherDraw.Networking
         /// The payload's Data will contain two ints: fromIndex and toIndex.
         /// </summary>
         MovePage,
+
+        /// <summary>
+        /// Action to lock or unlock the session for non-hosts.
+        /// The payload's Data will contain a byte (0 for false, 1 for true).
+        /// </summary>
+        SessionLock,
+
+        /// <summary>
+        /// Action to perform an Undo operation without sending the full page state.
+        /// The payload's Data is typically empty/null.
+        /// </summary>
+        Undo,
     }
 
     /// <summary>

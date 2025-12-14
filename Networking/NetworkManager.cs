@@ -247,6 +247,16 @@ OnHostStatusReceived?.Invoke(isHost);
             }
         }
 
+        public Task SendSessionLockAsync(bool isLocked)
+        {
+            var payload = new NetworkPayload { 
+                PageIndex = -1,
+                Action = PayloadActionType.SessionLock,
+                Data = BitConverter.GetBytes(isLocked)
+            };
+            return SendStateUpdateAsync(payload);
+        }
+
         /// <inheritdoc/>
         public void Dispose()
         {
