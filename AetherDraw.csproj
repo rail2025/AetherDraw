@@ -1,17 +1,17 @@
-﻿<Project Sdk="Dalamud.NET.Sdk/13.0.0">
+﻿<Project Sdk="Dalamud.NET.Sdk/14.0.1">
 
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.4.4.1</AssemblyVersion>
-        <TargetFramework>net9.0-windows</TargetFramework>
+        <AssemblyVersion>2.4.4.2</AssemblyVersion>
+        <TargetFramework>net10.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
         <LangVersion>latest</LangVersion>
         <Description>A realtime multi-user whiteboard raid planner plugin to draw encounter strategies. Supports url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.4.4.1</Version>
+        <Version>2.4.4.2</Version>
         <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
 
@@ -161,7 +161,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Update="DalamudPackager" Version="13.1.0" />
+      <PackageReference Update="DalamudPackager" Version="14.0.1" />
       <PackageReference Update="DotNet.ReproducibleBuilds" Version="1.2.39" />
     </ItemGroup>
     <ItemGroup>
