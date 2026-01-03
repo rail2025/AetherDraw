@@ -279,6 +279,20 @@ namespace AetherDraw.Serialization
                 case DrawMode.Bind3Image:
                 case DrawMode.Ignore1Image:
                 case DrawMode.Ignore2Image:
+                case DrawMode.RoleTank1Image:
+                case DrawMode.RoleTank2Image:
+                case DrawMode.RoleHealer1Image:
+                case DrawMode.RoleHealer2Image:
+                case DrawMode.RoleMelee1Image:
+                case DrawMode.RoleMelee2Image:
+                case DrawMode.RoleRanged1Image:
+                case DrawMode.RoleRanged2Image:
+                case DrawMode.ArenaM9:
+                case DrawMode.ArenaM10:
+                case DrawMode.ArenaM11P1:
+                case DrawMode.ArenaM11P2:
+                case DrawMode.ArenaM12P1:
+                case DrawMode.ArenaM12P2:
                     var image = (DrawableImage)drawable;
                     writer.Write(image.ImageResourcePath ?? string.Empty);
                     writer.Write(image.PositionRelative.X); writer.Write(image.PositionRelative.Y);
@@ -537,6 +551,20 @@ namespace AetherDraw.Serialization
                 case DrawMode.Bind3Image:
                 case DrawMode.Ignore1Image:
                 case DrawMode.Ignore2Image:
+                case DrawMode.RoleTank1Image:
+                case DrawMode.RoleTank2Image:
+                case DrawMode.RoleHealer1Image:
+                case DrawMode.RoleHealer2Image:
+                case DrawMode.RoleMelee1Image:
+                case DrawMode.RoleMelee2Image:
+                case DrawMode.RoleRanged1Image:
+                case DrawMode.RoleRanged2Image:
+                case DrawMode.ArenaM9:
+                case DrawMode.ArenaM10:
+                case DrawMode.ArenaM11P1:
+                case DrawMode.ArenaM11P2:
+                case DrawMode.ArenaM12P1:
+                case DrawMode.ArenaM12P2:
                     string imgPath = reader.ReadString();
                     if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 imgPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());

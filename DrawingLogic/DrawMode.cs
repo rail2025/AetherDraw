@@ -97,6 +97,20 @@ namespace AetherDraw.DrawingLogic
         GazeImage,
         TowerImage,
         ExasImage,
-        Starburst
+        Starburst,
+        RoleTank1Image,
+        RoleTank2Image,
+        RoleHealer1Image,
+        RoleHealer2Image,
+        RoleMelee1Image,
+        RoleMelee2Image,
+        RoleRanged1Image,
+        RoleRanged2Image,
+        ArenaM9,
+        ArenaM10,
+        ArenaM11P1,
+        ArenaM11P2,
+        ArenaM12P1,
+        ArenaM12P2
     }
 }

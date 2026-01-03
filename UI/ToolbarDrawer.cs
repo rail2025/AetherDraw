@@ -131,7 +131,7 @@ namespace AetherDraw.UI
             {
                 this.activeSubModeMap[button.Primary] = button.Primary;
             }
-
+            this.activeSubModeMap[DrawMode.ArenaM9] = DrawMode.ArenaM9;
             this.iconPaths = new Dictionary<DrawMode, string>
             {
                 { DrawMode.Pen, "" }, { DrawMode.StraightLine, "" }, { DrawMode.Dash, "" },
@@ -189,6 +189,19 @@ namespace AetherDraw.UI
                 { DrawMode.EmojiImage, "" },
                 { DrawMode.StatusIconPlaceholder, "PluginImages.toolbar.StatusPlaceholder.png" },
                 { DrawMode.RoleCasterImage, "PluginImages.toolbar.caster.png" },
+                // Arenas
+                { DrawMode.ArenaM9, "PluginImages.toolbar.m9.png" },
+                { DrawMode.ArenaM10, "PluginImages.toolbar.m10.png" },
+                { DrawMode.ArenaM11P1, "PluginImages.toolbar.m11p1.png" },
+                { DrawMode.ArenaM11P2, "PluginImages.toolbar.m11p2.png" },
+                { DrawMode.ArenaM12P1, "PluginImages.toolbar.m12p1.png" },
+                { DrawMode.ArenaM12P2, "PluginImages.toolbar.m12p2.png" },
+
+                // Numbered Roles
+                { DrawMode.RoleTank1Image, "PluginImages.toolbar.tank_1.png" }, { DrawMode.RoleTank2Image, "PluginImages.toolbar.tank_2.png" },
+                { DrawMode.RoleHealer1Image, "PluginImages.toolbar.healer_1.png" }, { DrawMode.RoleHealer2Image, "PluginImages.toolbar.healer_2.png" },
+                { DrawMode.RoleMelee1Image, "PluginImages.toolbar.melee_1.png" }, { DrawMode.RoleMelee2Image, "PluginImages.toolbar.melee_2.png" },
+                { DrawMode.RoleRanged1Image, "PluginImages.toolbar.ranged_dps_1.png" }, { DrawMode.RoleRanged2Image, "PluginImages.toolbar.ranged_dps_2.png" },
 
                 // Added Job Icons
                 { DrawMode.JobPldImage, "PluginImages.toolbar.pld.png" }, { DrawMode.JobWarImage, "PluginImages.toolbar.war.png" },
@@ -214,6 +227,9 @@ namespace AetherDraw.UI
                 { DrawMode.StatusIconPlaceholder, "Status" },
                 { DrawMode.Donut, "Donut" },
                 { DrawMode.Starburst, "Star" },
+                { DrawMode.ArenaM9, "M9" }, { DrawMode.ArenaM10, "M10" },
+                { DrawMode.ArenaM11P1, "M11 P1" }, { DrawMode.ArenaM11P2, "M11 P2" },
+                { DrawMode.ArenaM12P1, "M12 P1" }, { DrawMode.ArenaM12P2, "M12 P2" },
             };
         }
 
@@ -278,6 +294,87 @@ namespace AetherDraw.UI
                 if (ImGui.Button("Add Image (URL)", new Vector2(btnWidthFull, 0)))
                 {
                     onImportBackgroundUrl();
+                }
+                var arenaGroup = new ToolbarButton
+                {
+                    Primary = DrawMode.ArenaM9,
+                    SubModes = new List<DrawMode> { DrawMode.ArenaM9, DrawMode.ArenaM10, DrawMode.ArenaM11P1, DrawMode.ArenaM11P2, DrawMode.ArenaM12P1, DrawMode.ArenaM12P2 },
+                    Tooltip = "Arena Maps"
+                };
+
+                Vector2 arenaBtnSize = new Vector2(btnWidthFull, 45 * ImGuiHelpers.GlobalScale);
+                Vector2 popupSize = new Vector2(32 * ImGuiHelpers.GlobalScale, 32 * ImGuiHelpers.GlobalScale);
+
+                DrawMode activeArena = activeSubModeMap.GetValueOrDefault(arenaGroup.Primary, arenaGroup.Primary);
+                string activePath = iconPaths.GetValueOrDefault(activeArena, "");
+                var arenaTex = activePath != "" ? TextureManager.GetTexture(activePath) : null;
+                var arenaDrawList = ImGui.GetWindowDrawList();
+
+                bool isArenaActive = currentDrawMode == arenaGroup.Primary || arenaGroup.SubModes.Contains(currentDrawMode);
+
+                using (isArenaActive ? ImRaii.PushColor(ImGuiCol.Button, ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]) : null)
+                {
+                    if (ImGui.Button($"##{arenaGroup.Primary}", arenaBtnSize))
+                    {
+                        setCurrentDrawMode(activeArena);
+                    }
+
+                    // Manual Drawing to match the loop's icon style
+                    var min = ImGui.GetItemRectMin();
+                    var max = ImGui.GetItemRectMax();
+                    var center = (min + max) / 2;
+
+                    if (arenaTex != null)
+                    {
+                        arenaDrawList.AddImage(arenaTex.Handle, min, max);
+                    }
+                    else
+                    {
+                        string displayName = toolDisplayNames.GetValueOrDefault(activeArena, activeArena.ToString());
+                        var textSize = ImGui.CalcTextSize(displayName);
+                        arenaDrawList.AddText(new Vector2(center.X - textSize.X / 2, center.Y - textSize.Y / 2), ImGui.GetColorU32(ImGuiCol.Text), displayName);
+                    }
+
+                    // Caret for sub-menu
+                    if (arenaGroup.SubModes.Any())
+                    {
+                        var arrowSize = 6f * ImGuiHelpers.GlobalScale;
+                        var padding = 4f * ImGuiHelpers.GlobalScale;
+                        Vector2 p1 = new Vector2(max.X - arrowSize - padding, max.Y - arrowSize - padding);
+                        Vector2 p2 = new Vector2(max.X - padding, max.Y - arrowSize - padding);
+                        Vector2 p3 = new Vector2(max.X - arrowSize * 0.5f - padding, max.Y - padding);
+                        arenaDrawList.AddTriangleFilled(p1, p2, p3, ImGui.GetColorU32(ImGuiCol.Text));
+                    }
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip(arenaGroup.Tooltip);
+
+                // Popup Logic (Standard)
+                if (arenaGroup.SubModes.Any() && ImGui.BeginPopupContextItem($"popup_{arenaGroup.Primary}", ImGuiPopupFlags.MouseButtonLeft))
+                {
+                    foreach (var sub in arenaGroup.SubModes)
+                    {
+                        string subPath = iconPaths.GetValueOrDefault(sub, "");
+                        var subTex = subPath != "" ? TextureManager.GetTexture(subPath) : null;
+                        if (subTex != null)
+                        {
+                            if (ImGui.ImageButton(subTex.Handle, popupSize))
+                            {
+                                setCurrentDrawMode(sub);
+                                activeSubModeMap[arenaGroup.Primary] = sub;
+                                ImGui.CloseCurrentPopup();
+                            }
+                        }
+                        else
+                        {
+                            if (ImGui.Selectable(toolDisplayNames.GetValueOrDefault(sub, sub.ToString()), currentDrawMode == sub))
+                            {
+                                setCurrentDrawMode(sub);
+                                activeSubModeMap[arenaGroup.Primary] = sub;
+                                ImGui.CloseCurrentPopup();
+                            }
+                        }
+                    }
+                    ImGui.EndPopup();
                 }
                 ImGui.Separator();
 

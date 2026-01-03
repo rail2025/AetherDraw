@@ -908,7 +908,9 @@ namespace AetherDraw.Windows
             for (int i = 0; i < currentPages.Count; i++)
             {
                 bool isSelectedPage = (i == pageManager.GetCurrentPageIndex());
-                string pageName = pageManager.IsLiveMode ? $"L {currentPages[i].Name}" : currentPages[i].Name;
+                var page = currentPages[i];
+                if (page == null) continue;
+                string pageName = pageManager.IsLiveMode ? $"L {page.Name}" : page.Name;
                 Vector4 normalColor, activeColor;
                 if (pageManager.IsLiveMode)
                 {

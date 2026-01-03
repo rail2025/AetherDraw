@@ -3,7 +3,7 @@
     <PropertyGroup>
         <AssemblyName>AetherDraw</AssemblyName>
         <RootNamespace>AetherDraw</RootNamespace>
-        <AssemblyVersion>2.4.4.2</AssemblyVersion>
+        <AssemblyVersion>2.4.5.0</AssemblyVersion>
         <TargetFramework>net10.0-windows</TargetFramework>
         <Platforms>x64</Platforms>
         <PlatformTarget>x64</PlatformTarget>
@@ -11,9 +11,27 @@
         <Description>A realtime multi-user whiteboard raid planner plugin to draw encounter strategies. Supports url imports</Description>
         <PackageProjectUrl>https://github.com/rail2025/AetherDraw/</PackageProjectUrl>
         <Authors>rail</Authors>
-        <Version>2.4.4.2</Version>
+        <Version>2.4.5.0</Version>
         <NoWarn>CA1416</NoWarn>
     </PropertyGroup>
+
+    <ItemGroup>
+      <EmbeddedResource Include="PluginImages\toolbar\healer_1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\healer_2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\m10.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\m11p1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\m11p2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\m12p1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\m12p2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\m9.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\melee_1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\melee_2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\ranged_dps.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\ranged_dps_1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\ranged_dps_2.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\tank_1.png" />
+      <EmbeddedResource Include="PluginImages\toolbar\tank_2.png" />
+    </ItemGroup>
 
     <ItemGroup>
       <EmbeddedResource Include="PluginImages\svg\starburst.png" />

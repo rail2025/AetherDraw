@@ -42,10 +42,10 @@ namespace AetherDraw.Windows
         // Define the mapping of Roles to their Jobs
         private static readonly Dictionary<DrawMode, List<DrawMode>> RoleToJobMap = new()
         {
-            { DrawMode.RoleTankImage,   new List<DrawMode> { DrawMode.JobPldImage, DrawMode.JobWarImage, DrawMode.JobDrkImage, DrawMode.JobGnbImage } },
-            { DrawMode.RoleHealerImage, new List<DrawMode> { DrawMode.JobWhmImage, DrawMode.JobSchImage, DrawMode.JobAstImage, DrawMode.JobSgeImage } },
-            { DrawMode.RoleMeleeImage,  new List<DrawMode> { DrawMode.JobMnkImage, DrawMode.JobDrgImage, DrawMode.JobNinImage, DrawMode.JobSamImage, DrawMode.JobRprImage, DrawMode.JobVprImage } },
-            { DrawMode.RoleRangedImage, new List<DrawMode> { DrawMode.JobBrdImage, DrawMode.JobMchImage, DrawMode.JobDncImage } },
+            { DrawMode.RoleTankImage,   new List<DrawMode> { DrawMode.RoleTank1Image, DrawMode.RoleTank2Image, DrawMode.JobPldImage, DrawMode.JobWarImage, DrawMode.JobDrkImage, DrawMode.JobGnbImage } },
+            { DrawMode.RoleHealerImage, new List<DrawMode> { DrawMode.RoleHealer1Image, DrawMode.RoleHealer2Image, DrawMode.JobWhmImage, DrawMode.JobSchImage, DrawMode.JobAstImage, DrawMode.JobSgeImage } },
+            { DrawMode.RoleMeleeImage,  new List<DrawMode> { DrawMode.RoleMelee1Image, DrawMode.RoleMelee2Image, DrawMode.JobMnkImage, DrawMode.JobDrgImage, DrawMode.JobNinImage, DrawMode.JobSamImage, DrawMode.JobRprImage, DrawMode.JobVprImage } },
+            { DrawMode.RoleRangedImage, new List<DrawMode> { DrawMode.RoleRanged1Image, DrawMode.RoleRanged2Image, DrawMode.JobBrdImage, DrawMode.JobMchImage, DrawMode.JobDncImage } },
             { DrawMode.RoleCasterImage, new List<DrawMode> { DrawMode.JobBlmImage, DrawMode.JobSmnImage, DrawMode.JobRdmImage, DrawMode.JobPctImage } }
         };
 
@@ -65,6 +65,14 @@ namespace AetherDraw.Windows
 
         private string GetIconPath(DrawMode mode)
         {
+            if (mode == DrawMode.RoleTank1Image) return "PluginImages.toolbar.tank_1.png";
+            if (mode == DrawMode.RoleTank2Image) return "PluginImages.toolbar.tank_2.png";
+            if (mode == DrawMode.RoleHealer1Image) return "PluginImages.toolbar.healer_1.png";
+            if (mode == DrawMode.RoleHealer2Image) return "PluginImages.toolbar.healer_2.png";
+            if (mode == DrawMode.RoleMelee1Image) return "PluginImages.toolbar.melee_1.png";
+            if (mode == DrawMode.RoleMelee2Image) return "PluginImages.toolbar.melee_2.png";
+            if (mode == DrawMode.RoleRanged1Image) return "PluginImages.toolbar.ranged_dps_1.png";
+            if (mode == DrawMode.RoleRanged2Image) return "PluginImages.toolbar.ranged_dps_2.png";
             // Quick lookup helper - ideally this would be shared from ToolbarDrawer but we can reconstruct the pattern easily
             if (mode == DrawMode.RoleCasterImage) return "PluginImages.toolbar.caster.png";
             // Map the jobs
@@ -113,22 +121,26 @@ namespace AetherDraw.Windows
                     ImGui.Separator();
                     ImGui.Text("Swap Job Icon");
 
-                    float availW = ImGui.GetContentRegionAvail().X;
-                    float gap = ImGui.GetStyle().ItemSpacing.X;
-                    // spacing : (Width - (TotalGapSpace)) / ItemCount
-                    // If 4 items, there are 3 gaps.
-                    float btnSize = (availW - (gap * (jobList.Count - 1))) / jobList.Count;
-
-                    // Sanity check to prevent huge buttons if list is small (e.g., 1 item)
-                    btnSize = Math.Min(btnSize, 40f * ImGuiHelpers.GlobalScale);
-
-                    Vector2 btnVec = new Vector2(btnSize, btnSize);
+                    // Wrapping Logic Configuration
+                    var style = ImGui.GetStyle();
+                    float windowVisibleX2 = ImGui.GetWindowPos().X + ImGui.GetWindowContentRegionMax().X;
+                    float buttonSize = 40f * ImGuiHelpers.GlobalScale;
+                    Vector2 btnVec = new Vector2(buttonSize, buttonSize);
 
                     for (int i = 0; i < jobList.Count; i++)
                     {
                         var jobMode = jobList[i];
-                        // Only add SameLine if it's NOT the first item
-                        if (i > 0) ImGui.SameLine();
+
+                        // Wrapping Check: Only call SameLine if the NEXT button fits
+                        if (i > 0)
+                        {
+                            float lastButtonX2 = ImGui.GetItemRectMax().X;
+                            float nextButtonX2 = lastButtonX2 + style.ItemSpacing.X + buttonSize;
+
+                            // If it fits within the visible window width, stay on the same line
+                            if (nextButtonX2 < windowVisibleX2)
+                                ImGui.SameLine();
+                        }
 
                         var tex = TextureManager.GetTexture(GetIconPath(jobMode));
                         if (tex != null)
@@ -144,11 +156,8 @@ namespace AetherDraw.Windows
                             if (ImGui.IsItemHovered()) ImGui.SetTooltip(jobMode.ToString().Replace("Job", "").Replace("Image", ""));
                         }
                     }
-                    // Remove trailing SameLine
-                    ImGui.NewLine();
                 }
             }
-            // -------------------
 
             ImGui.Separator();
 
