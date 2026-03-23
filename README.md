@@ -63,80 +63,78 @@ https://github.com/rail2025/WDIGViewer
 <br>
 <br>
 
-# 🔐 Privacy & Security
+#  Privacy & Security
 
 AetherDraw is designed around user privacy, anonymity, and plausible deniability. It does not collect or expose any identifying information about the user, their character, or their connection.
-<br>
-All art, text, logos, videos, screenshots, images, sounds, music and recordings from FINAL FANTASY XIV are © SQUARE ENIX CO., LTD. All rights reserved. This plugin and its content are not affiliated with Square Enix. The in-game assets are used under the FINAL FANTASY XIV Materials Usage License.<br>
 
-🚫 What AetherDraw Does Not Do
+ What AetherDraw Does Not Do
 
-    ❌ Does not transmit your character name, world, content ID, or any in-game identifier.
+     Does not transmit your character name, world, content ID, or any in-game identifier.
 
-    ❌ Does not embed metadata or source identifiers in drawing data.
+     Does not embed metadata or source identifiers in drawing data.
 
-    ❌ Does not store any data persistently (no disk writes, no database).
+     Does not store any data persistently (no disk writes, no database).
 
-    ❌ Does not provide a list of connected users to others in the room.
+     Does not provide a list of connected users to others in the room.
 
-    ❌ Does not log or inspect IP addresses or client origins.
+     Does not log or inspect IP addresses or client origins.
 
-    ❌ Does not send or receive any communication outside the room scope.
+     Does not send or receive any communication outside the room scope.
 
-✅ What AetherDraw Does
+ What AetherDraw Does
 
-    ✅ Sends drawing strokes as binary messages to a relay-only WebSocket server.
+     Sends drawing strokes as binary messages to a relay-only WebSocket server.
 
-    ✅ Relays messages only to other clients in the same room (by hash or passphrase).
+     Relays messages only to other clients in the same room (by hash or passphrase).
 
-    ✅ Provides two modes of connection:
+     Provides two modes of connection:
 
         Party Sync: Uses a SHA-256 hash of sorted Party member IDs (for in-party sessions).
 
         Passphrase Mode: Uses a readable sentence as a room key (for cross-world or anonymous sessions). Or make your own generic phrase "123abc123", "TacoTuesday", "Tomestone cap is too low", etc.
 
-    ✅ Uses WebSocket over TLS (WSS) for encrypted communication.
+     Uses WebSocket over TLS (WSS) for encrypted communication.
 
-    ✅ Implements strict room expiry and automatic cleanup:
+     Implements strict room expiry and automatic cleanup:
 
-        ⏱️ Rooms expire after 2 hours, or after 3 minutes alone.
+         Rooms expire after 2 hours, or after 3 minutes alone.
 
-        🧹 Room data is never stored beyond process memory.
+         Room data is never stored beyond process memory.
 
-🌐 Relay Server Design
+ Relay Server Design
 
 The server protects your privacy:
 
-    🧠 Stateless by design — acts as a dumb relay.
+     Stateless by design, acts as a dumb relay.
 
-    🗑️ Deletes rooms on timeout or when empty.
+     Deletes rooms on timeout or when empty.
 
-    ❌ No personal information is ever logged or stored.
+     No personal information is ever logged or stored.
 
-    📜 No session tokens, cookies, or identifiers.
+     No session tokens, cookies, or identifiers.
 
-    🛑 No awareness of user identities or origins.
+     No awareness of user identities or origins.
 
 
-#### 🧅 Threat Model
+####  Threat Model
 
 |Scenario |	What Happens?	| Notes|
 |---|---|---|
 |Passphrase guessed |	Attacker joins your room	|Use unique/generated phrases for private syncs.
 |Packet sniffing	| Can see binary draw data	|No user-identifying metadata present.
-| Client impersonation |	Can send drawing data	|All clients are anonymous by design — spoofing ≈ regular use.
+| Client impersonation |	Can send drawing data	|All clients are anonymous by design.
 | Room abuse (e.g. griefing in public)	| No protection|	No moderation due to intentional lack of user identifiers.
 
-#### ⚙️ Configuration & Behavior
+####  Configuration & Behavior
 |Feature |	Behavior |
 |---|---|
 Room caps | 8 users for Party Sync, 48 for passphrase-based rooms
 Client list	 |  Not exposed or tracked
 Drawing data	| Binary-only, no tags, no user linkage
-Moderation |	Not implemented — would compromise anonymity
-Room control |	None — anyone with the phrase or hash can draw
+Moderation |	Not implemented, would compromise anonymity
+Room control |	None, anyone with the phrase or hash can draw
 
-#### ❓ Why No Moderation or Visibility?
+#### Why No Moderation or Visibility?
 
 AetherDraw is designed for:
 
@@ -155,3 +153,5 @@ This means:
     No global directories or room listings.
 
 If your use case requires tracking, user control, or session auditing, this plugin is intentionally not built for that.
+<br>
+All art, text, logos, videos, screenshots, images, sounds, music and recordings from FINAL FANTASY XIV are © SQUARE ENIX CO., LTD. All rights reserved. This plugin and its content are not affiliated with Square Enix. The in-game assets are used under the FINAL FANTASY XIV Materials Usage License.<br>
