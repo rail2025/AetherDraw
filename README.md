@@ -8,7 +8,7 @@ The goal of this plugin is to make complex strategies easier to communicate by p
 AetherDraw is for creating and collaborating on plans. For displaying the saved images as an in-game reference during a fight, please use the companion plugin, [WDIGViewer](https://github.com/rail2025/WDIGViewer).
 <br>
 ## Developer Documentation
-* [CONTRIBUTING.md](CONTRIBUTING.md) - Quick start guide, critical warnings, and a step-by-step tutorial on how to add new tools.
+* [contributing.md](CONTRIBUTING.md) - Quick start guide, critical warnings, and a step-by-step tutorial on how to add new tools.
 * [ARCHITECTURE.md](ARCHITECTURE.md) - A deep dive into the system's design, state-sync networking, and known technical debt.
 <br>
 
