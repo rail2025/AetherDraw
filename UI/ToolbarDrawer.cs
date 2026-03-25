@@ -196,6 +196,9 @@ namespace AetherDraw.UI
                 { DrawMode.ArenaM11P2, "PluginImages.toolbar.m11p2.png" },
                 { DrawMode.ArenaM12P1, "PluginImages.toolbar.m12p1.png" },
                 { DrawMode.ArenaM12P2, "PluginImages.toolbar.m12p2.png" },
+                { DrawMode.ArenaTMT1, "PluginImages.toolbar.tmtboss1_arena.jpg" },
+                { DrawMode.ArenaTMT2, "PluginImages.toolbar.tmtboss2_arena.jpg" },
+                { DrawMode.ArenaTMT3, "PluginImages.toolbar.tmtboss3_arena.jpg" },
 
                 // Numbered Roles
                 { DrawMode.RoleTank1Image, "PluginImages.toolbar.tank_1.png" }, { DrawMode.RoleTank2Image, "PluginImages.toolbar.tank_2.png" },
@@ -230,6 +233,7 @@ namespace AetherDraw.UI
                 { DrawMode.ArenaM9, "M9" }, { DrawMode.ArenaM10, "M10" },
                 { DrawMode.ArenaM11P1, "M11 P1" }, { DrawMode.ArenaM11P2, "M11 P2" },
                 { DrawMode.ArenaM12P1, "M12 P1" }, { DrawMode.ArenaM12P2, "M12 P2" },
+                { DrawMode.ArenaTMT1, "TMT 1" }, { DrawMode.ArenaTMT2, "TMT 2" }, { DrawMode.ArenaTMT3, "TMT 3" },
             };
         }
 
@@ -298,7 +302,7 @@ namespace AetherDraw.UI
                 var arenaGroup = new ToolbarButton
                 {
                     Primary = DrawMode.ArenaM9,
-                    SubModes = new List<DrawMode> { DrawMode.ArenaM9, DrawMode.ArenaM10, DrawMode.ArenaM11P1, DrawMode.ArenaM11P2, DrawMode.ArenaM12P1, DrawMode.ArenaM12P2 },
+                    SubModes = new List<DrawMode> { DrawMode.ArenaM9, DrawMode.ArenaM10, DrawMode.ArenaM11P1, DrawMode.ArenaM11P2, DrawMode.ArenaM12P1, DrawMode.ArenaM12P2, DrawMode.ArenaTMT1, DrawMode.ArenaTMT2, DrawMode.ArenaTMT3 },
                     Tooltip = "Arena Maps"
                 };
 
