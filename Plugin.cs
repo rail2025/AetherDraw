@@ -1,12 +1,13 @@
-using Dalamud.Game.Command;
-using Dalamud.IoC;
-using Dalamud.Plugin;
-using Dalamud.Interface.Windowing;
-using Dalamud.Plugin.Services;
-using AetherDraw.Windows;
+using AetherDraw.Core;
 using AetherDraw.DrawingLogic;
 using AetherDraw.Networking;
-using AetherDraw.Core;
+using AetherDraw.Windows;
+using Dalamud.Game.Command;
+using Dalamud.Interface.Windowing;
+using Dalamud.IoC;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
+using System.Linq;
 
 namespace AetherDraw
 {
@@ -44,6 +45,71 @@ namespace AetherDraw
 
         public PermissionManager PermissionManager { get; init; }
         public PageController PageController { get; init; }
+        private Dalamud.Plugin.Ipc.ICallGateProvider<string, bool>? importPlanIpcProvider;
+
+        public class PlanExportPayload
+        {
+            public string Version { get; set; } = "1.0";
+            public System.Collections.Generic.List<PlanPagePayload> Pages { get; set; } = new();
+        }
+
+        public class PlanPagePayload
+        {
+            public string Background { get; set; } = string.Empty;
+            public byte[] DrawableData { get; set; } = System.Array.Empty<byte>();
+        }
+
+        private bool HandleIpcImport(string jsonPayload)
+        {
+            try
+            {
+                Log.Information($"[IPC] Received payload of length: {jsonPayload?.Length ?? 0}");
+                string processedPayload = jsonPayload ?? string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(processedPayload) && !processedPayload.TrimStart().StartsWith("{"))
+                {
+                    try
+                    {
+                        Log.Information("[IPC] Payload does not start with '{'. Attempting Base64 decode...");
+                        processedPayload = System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String(processedPayload));
+                        Log.Information("[IPC] Base64 decode successful.");
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Log.Warning(ex, "[IPC] Base64 decode failed. Proceeding with original string.");
+                    }
+                }
+
+                var importedPlan = Newtonsoft.Json.JsonConvert.DeserializeObject<PlanExportPayload>(processedPayload);
+
+                if (importedPlan != null && importedPlan.Pages != null)
+                {
+                    var newPages = new System.Collections.Generic.List<AetherDraw.Core.PageData>();
+                    int slideNumber = 1;
+                    foreach (var page in importedPlan.Pages)
+                    {
+                        var drawables = AetherDraw.Serialization.DrawableSerializer.DeserializePageFromBytes(page.DrawableData);
+
+                        newPages.Add(new AetherDraw.Core.PageData
+                        {
+                            Name = slideNumber.ToString(),
+                            Drawables = drawables ?? new System.Collections.Generic.List<AetherDraw.DrawingLogic.BaseDrawable>()
+                        });
+                        slideNumber++;
+                    }
+
+                    MainWindow.PageManager.AppendPages(newPages);
+                    Log.Information($"Successfully imported {newPages.Count} pages via binary IPC payload.");
+                    return true;
+                }
+                return false;
+            }
+            catch (System.Exception ex)
+            {
+                Log.Error(ex, "Failed to parse incoming binary IPC plan data.");
+                return false;
+            }
+        }
 
         public Plugin()
         {
@@ -89,6 +155,16 @@ namespace AetherDraw
             PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
             PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
 
+            try
+            {
+                importPlanIpcProvider = PluginInterface.GetIpcProvider<string, bool>("AetherDraw.ImportPlanJson");
+                importPlanIpcProvider.RegisterFunc(HandleIpcImport);
+            }
+            catch (System.Exception ex)
+            {
+                Log.Error(ex, "Failed to register IPC provider.");
+            }
+
             Log.Information("AetherDraw loaded successfully.");
         }
 
@@ -113,6 +189,7 @@ namespace AetherDraw
             this.WindowSystem.RemoveAllWindows();
 
             TextureManager.Dispose();
+            importPlanIpcProvider?.UnregisterFunc();
 
             Log.Information("AetherDraw disposed.");
         }
