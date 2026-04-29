@@ -3,9 +3,9 @@
     "Name": "AetherDraw",
     "Punchline": "A realtime multi-user whiteboard raid planner and strat viewer. Compatible with https://aetherdraw.me",
     "Description": "Whiteboard raid planner for encounters. Use /aetherdraw to open. Searchable database of community plans, supports realtime multi-user, multi-platform collaboration. Also available at https://aetherdraw.me to live sync with plugin users or when plugins unavailable",
-    "Changelog": "v2.4.8.0:IPC support for AetherBlackbox imports\nv2.4.6.0:api bump, criterion support\nv2.4.5.0: arena background, job icons expanded.\nv2.4.4.2: API 14, 7.4",
+    "Changelog": "v7.5.0.0: api 15, page reorder fix\nv2.4.8.0:IPC support for AetherBlackbox imports\nv2.4.6.0:api bump, criterion support\nv2.4.5.0: arena background, job icons expanded.\nv2.4.4.2: API 14, 7.4",
     "InternalName": "AetherDraw",
-    "AssemblyVersion": "2.4.8.0",
+    "AssemblyVersion": "7.5.0.0",
     "RepoUrl": "https://github.com/rail2025/AetherDraw",
     "ApplicableVersion": "any",
     "Tags": [
@@ -17,7 +17,7 @@
         "whiteboard",
         "planner"
     ],
-    "DalamudApiLevel": 14,
+    "DalamudApiLevel": 15,
     "LoadPriority": 0,
     "LastUpdate": 0,
     "DownloadLinkInstall": "",

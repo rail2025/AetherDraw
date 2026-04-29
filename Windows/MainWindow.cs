@@ -942,10 +942,13 @@ namespace AetherDraw.Windows
                 if (ImGui.BeginDragDropTarget())
                 {
                     ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("AETHERDRAW_PAGE_DRAG");
-                    if (payload.Data != null && payload.DataSize == sizeof(int))
+                    unsafe
                     {
-                        int fromIndex = *(int*)payload.Data;
-                        RequestPageMove(fromIndex, i);
+                        if (*(IntPtr*)&payload != IntPtr.Zero && payload.DataSize == sizeof(int))
+                        {
+                            int fromIndex = *(int*)payload.Data;
+                            RequestPageMove(fromIndex, i);
+                        }
                     }
                     ImGui.EndDragDropTarget();
                 }
@@ -987,10 +990,13 @@ namespace AetherDraw.Windows
             if (ImGui.BeginDragDropTarget())
             {
                 ImGuiPayloadPtr payload = ImGui.AcceptDragDropPayload("AETHERDRAW_PAGE_DRAG");
-                if (payload.Data != null && payload.DataSize == sizeof(int))
-                { 
-                    int fromIndex = *(int*)payload.Data;
-                    RequestPageMove(fromIndex, currentPages.Count - 1);
+                unsafe
+                {
+                    if (*(IntPtr*)&payload != IntPtr.Zero && payload.DataSize == sizeof(int))
+                    {
+                        int fromIndex = *(int*)payload.Data;
+                        RequestPageMove(fromIndex, currentPages.Count - 1);
+                    }
                 }
                 ImGui.EndDragDropTarget();
             }
