@@ -349,7 +349,7 @@ namespace AetherDraw.Core
                 DrawMode.Dot1Image or DrawMode.Dot2Image or DrawMode.Dot3Image or DrawMode.Dot4Image or DrawMode.Dot5Image or DrawMode.Dot6Image or DrawMode.Dot7Image or DrawMode.Dot8Image or DrawMode.RoleCasterImage or DrawMode.RoleTank1Image or DrawMode.RoleTank2Image or DrawMode.RoleHealer1Image or DrawMode.RoleHealer2Image
                 or DrawMode.RoleMelee1Image or DrawMode.RoleMelee2Image or DrawMode.RoleRanged1Image or DrawMode.RoleRanged2Image
                 or DrawMode.ArenaM9 or DrawMode.ArenaM10 or DrawMode.ArenaM11P1 or DrawMode.ArenaM11P2 or DrawMode.ArenaM12P1 or DrawMode.ArenaM12P2
-                or DrawMode.ArenaTMT1 or DrawMode.ArenaTMT2 or DrawMode.ArenaTMT3
+                or DrawMode.ArenaTMT1 or DrawMode.ArenaTMT2 or DrawMode.ArenaTMT3 or DrawMode.ArenaUMADP1 or DrawMode.ArenaUMADP2
                 => true,
                 _ => false,
             };
@@ -437,6 +437,8 @@ namespace AetherDraw.Core
                     case DrawMode.ArenaTMT1: imagePath = "PluginImages.toolbar.tmtboss1_arena.jpg"; imageUnscaledSize = new Vector2(500f, 500f); break;
                     case DrawMode.ArenaTMT2: imagePath = "PluginImages.toolbar.tmtboss2_arena.jpg"; imageUnscaledSize = new Vector2(500f, 500f); break;
                     case DrawMode.ArenaTMT3: imagePath = "PluginImages.toolbar.tmtboss3_arena.jpg"; imageUnscaledSize = new Vector2(500f, 500f); break;
+                    case DrawMode.ArenaUMADP1: imagePath = "PluginImages.toolbar.p1_fg.webp"; imageUnscaledSize = new Vector2(500f, 500f); break;
+                    case DrawMode.ArenaUMADP2: imagePath = "PluginImages.toolbar.p2_fg.webp"; imageUnscaledSize = new Vector2(500f, 500f); break;
 
                 }
 

@@ -117,6 +117,9 @@ namespace AetherDraw.Serialization
         /// </summary>
         private static void SerializeSingleDrawable(BinaryWriter writer, BaseDrawable drawable)
         {
+            var bounds = drawable.GetBoundingBox();
+            AetherDraw.Plugin.Log?.Debug($"[Export] {drawable.ObjectDrawMode} {drawable.UniqueId} | Logical Bounds: X:{bounds.X}, Y:{bounds.Y}");
+
             // 1. Write Type Discriminator (ObjectDrawMode)
             writer.Write((byte)drawable.ObjectDrawMode);
 
@@ -296,6 +299,8 @@ namespace AetherDraw.Serialization
                 case DrawMode.ArenaTMT1:
                 case DrawMode.ArenaTMT2:
                 case DrawMode.ArenaTMT3:
+                case DrawMode.ArenaUMADP1:
+                case DrawMode.ArenaUMADP2:
                     var image = (DrawableImage)drawable;
                     writer.Write(image.ImageResourcePath ?? string.Empty);
                     writer.Write(image.PositionRelative.X); writer.Write(image.PositionRelative.Y);
@@ -571,6 +576,8 @@ namespace AetherDraw.Serialization
                 case DrawMode.ArenaTMT1:
                 case DrawMode.ArenaTMT2:
                 case DrawMode.ArenaTMT3:
+                case DrawMode.ArenaUMADP1:
+                case DrawMode.ArenaUMADP2:
                     string imgPath = reader.ReadString();
                     if (reader.BaseStream.Position + sizeof(float) * 5 > reader.BaseStream.Length) return null;
                     Vector2 imgPos = new Vector2(reader.ReadSingle(), reader.ReadSingle());
@@ -615,6 +622,9 @@ namespace AetherDraw.Serialization
                 drawable.IsFilled = isFilled;
                 drawable.IsPreview = false;
                 drawable.IsLocked = isLocked;
+
+                var bounds = drawable.GetBoundingBox();
+                AetherDraw.Plugin.Log?.Debug($"[Import] {drawable.ObjectDrawMode} {drawable.UniqueId} | Logical Bounds: X:{bounds.X}, Y:{bounds.Y}");
             }
             return drawable;
         }

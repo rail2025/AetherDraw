@@ -114,6 +114,8 @@ namespace AetherDraw.DrawingLogic
         ArenaM12P2,
         ArenaTMT1,
         ArenaTMT2,
-        ArenaTMT3
+        ArenaTMT3,
+        ArenaUMADP1,
+        ArenaUMADP2
     }
 }
