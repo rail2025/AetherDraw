@@ -65,19 +65,19 @@ namespace AetherDraw.Windows
 
         private string GetIconPath(DrawMode mode)
         {
-            if (mode == DrawMode.RoleTank1Image) return "PluginImages.toolbar.tank_1.png";
-            if (mode == DrawMode.RoleTank2Image) return "PluginImages.toolbar.tank_2.png";
-            if (mode == DrawMode.RoleHealer1Image) return "PluginImages.toolbar.healer_1.png";
-            if (mode == DrawMode.RoleHealer2Image) return "PluginImages.toolbar.healer_2.png";
-            if (mode == DrawMode.RoleMelee1Image) return "PluginImages.toolbar.melee_1.png";
-            if (mode == DrawMode.RoleMelee2Image) return "PluginImages.toolbar.melee_2.png";
-            if (mode == DrawMode.RoleRanged1Image) return "PluginImages.toolbar.ranged_dps_1.png";
-            if (mode == DrawMode.RoleRanged2Image) return "PluginImages.toolbar.ranged_dps_2.png";
+            if (mode == DrawMode.RoleTank1Image) return "PluginImages.toolbar.tank_1.webp";
+            if (mode == DrawMode.RoleTank2Image) return "PluginImages.toolbar.tank_2.webp";
+            if (mode == DrawMode.RoleHealer1Image) return "PluginImages.toolbar.healer_1.webp";
+            if (mode == DrawMode.RoleHealer2Image) return "PluginImages.toolbar.healer_2.webp";
+            if (mode == DrawMode.RoleMelee1Image) return "PluginImages.toolbar.melee_1.webp";
+            if (mode == DrawMode.RoleMelee2Image) return "PluginImages.toolbar.melee_2.webp";
+            if (mode == DrawMode.RoleRanged1Image) return "PluginImages.toolbar.ranged_dps_1.webp";
+            if (mode == DrawMode.RoleRanged2Image) return "PluginImages.toolbar.ranged_dps_2.webp";
             // Quick lookup helper - ideally this would be shared from ToolbarDrawer but we can reconstruct the pattern easily
-            if (mode == DrawMode.RoleCasterImage) return "PluginImages.toolbar.caster.png";
+            if (mode == DrawMode.RoleCasterImage) return "PluginImages.toolbar.caster.webp";
             // Map the jobs
             string name = mode.ToString().Replace("Job", "").Replace("Image", "").ToLower();
-            return $"PluginImages.toolbar.{name}.png";
+            return $"PluginImages.toolbar.{name}.webp";
         }
 
         public override void Draw()

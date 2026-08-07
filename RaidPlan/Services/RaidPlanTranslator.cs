@@ -27,14 +27,14 @@ namespace AetherDraw.RaidPlan.Services
             { "ff-area-prox", "PluginImages.svg.prox_aoe.svg" },
             { "ff-knock", "PluginImages.svg.spread.svg" },
             { "ff-stackline", "PluginImages.svg.line_stack.svg" },
-            { "a", "PluginImages.toolbar.A.png" },
-            { "b", "PluginImages.toolbar.B.png" },
-            { "c", "PluginImages.toolbar.C.png" },
-            { "d", "PluginImages.toolbar.D.png" },
-            { "1", "PluginImages.toolbar.1_waymark.png" },
-            { "2", "PluginImages.toolbar.2_waymark.png" },
-            { "3", "PluginImages.toolbar.3_waymark.png" },
-            { "4", "PluginImages.toolbar.4_waymark.png" }
+            { "a", "PluginImages.toolbar.A.webp" },
+            { "b", "PluginImages.toolbar.B.webp" },
+            { "c", "PluginImages.toolbar.C.webp" },
+            { "d", "PluginImages.toolbar.D.webp" },
+            { "1", "PluginImages.toolbar.1_waymark.webp" },
+            { "2", "PluginImages.toolbar.2_waymark.webp" },
+            { "3", "PluginImages.toolbar.3_waymark.webp" },
+            { "4", "PluginImages.toolbar.4_waymark.webp" }
         };
 
         private static readonly Dictionary<string, DrawMode> AssetIdToDrawModeMap = new()
@@ -58,14 +58,14 @@ namespace AetherDraw.RaidPlan.Services
             { "2", DrawMode.Waymark2Image },
             { "3", DrawMode.Waymark3Image },
             { "4", DrawMode.Waymark4Image },
-            { "role_tank.png", DrawMode.RoleTankImage },
-            { "role_healer.png", DrawMode.RoleHealerImage },
-            { "role_melee.png", DrawMode.RoleMeleeImage },
-            { "role_ranged.png", DrawMode.RoleRangedImage },
-            { "Tank.JPG", DrawMode.RoleTankImage },
-            { "Healer.JPG", DrawMode.RoleHealerImage },
-            { "Melee.JPG", DrawMode.RoleMeleeImage },
-            { "Ranged.JPG", DrawMode.RoleRangedImage },
+            { "role_tank.webp", DrawMode.RoleTankImage },
+            { "role_healer.webp", DrawMode.RoleHealerImage },
+            { "role_melee.webp", DrawMode.RoleMeleeImage },
+            { "role_ranged.webp", DrawMode.RoleRangedImage },
+            { "Tank.webp", DrawMode.RoleTankImage },
+            { "Healer.webp", DrawMode.RoleHealerImage },
+            { "Melee.webp", DrawMode.RoleMeleeImage },
+            { "Ranged.webp", DrawMode.RoleRangedImage },
             { "BossIconPlaceholder.svg", DrawMode.BossIconPlaceholder }
         };
 

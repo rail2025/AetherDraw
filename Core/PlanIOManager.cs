@@ -661,9 +661,9 @@ namespace AetherDraw.Core
                 }
                 using (var image = new Image<Rgba32>(imageWidth, imageHeight))
                 {
-                    var backgroundColor = new Rgba32((byte)(0.15f * 255), (byte)(0.15f * 255), (byte)(0.17f * 255), (byte)(1.0f * 255));
+                    Color backgroundColor = Color.ParseHex("#26262BFF");
                     image.Mutate(ctx => ctx.Fill(backgroundColor));
-                    var gridColor = Color.FromRgba((byte)(0.3f * 255), (byte)(0.3f * 255), (byte)(0.3f * 255), (byte)(1.0f * 255));
+                    Color gridColor = Color.ParseHex("#4C4C4CFF");
                     float gridLineThickness = 1f;
                     float scaledGridCellSize = getScaledCanvasGridSizeFunc();
                     if (scaledGridCellSize > 0)

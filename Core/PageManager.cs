@@ -84,14 +84,14 @@ namespace AetherDraw.Core
             Vector4 waymarkTint = Vector4.One;
 
             var waymarksToPreload = new[] {
-                new { Mode = DrawMode.WaymarkAImage, Path = "PluginImages.toolbar.A.png", Angle = 3 * MathF.PI / 2 },
-                new { Mode = DrawMode.WaymarkBImage, Path = "PluginImages.toolbar.B.png", Angle = 0f },
-                new { Mode = DrawMode.WaymarkCImage, Path = "PluginImages.toolbar.C.png", Angle = MathF.PI / 2 },
-                new { Mode = DrawMode.WaymarkDImage, Path = "PluginImages.toolbar.D.png", Angle = MathF.PI },
-                new { Mode = DrawMode.Waymark1Image, Path = "PluginImages.toolbar.1_waymark.png", Angle = 5 * MathF.PI / 4 },
-                new { Mode = DrawMode.Waymark2Image, Path = "PluginImages.toolbar.2_waymark.png", Angle = 7 * MathF.PI / 4 },
-                new { Mode = DrawMode.Waymark3Image, Path = "PluginImages.toolbar.3_waymark.png", Angle = MathF.PI / 4 },
-                new { Mode = DrawMode.Waymark4Image, Path = "PluginImages.toolbar.4_waymark.png", Angle = 3 * MathF.PI / 4 }
+                new { Mode = DrawMode.WaymarkAImage, Path = "PluginImages.toolbar.A.webp", Angle = 3 * MathF.PI / 2 },
+                new { Mode = DrawMode.WaymarkBImage, Path = "PluginImages.toolbar.B.webp", Angle = 0f },
+                new { Mode = DrawMode.WaymarkCImage, Path = "PluginImages.toolbar.C.webp", Angle = MathF.PI / 2 },
+                new { Mode = DrawMode.WaymarkDImage, Path = "PluginImages.toolbar.D.webp", Angle = MathF.PI },
+                new { Mode = DrawMode.Waymark1Image, Path = "PluginImages.toolbar.1_waymark.webp", Angle = 5 * MathF.PI / 4 },
+                new { Mode = DrawMode.Waymark2Image, Path = "PluginImages.toolbar.2_waymark.webp", Angle = 7 * MathF.PI / 4 },
+                new { Mode = DrawMode.Waymark3Image, Path = "PluginImages.toolbar.3_waymark.webp", Angle = MathF.PI / 4 },
+                new { Mode = DrawMode.Waymark4Image, Path = "PluginImages.toolbar.4_waymark.webp", Angle = 3 * MathF.PI / 4 }
             };
 
             foreach (var wmInfo in waymarksToPreload)

@@ -99,6 +99,10 @@ namespace AetherDraw.Serialization
                     {
                         var page = allPages[i];
                         AetherDraw.Plugin.Log?.Debug($"[PlanSerializer] Serializing page {i + 1}/{allPages.Count}: '{page.Name}'");
+foreach(var d in page.Drawables) {
+                            var b = d.GetBoundingBox();
+                            AetherDraw.Plugin.Log?.Debug($"[Export] {d.ObjectDrawMode} {d.UniqueId} | Logical Bounds: X:{b.X}, Y:{b.Y}");
+                        }
                         writer.Write(page.Name ?? $"Page {i + 1}"); // Page name
 
                         // Serialize the drawables on the page using DrawableSerializer
@@ -192,6 +196,14 @@ namespace AetherDraw.Serialization
 
                         // Deserialize drawables for the page
                         List<BaseDrawable> drawables = DrawableSerializer.DeserializePageFromBytes(pageDrawablesData);
+                        if (drawables != null)
+                        {
+                            foreach (var d in drawables)
+                            {
+                                var b = d.GetBoundingBox();
+                                AetherDraw.Plugin.Log?.Debug($"[Import] {d.ObjectDrawMode} {d.UniqueId} | Logical Bounds: X:{b.X}, Y:{b.Y}");
+                            }
+                        }
 
                         // Create PageData object (Core.PageData)
                         loadedPages.Add(new PageData { Name = pageName, Drawables = drawables ?? new List<BaseDrawable>() });
